@@ -19,6 +19,24 @@ class SkuCodeOut(BaseModel):
     versions: list[SkuVersionOut] = []
 
 
+class VendorOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    category: str
+    name: str
+    is_active: bool
+
+
+class VendorIn(BaseModel):
+    category: str
+    name: str
+
+
+class VendorUpdateIn(BaseModel):
+    name: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
 class ChecklistItemOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: uuid.UUID

@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "@/lib/api";
-import type { Category, InspectionDetail, Permissions, SkuCode } from "@/lib/types";
+import type { Category, InspectionDetail, Permissions, SkuCode, Vendor } from "@/lib/types";
 import LineItemsEditor, { EditableLineItem } from "./LineItemsEditor";
 import ImageField from "./ImageField";
 import MultiImageField from "./MultiImageField";
@@ -35,6 +35,10 @@ export default function Wizard({
   const [truck, setTruck] = useState(initialDetail.truck_number || "");
   const [container, setContainer] = useState(initialDetail.container_number || "");
   const [vendor, setVendor] = useState(initialDetail.vendor_name || "");
+  const [vendorOptions, setVendorOptions] = useState<Vendor[]>([]);
+  const [addingVendor, setAddingVendor] = useState(false);
+  const [newVendorName, setNewVendorName] = useState("");
+  const [vendorError, setVendorError] = useState<string | null>(null);
   const [invoice, setInvoice] = useState(initialDetail.invoice_number || "");
   const [transporter, setTransporter] = useState(initialDetail.transporter_name || "");
   const [seal, setSeal] = useState(initialDetail.seal_number || "");
@@ -94,6 +98,30 @@ export default function Wizard({
 
   function markTouched<T>(setter: (v: T) => void) {
     return (v: T) => { setTouched(true); setter(v); };
+  }
+
+  // Vendor Name is a managed per-category list (see /vendors) rather than
+  // freehand text -- reload the dropdown's options whenever the inspection's
+  // category changes (a Pad vendor list is meaningless for a Glue record).
+  useEffect(() => {
+    let cancelled = false;
+    api.vendors({ category }).then((v) => { if (!cancelled) setVendorOptions(v); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [category]);
+
+  async function handleAddVendor() {
+    const name = newVendorName.trim();
+    if (!name) return;
+    setVendorError(null);
+    try {
+      const created = await api.createVendor(category, name);
+      setVendorOptions((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
+      markTouched(setVendor)(created.name);
+      setAddingVendor(false);
+      setNewVendorName("");
+    } catch (e) {
+      setVendorError(e instanceof Error ? e.message : "Could not add vendor.");
+    }
   }
 
   async function handleNext() {
@@ -216,7 +244,37 @@ export default function Wizard({
                   <input disabled={readOnlyStep1} value={container} placeholder="e.g. CXY-20354" onChange={(e) => markTouched(setContainer)(e.target.value)} />
                 </div>
                 <div className="field"><label>Vendor Name</label>
-                  <input disabled={readOnlyStep1} value={vendor} placeholder="e.g. 3P China" onChange={(e) => markTouched(setVendor)(e.target.value)} />
+                  {addingVendor ? (
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <input
+                        autoFocus value={newVendorName} placeholder="New vendor name"
+                        onChange={(e) => setNewVendorName(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && handleAddVendor()}
+                      />
+                      <button type="button" className="btn-tertiary" onClick={handleAddVendor}>Add</button>
+                      <button type="button" className="btn-tertiary" onClick={() => { setAddingVendor(false); setVendorError(null); }}>Cancel</button>
+                    </div>
+                  ) : (
+                    <select
+                      disabled={readOnlyStep1}
+                      value={vendor}
+                      onChange={(e) => {
+                        if (e.target.value === "__add__") { setAddingVendor(true); return; }
+                        markTouched(setVendor)(e.target.value);
+                      }}
+                    >
+                      <option value="">Select vendor</option>
+                      {/* A vendor already on this record that isn't in the current
+                          managed list (legacy free-text data, or a vendor since
+                          deactivated) still shows so existing data is never hidden. */}
+                      {vendor && !vendorOptions.some((v) => v.name === vendor) && (
+                        <option value={vendor}>{vendor} (not in list)</option>
+                      )}
+                      {vendorOptions.map((v) => <option key={v.id} value={v.name}>{v.name}</option>)}
+                      {!readOnlyStep1 && <option value="__add__">+ Add new vendor…</option>}
+                    </select>
+                  )}
+                  {vendorError && <div className="hint-text" style={{ color: "var(--red)" }}>{vendorError}</div>}
                 </div>
                 <div className="field"><label>Invoice No.</label>
                   <input disabled={readOnlyStep1} value={invoice} placeholder="e.g. INV-88213" onChange={(e) => markTouched(setInvoice)(e.target.value)} />

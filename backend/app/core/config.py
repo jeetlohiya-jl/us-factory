@@ -27,6 +27,17 @@ class Settings(BaseSettings):
     # OCR adapter selection: "tesseract" (real, local, default) or "none".
     ocr_provider: str = "tesseract"
 
+    # On Linux the "tesseract-ocr" / "poppler-utils" system packages put
+    # these binaries on PATH automatically, so pytesseract/pdf2image find
+    # them with no configuration. Windows installers don't add themselves
+    # to PATH by default, so pytesseract.TesseractNotFoundError (or
+    # pdf2image's "poppler not installed" error) there is an environment
+    # setup step, not a code bug — set these to the full path once (e.g.
+    # the tesseract.exe path / poppler's \bin folder from the installers)
+    # instead of editing the System PATH.
+    tesseract_cmd: str | None = None
+    poppler_path: str | None = None
+
     cors_origins: list[str] = ["http://localhost:3000"]
 
     class Config:

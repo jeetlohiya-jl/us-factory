@@ -35,6 +35,13 @@ export default function CoaField({ qcId, filename, url, disabled, onChange }: {
         );
       } else if (suggestions.length > 0) {
         setParseSummary("Couldn't confidently match any Observation fields on this COA — enter values manually below.");
+      } else {
+        // An empty array (rather than one "not_found" entry per attribute)
+        // means parsing itself never completed -- an unreadable file, or a
+        // missing OCR dependency on this machine (see backend console for
+        // the exact error). Surface that distinction instead of going
+        // silent, since it looks identical to "upload succeeded" otherwise.
+        setParseSummary("Couldn't read this COA to extract values (see backend logs for details) — enter values manually below.");
       }
       onChange(detail);
     } catch (e) {

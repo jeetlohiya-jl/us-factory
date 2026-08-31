@@ -11,12 +11,23 @@ clears the confidence bar, we report low_confidence/failed and leave
 extraction to the user — we never invent a value.
 """
 import io
+import logging
 import re
 
 import pytesseract
 from PIL import Image, ImageOps
 
 from app.adapters.ocr.base import OcrPort, OcrResult
+from app.core.config import get_settings
+
+# Windows Tesseract installers don't add tesseract.exe to PATH the way the
+# Linux tesseract-ocr package does -- if FACTORY_TESSERACT_CMD is set,
+# point pytesseract at that exact binary instead of relying on PATH.
+_tesseract_cmd = get_settings().tesseract_cmd
+if _tesseract_cmd:
+    pytesseract.pytesseract.tesseract_cmd = _tesseract_cmd
+
+log = logging.getLogger("factory_os.ocr")
 
 # ISO 6346 shipping container number: 4 letters (owner code + category id) + 7 digits.
 CONTAINER_RE = re.compile(r"\b([A-Z]{4}\s?-?\s?\d{6,7})\b")
@@ -54,6 +65,12 @@ class TesseractOcrAdapter(OcrPort):
                 image, output_type=pytesseract.Output.DICT, config="--psm 6"
             )
         except pytesseract.TesseractNotFoundError:
+            log.error(
+                "Tesseract binary not found on PATH. Install Tesseract-OCR "
+                "and either add it to PATH or set FACTORY_TESSERACT_CMD to "
+                "its full executable path (e.g. "
+                "C:\\Program Files\\Tesseract-OCR\\tesseract.exe on Windows)."
+            )
             return OcrResult(raw_text="", extracted_value=None, confidence=0.0, status="failed")
 
         words = []

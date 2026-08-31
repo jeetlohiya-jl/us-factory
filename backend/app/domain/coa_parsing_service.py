@@ -30,12 +30,24 @@ uploads, so both paths go through one shared line-matching step.
 from __future__ import annotations
 
 import io
+import logging
 import re
 from dataclasses import dataclass
 
 import pdfplumber
 import pytesseract
 from PIL import Image, ImageOps
+
+from app.core.config import get_settings
+
+log = logging.getLogger("factory_os.coa_parsing")
+
+_settings = get_settings()
+# Same Windows-vs-Linux PATH gap as the photo OCR adapter (see
+# app/adapters/ocr/tesseract_adapter.py) -- set explicitly here too since
+# this module also calls pytesseract directly for scanned COAs/images.
+if _settings.tesseract_cmd:
+    pytesseract.pytesseract.tesseract_cmd = _settings.tesseract_cmd
 
 PDF_EXTS = {"pdf"}
 IMAGE_EXTS = {"jpg", "jpeg", "png", "webp", "bmp", "tiff"}
@@ -114,7 +126,17 @@ def extract_text(content: bytes, filename: str, content_type: str | None) -> str
             # No text layer on some/all pages -> rasterize just those pages
             # and run real OCR on them, same engine as the photo pipeline.
             from pdf2image import convert_from_bytes
-            images = convert_from_bytes(content)
+            from pdf2image.exceptions import PDFInfoNotInstalledError
+            try:
+                images = convert_from_bytes(content, poppler_path=_settings.poppler_path)
+            except PDFInfoNotInstalledError:
+                log.error(
+                    "poppler (pdftoppm/pdfinfo) not found. Install poppler "
+                    "and either add its bin/ folder to PATH or set "
+                    "FACTORY_POPPLER_PATH to that folder (e.g. "
+                    "C:\\poppler-24.x\\Library\\bin on Windows)."
+                )
+                images = []
             for i in scanned_pages:
                 if i < len(images):
                     lines.extend(_ocr_image(images[i]).splitlines())
@@ -130,6 +152,11 @@ def _ocr_image(image: Image.Image) -> str:
     try:
         return pytesseract.image_to_string(image, config="--psm 6")
     except pytesseract.TesseractNotFoundError:
+        log.error(
+            "Tesseract binary not found on PATH -- COA image/scanned-PDF "
+            "OCR cannot run. Install Tesseract-OCR and either add it to "
+            "PATH or set FACTORY_TESSERACT_CMD to its full executable path."
+        )
         return ""
 
 

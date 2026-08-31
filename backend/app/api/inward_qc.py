@@ -1,3 +1,4 @@
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, status
@@ -15,6 +16,8 @@ from app.domain import coa_parsing_service
 from app.api.inward_vehicle_inspections import _serialize_detail as _serialize_vehicle_inspection, _get_or_404 as _get_vehicle_inspection_or_404
 
 router = APIRouter(prefix="/api/v1/inward-qc", tags=["inward-qc"])
+
+log = logging.getLogger("factory_os.inward_qc")
 
 MODULE = "inward_qc"
 
@@ -265,8 +268,14 @@ async def upload_coa(
         )
     except Exception:
         # Parsing is a best-effort convenience on top of a successful
-        # upload -- a parsing failure (corrupt file, unreadable scan, etc.)
-        # must never take down the upload itself. Manual entry still works.
+        # upload -- a parsing failure (corrupt file, unreadable scan, missing
+        # Tesseract/poppler binary, etc.) must never take down the upload
+        # itself. Manual entry still works. But swallowing it silently made
+        # every failure look identical from the UI ("nothing happened") --
+        # log the real traceback so a genuine bug (as opposed to "no COA
+        # fields matched this vendor's wording") is diagnosable from the
+        # backend console instead of a guessing game.
+        log.exception("COA parsing failed for qc_id=%s filename=%s", qc_id, file.filename)
         detail["coa_suggestions"] = []
     return detail
 

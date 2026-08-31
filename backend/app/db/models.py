@@ -67,6 +67,22 @@ class SkuVersion(Base):
     __table_args__ = (UniqueConstraint("sku_code_id", "version"),)
 
 
+class Vendor(Base):
+    """Vendor master data for the Inward Vehicle Inspection "Vendor Name"
+    field, scoped per category (tray/pad/polybag/cfb/glue) since a vendor
+    that supplies Padding material may be irrelevant to Glue, etc. Managed
+    from a dedicated Vendors admin screen rather than typed freehand on
+    every inspection, so the list stays clean and consistent."""
+    __tablename__ = "vendors"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    category = Column(Text, nullable=False)
+    name = Column(Text, nullable=False)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+    __table_args__ = (UniqueConstraint("category", "name"),)
+
+
 class InwardVehicleInspection(Base):
     __tablename__ = "inward_vehicle_inspections"
     id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)

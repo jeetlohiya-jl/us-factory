@@ -3,6 +3,7 @@ import type {
   InspectionDetail, InspectionListItem, SkuCode, ChecklistItemRef, MeResponse, Category, ImageType,
   QcMeta, QcListItem, QcDetail, QcManualCategory,
   Pallet, QrGenerationListItem, QrGenerationDetail, StorageRecordDetail, LocationRef, ProductionRun,
+  Vendor,
 } from "./types";
 
 const BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
@@ -43,6 +44,20 @@ export const api = {
   me: () => request<MeResponse>("/api/v1/me"),
   skuCodes: () => request<SkuCode[]>("/api/v1/reference/sku-codes"),
   checklistItems: () => request<ChecklistItemRef[]>("/api/v1/reference/checklist-items"),
+
+  vendors: (params?: { category?: string; includeInactive?: boolean }) => {
+    const qs = new URLSearchParams();
+    if (params?.category) qs.set("category", params.category);
+    if (params?.includeInactive) qs.set("include_inactive", "true");
+    const suffix = qs.toString() ? `?${qs.toString()}` : "";
+    return request<Vendor[]>(`/api/v1/vendors${suffix}`);
+  },
+  createVendor: (category: Category, name: string) =>
+    request<Vendor>("/api/v1/vendors", { method: "POST", body: JSON.stringify({ category, name }) }),
+  updateVendor: (id: string, patch: { name?: string; is_active?: boolean }) =>
+    request<Vendor>(`/api/v1/vendors/${id}`, { method: "PUT", body: JSON.stringify(patch) }),
+  deleteVendor: (id: string) =>
+    request<void>(`/api/v1/vendors/${id}`, { method: "DELETE" }),
 
   listInspections: (params: { search?: string; status?: string; category?: string; date?: string }) => {
     const qs = new URLSearchParams();

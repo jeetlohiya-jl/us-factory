@@ -55,6 +55,16 @@ const NAV_ITEMS = [
   },
 ];
 
+const SETUP_NAV_ITEMS = [
+  {
+    href: "/vendors",
+    label: "Vendors",
+    icon: (
+      <path d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-6h6v6M9 9h.01M15 9h.01M9 13h.01M15 13h.01" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    ),
+  },
+];
+
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const [email, setEmail] = useState(DEV_USERS[0].email);
   const pathname = usePathname();
@@ -79,6 +89,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         <div className="sb-nav">
           <div className="sb-group">Records</div>
           {NAV_ITEMS.map((item) => (
+            <Link key={item.href} href={item.href} className={`sb-item ${pathname?.startsWith(item.href) ? "active" : ""}`}>
+              <svg viewBox="0 0 24 24" fill="none">{item.icon}</svg>
+              <span className="label-text">{item.label}</span>
+            </Link>
+          ))}
+          <div className="sb-group">Setup</div>
+          {SETUP_NAV_ITEMS.map((item) => (
             <Link key={item.href} href={item.href} className={`sb-item ${pathname?.startsWith(item.href) ? "active" : ""}`}>
               <svg viewBox="0 0 24 24" fill="none">{item.icon}</svg>
               <span className="label-text">{item.label}</span>

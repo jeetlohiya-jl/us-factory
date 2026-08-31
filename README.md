@@ -13,8 +13,23 @@ cd backend
 pip install -r requirements.txt   # or see the packages installed in this session
 # Postgres must be running with a database matching backend/.env's FACTORY_DATABASE_URL
 psql -f migrations/0001_init.sql <connection...>
+psql -f migrations/0002_inward_qc.sql <connection...>
+psql -f migrations/0003_rm_fg_qr_storage.sql <connection...>
+psql -f migrations/0004_vendors.sql <connection...>
 uvicorn app.main:app --reload --port 8000
 ```
+
+OCR (photo identifier extraction on Inward Vehicle Inspection) and COA
+parsing (Inward QC) both need the real `tesseract` binary, and PDF-based
+COA parsing also needs `poppler`. Linux's `tesseract-ocr` / `poppler-utils`
+packages put both on PATH automatically. On Windows, install
+[Tesseract-OCR](https://github.com/UB-Mannheim/tesseract/wiki) and
+[poppler for Windows](https://github.com/oschwartz10612/poppler-windows/releases),
+then either add both to your System PATH or set `FACTORY_TESSERACT_CMD` /
+`FACTORY_POPPLER_PATH` in `backend/.env` (see `.env.example`) to their
+install paths directly — no PATH edit needed. If OCR or COA parsing ever
+silently "does nothing", check the backend console: both now log the exact
+missing-binary error there instead of failing quietly.
 
 Frontend:
 ```

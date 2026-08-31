@@ -13,6 +13,13 @@ export interface SkuCode {
   versions: SkuVersion[];
 }
 
+export interface Vendor {
+  id: string;
+  category: Category;
+  name: string;
+  is_active: boolean;
+}
+
 export interface ChecklistItemRef {
   id: string;
   label: string;
