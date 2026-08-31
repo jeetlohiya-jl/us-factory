@@ -18,6 +18,7 @@ psql -f migrations/0003_rm_fg_qr_storage.sql <connection...>
 psql -f migrations/0004_vendors.sql <connection...>
 psql -f migrations/0005_material_consumption.sql <connection...>
 psql -f migrations/0006_vendor_country.sql <connection...>
+psql -f migrations/0007_performance_indexes.sql <connection...>
 uvicorn app.main:app --reload --port 8000
 ```
 
