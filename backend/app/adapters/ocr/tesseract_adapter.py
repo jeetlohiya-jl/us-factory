@@ -35,7 +35,19 @@ if _tesseract_cmd:
 log = logging.getLogger("factory_os.ocr")
 
 # ISO 6346 shipping container number: 4 letters (owner code + category id) + 7 digits.
-CONTAINER_RE = re.compile(r"\b([A-Z]{4}\s?-?\s?\d{6,7})\b")
+# The digit run is accepted down to 4 digits (not just 6-7) because a real
+# photo of the whole container door -- rather than a tight crop of just the
+# number -- often has that number small enough in the frame that Tesseract
+# reads only the first several digits of it correctly and drops the rest
+# (confirmed against a real container photo: Tesseract read "SEGU 6576" for
+# an actual "SEGU 657685" -- the leading 4 digits, correctly adjacent to the
+# 4-letter owner code, with the trailing 2 digits lost). Still requiring the
+# letters and digits to sit directly next to each other in the recognized
+# text (this pattern, unlike the generic fallback below, is never allowed to
+# join two unrelated words) keeps this from matching an unrelated label --
+# e.g. "TARE 3700" from a weight-spec line never sits adjacent to a 4-letter
+# *owner* code in the actual OCR text, so it was never a risk here.
+CONTAINER_RE = re.compile(r"\b([A-Z]{4}\s?-?\s?\d{4,7})\b")
 # Generic alphanumeric identifier (truck registration, seal number, etc.):
 # at least one letter and one digit, 4-15 chars, optionally hyphenated.
 GENERIC_ID_RE = re.compile(r"\b([A-Z0-9](?:[A-Z0-9-]{2,13})[A-Z0-9])\b")
@@ -44,6 +56,17 @@ MIN_CONFIDENCE = {
     "container": 0.55,
     "truck": 0.45,
     "seal": 0.45,
+}
+
+# Words that show up, confidently and legitimately read, on a real shipping
+# container photo but are never themselves part of the container number --
+# the weight-spec block (Max Gross Weight / Tare / Payload) and the leasing
+# company's own printed name. Excluded from the generic letters+digits
+# fallback (see _multi_word_candidates) so a correctly-read label word can
+# never be mistaken for the container's owner code.
+_LABEL_WORD_BLOCKLIST = {
+    "TARE", "MGW", "GROSS", "NET", "PAYLOAD", "WEIGHT", "MAX", "CAP", "CU",
+    "KG", "KGS", "LB", "LBS", "SEACO", "SRL",
 }
 
 # A photo of a whole vehicle/container (rather than a tight crop of just the
@@ -140,8 +163,22 @@ def _multi_word_candidates(words: list[tuple[str, float]]) -> list[tuple[str, fl
     codes and plate numbers are always short, so this keeps a long,
     unrelated but confidently-read word elsewhere in the photo (a
     stencilled company name, a decal, a slogan painted on the truck bed)
-    from being mistaken for part of the plate."""
-    letters_words = [(w, c) for w, c in words if 2 <= len(w) <= 6 and w.isalpha()]
+    from being mistaken for part of the plate.
+
+    This same fallback also runs for container photos when CONTAINER_RE
+    finds nothing. A real container door photo is printed all over with
+    short, confidently-read weight-spec labels ("TARE", "MGW", "SEACO",
+    "SRL") right next to a weight figure -- exactly the letters+digits
+    shape this function looks for -- which is how a real photo once had
+    Tesseract's cleanly-read "TARE" (0.96 confidence) joined to the
+    adjacent "3700" (0.95 confidence) and reported as the container
+    number instead of the actual "SEGU 657685" printed elsewhere in the
+    same frame. _LABEL_WORD_BLOCKLIST excludes exactly those known
+    non-identifier label words from the letters half of the join."""
+    letters_words = [
+        (w, c) for w, c in words
+        if 2 <= len(w) <= 6 and w.isalpha() and w not in _LABEL_WORD_BLOCKLIST
+    ]
     digit_words = [(w, c) for w, c in words if 2 <= len(w) <= 6 and w.isdigit()]
     if not letters_words or not digit_words:
         return []

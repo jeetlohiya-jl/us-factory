@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import type { StorageRecordDetail } from "@/lib/types";
 import { PALLET_STAGE_LABELS, PALLET_STAGE_BADGE_CLASS } from "@/lib/types";
 
@@ -44,7 +45,16 @@ export default function StorageRecordDetailPanel({ record, onClose }: { record: 
             <h3>Source &amp; Traceability</h3>
             <div className="detail-grid">
               <Kv label={record.storage_type === "rm" ? "Source RM QR Generation Batch" : "Source FG QR Generation Batch"} value={<span className="mono">{record.source_batch_display_id}</span>} />
-              {record.source_inward_qc_id && <Kv label="Source Inward QC" value={<span className="mono">{record.source_inward_qc_id}</span>} />}
+              {record.source_inward_qc_id && (
+                <Kv
+                  label="Source Inward QC"
+                  value={
+                    <Link className="mono" href={`/inward-qc?open=${record.source_inward_qc_id}`} style={{ textDecoration: "underline" }}>
+                      View Inward QC record →
+                    </Link>
+                  }
+                />
+              )}
               {record.source_production_run_id && <Kv label="Source Production Run" value={<span className="mono">{record.source_production_run_id}</span>} />}
             </div>
           </div>

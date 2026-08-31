@@ -1,5 +1,6 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
 import { useMe } from "@/lib/useMe";
 import type { QcDetail, QcListItem, QcManualCategory, QcMeta, SkuCode } from "@/lib/types";
@@ -19,7 +20,17 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 export default function InwardQcPage() {
+  return (
+    <Suspense fallback={null}>
+      <InwardQcPageContent />
+    </Suspense>
+  );
+}
+
+function InwardQcPageContent() {
   const me = useMe();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [meta, setMeta] = useState<QcMeta | null>(null);
   const [skuCodes, setSkuCodes] = useState<SkuCode[]>([]);
   const [items, setItems] = useState<QcListItem[]>([]);
@@ -78,14 +89,26 @@ export default function InwardQcPage() {
     }
   }
 
-  async function openDetail(id: string) {
+  const openDetail = useCallback(async (id: string) => {
     try {
       const detail = await api.getQc(id);
       setDetailState(detail);
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : "Failed to load record");
     }
-  }
+  }, []);
+
+  // Deep-link support: RM/FG Storage Record's "Source Inward QC" link lands
+  // here as /inward-qc?open=<id>. Open that record's detail panel on arrival,
+  // then strip the query param so a refresh/back-nav doesn't re-open it.
+  useEffect(() => {
+    const openId = searchParams.get("open");
+    if (openId) {
+      openDetail(openId);
+      router.replace("/inward-qc");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   async function openEdit(id: string) {
     try {
