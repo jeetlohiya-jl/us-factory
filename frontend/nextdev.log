@@ -1,0 +1,42 @@
+
+> frontend@0.1.0 dev
+> next dev -p 3000
+
+▲ Next.js 16.3.3 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://192.0.2.2:3000
+- Environments: .env.local
+✓ Ready in 421ms
+✓ Running next.config.ts took 34ms
+⚠ Slow filesystem detected. The benchmark took 589ms. If /root/project/frontend/.next/dev is a network drive, consider moving it to a local folder.
+See more: https://nextjs.org/docs/app/guides/local-development
+
+ GET /rm-qr-generation 200 in 1249ms (next.js: 1075ms, application-code: 175ms)
+ GET /rm-storage 200 in 322ms (next.js: 246ms, application-code: 76ms)
+ GET /fg-qr-generation 200 in 350ms (next.js: 264ms, application-code: 86ms)
+ GET /fg-storage 200 in 333ms (next.js: 282ms, application-code: 52ms)
+ GET /inward-qc 200 in 114ms (next.js: 24ms, application-code: 90ms)
+ GET /rm-qr-generation 200 in 76ms (next.js: 4ms, application-code: 72ms)
+ GET /rm-storage 200 in 89ms (next.js: 4ms, application-code: 86ms)
+ GET /rm-qr-generation 200 in 44ms (next.js: 3ms, application-code: 41ms)
+ GET /rm-storage 200 in 66ms (next.js: 7ms, application-code: 59ms)
+ GET /fg-qr-generation 200 in 47ms (next.js: 7ms, application-code: 41ms)
+ GET /fg-storage 200 in 36ms (next.js: 4ms, application-code: 32ms)
+ GET /fg-qr-generation 200 in 46ms (next.js: 3ms, application-code: 43ms)
+ GET /inward-qc 200 in 35ms (next.js: 3ms, application-code: 32ms)
+ GET /rm-qr-generation 200 in 36ms (next.js: 3ms, application-code: 33ms)
+ GET /rm-storage 200 in 72ms (next.js: 2ms, application-code: 70ms)
+ GET /rm-qr-generation 200 in 39ms (next.js: 5ms, application-code: 33ms)
+ GET /rm-storage 200 in 102ms (next.js: 4ms, application-code: 98ms)
+ GET /fg-qr-generation 200 in 46ms (next.js: 5ms, application-code: 41ms)
+ GET /fg-storage 200 in 37ms (next.js: 3ms, application-code: 34ms)
+ GET /fg-qr-generation 200 in 56ms (next.js: 4ms, application-code: 53ms)
+ GET /inward-vehicle-inspection 200 in 57ms (next.js: 13ms, application-code: 45ms)
+ GET /inward-vehicle-inspection 200 in 44ms (next.js: 3ms, application-code: 41ms)
+ GET /inward-qc 200 in 63ms (next.js: 3ms, application-code: 60ms)
+ GET /inward-qc 200 in 50ms (next.js: 3ms, application-code: 47ms)
+ GET /inward-qc 200 in 51ms (next.js: 3ms, application-code: 48ms)
+ GET /inward-qc 200 in 59ms (next.js: 3ms, application-code: 56ms)
+ GET /inward-qc 200 in 32ms (next.js: 2ms, application-code: 30ms)
+ GET /inward-qc 200 in 64ms (next.js: 10ms, application-code: 54ms)
+ GET /inward-qc 200 in 31ms (next.js: 3ms, application-code: 29ms)

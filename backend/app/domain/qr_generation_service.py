@@ -1,0 +1,135 @@
+"""
+RM QR Generation (source: approved Inward QC) and FG QR Generation (source:
+approved Production Run) — same fundamental design, parameterized by
+qr_type, per the task's explicit instruction that FG QR Generation "follows
+the same fundamental design as RM QR Generation, but the source is
+Production."
+
+Mirrors the prototype's qrGenerate()/qrPropagateToStorage()/QR_RECORDS
+behaviour: one source record -> one QR batch (find-or-create, never
+duplicated), and generating a batch creates N individually-numbered
+pallets that immediately enter pending_storage.
+"""
+from datetime import datetime, timezone
+
+from sqlalchemy.orm import Session
+
+from app.db import models
+from app.domain import pallet_service
+
+
+class QrGenerationError(Exception):
+    pass
+
+
+def get_or_create_rm_qr_for_qc(db: Session, qc: models.InwardQcRecord) -> models.QrGenerationRecord:
+    """
+    Called the moment an Inward QC is Accepted. Idempotent — the partial
+    unique index on source_inward_qc_id is the hard backstop against a
+    duplicate batch; this find-first is what makes repeat calls a no-op
+    rather than raising.
+    """
+    existing = (
+        db.query(models.QrGenerationRecord)
+        .filter(models.QrGenerationRecord.source_inward_qc_id == qc.id)
+        .first()
+    )
+    if existing:
+        return existing
+
+    sku_code = qc.sku_code_snapshot or (qc.sku_code.code if qc.sku_code else None)
+    sku_version = qc.sku_version_snapshot or (qc.sku_version.version if qc.sku_version else None)
+    quantity = int(qc.quantity or 0)
+
+    rec = models.QrGenerationRecord(
+        batch_display_id=pallet_service.next_batch_display_id(db, "rm"),
+        qr_type="rm",
+        category=qc.category,
+        source_inward_qc_id=qc.id,
+        shipment_number=qc.shipment_number,
+        sku_code_id=qc.sku_code_id,
+        sku_version_id=qc.sku_version_id,
+        sku_code_snapshot=sku_code,
+        sku_version_snapshot=sku_version,
+        quantity=quantity,
+        status="pending",
+    )
+    db.add(rec)
+    db.flush()
+    return rec
+
+
+def get_or_create_fg_qr_for_production_run(db: Session, run: models.ProductionRun) -> models.QrGenerationRecord:
+    existing = (
+        db.query(models.QrGenerationRecord)
+        .filter(models.QrGenerationRecord.source_production_run_id == run.id)
+        .first()
+    )
+    if existing:
+        return existing
+
+    sku_code = run.sku_code.code if run.sku_code else None
+    sku_version = run.sku_version.version if run.sku_version else None
+
+    rec = models.QrGenerationRecord(
+        batch_display_id=pallet_service.next_batch_display_id(db, "fg"),
+        qr_type="fg",
+        category=run.category,
+        source_production_run_id=run.id,
+        shipment_number=run.shipment_number,
+        sku_code_id=run.sku_code_id,
+        sku_version_id=run.sku_version_id,
+        sku_code_snapshot=sku_code,
+        sku_version_snapshot=sku_version,
+        quantity=int(run.total_fg_pallets or 0),
+        status="pending",
+    )
+    db.add(rec)
+    db.flush()
+    return rec
+
+
+def generate_pallets(db: Session, rec: models.QrGenerationRecord, actor_user_id=None) -> models.QrGenerationRecord:
+    """
+    Generate one individually-numbered, real-QR-backed pallet per unit of
+    quantity, and immediately propagate all of them into pending_storage —
+    matching qrGenerate() + qrPropagateToStorage() in the prototype exactly.
+    Regenerating an already-generated batch is a no-op (never allowed).
+    """
+    if rec.status == "generated":
+        return rec
+    if rec.quantity <= 0:
+        raise QrGenerationError("Enter a quantity greater than 0 before generating QR codes.")
+
+    for _ in range(rec.quantity):
+        display_id = pallet_service.next_pallet_display_id(db, rec.category)
+        pallet = models.Pallet(
+            display_id=display_id,
+            pallet_type=rec.qr_type,
+            category=rec.category,
+            sku_code_id=rec.sku_code_id,
+            sku_version_id=rec.sku_version_id,
+            sku_code_snapshot=rec.sku_code_snapshot,
+            sku_version_snapshot=rec.sku_version_snapshot,
+            shipment_number=rec.shipment_number,
+            source_qr_generation_id=rec.id,
+            source_inward_qc_id=rec.source_inward_qc_id,
+            source_production_run_id=rec.source_production_run_id,
+            lifecycle_status="generated",
+        )
+        db.add(pallet)
+        db.flush()
+        pallet_service.generate_pallet_qr(db, pallet)
+        pallet_service.record_lifecycle_event(
+            db, pallet, "generated", actor_user_id=actor_user_id,
+            source_batch=rec.batch_display_id, sku=rec.sku_code_snapshot, version=rec.sku_version_snapshot,
+        )
+        # Immediately propagate to pending storage, per the prototype.
+        pallet_service.record_lifecycle_event(
+            db, pallet, "pending_storage", actor_user_id=actor_user_id, sku=rec.sku_code_snapshot,
+        )
+
+    rec.status = "generated"
+    rec.generated_at = datetime.now(timezone.utc)
+    db.flush()
+    return rec

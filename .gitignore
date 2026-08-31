@@ -1,0 +1,17 @@
+# Backend (Python/FastAPI)
+backend/__pycache__/
+backend/**/__pycache__/
+backend/*.log
+backend/uvicorn.log
+backend/storage_data/
+backend/.env
+backend/venv/
+backend/.venv/
+*.pyc
+
+# Frontend has its own .gitignore (node_modules, .next, .env*, etc.)
+
+# Local dev artifacts / delivered zips — not part of the source tree
+*.zip
+screenshots/
+tmp_*

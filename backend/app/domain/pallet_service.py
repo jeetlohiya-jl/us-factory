@@ -1,0 +1,150 @@
+"""
+Shared domain logic for RM + FG QR Generation and RM + FG Storage.
+
+Source of truth for naming/numbering/workflow is the HTML prototype:
+  - RM_QR_PREFIX category->prefix map
+  - "<prefix>-<yymm>-<seq4>" pallet numbering (US-PLT-2608-0091, ...)
+  - "RMQR-<seq4>" / "FGQR-<seq4>" QR-batch numbering
+  - one accepted QC (or, for FG, one approved Production Run) -> one QR
+    batch -> N individually numbered pallets
+  - generated pallets automatically enter "pending_storage"
+
+Deviation from the prototype's markup (per the task's explicit override for
+this implementation): RM and FG pallets share the same display-id
+namespace/prefix — pallet_type is what distinguishes an RM pallet from an FG
+one, rather than a separate "US-FG-PLT" prefix.
+
+Each pallet and each location is backed by a real QR PNG (via the `qrcode`
+package) encoding a small JSON payload — the pallet/location's immutable
+display_id plus enough context to identify the record, but the DB row (found
+by display_id) always remains the single source of truth. A "scan" resolves
+that payload (or a bare display_id, for a plain hardware barcode-scanner
+that just emits keystrokes) back to the exact DB record.
+"""
+import io
+import json
+from datetime import datetime, timezone
+
+import qrcode
+from sqlalchemy import func
+from sqlalchemy.orm import Session
+
+from app.db import models
+from app.adapters.storage.factory import get_storage_adapter
+
+RM_QR_PREFIX = {
+    "tray": "US-PLT", "fgtray": "US-PLT", "pad": "US-PAD",
+    "polybag": "US-PB", "cfb": "US-CFB", "glue": "US-GLUE",
+}
+
+
+def prefix_for_category(category: str | None) -> str:
+    return RM_QR_PREFIX.get(category or "", "US-PLT")
+
+
+def next_batch_display_id(db: Session, qr_type: str) -> str:
+    prefix = "RMQR" if qr_type == "rm" else "FGQR"
+    count = db.query(models.QrGenerationRecord).filter(models.QrGenerationRecord.qr_type == qr_type).count()
+    return f"{prefix}-{str(count + 1).zfill(4)}"
+
+
+def next_pallet_display_id(db: Session, category: str | None) -> str:
+    """
+    RM and FG pallets intentionally share one namespace per prefix (see
+    module docstring) — the count is over ALL pallets with that prefix,
+    regardless of pallet_type.
+    """
+    prefix = prefix_for_category(category)
+    yymm = datetime.now(timezone.utc).strftime("%y%m")
+    count = (
+        db.query(models.Pallet)
+        .filter(models.Pallet.display_id.like(f"{prefix}-%"))
+        .count()
+    )
+    seq = count + 1
+    return f"{prefix}-{yymm}-{str(seq).zfill(4)}"
+
+
+def _make_qr_png(payload: str) -> bytes:
+    img = qrcode.make(payload)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def generate_pallet_qr(db: Session, pallet: models.Pallet) -> None:
+    """Real QR PNG encoding the pallet's immutable display_id + enough
+    context to resolve its identity — backed by, never a substitute for, the
+    DB row itself."""
+    payload = json.dumps({
+        "t": "rm_pallet" if pallet.pallet_type == "rm" else "fg_pallet",
+        "id": pallet.display_id,
+        "shipment": pallet.shipment_number,
+        "sku": pallet.sku_code_snapshot,
+    })
+    png = _make_qr_png(payload)
+    storage = get_storage_adapter()
+    path = f"qr/pallets/{pallet.id}.png"
+    stored = storage.save(path, png, "image/png")
+    pallet.qr_storage_path = stored.storage_path
+    pallet.qr_public_url = stored.public_url
+    pallet.qr_payload = payload
+
+
+def generate_location_qr(db: Session, location: models.Location) -> None:
+    payload = json.dumps({"t": "location", "id": location.display_id, "zone": location.zone})
+    png = _make_qr_png(payload)
+    storage = get_storage_adapter()
+    path = f"qr/locations/{location.id}.png"
+    stored = storage.save(path, png, "image/png")
+    location.qr_storage_path = stored.storage_path
+    location.qr_public_url = stored.public_url
+    location.qr_payload = payload
+
+
+def record_lifecycle_event(db: Session, pallet: models.Pallet, stage: str, actor_user_id=None, **metadata) -> None:
+    db.add(models.PalletLifecycleEvent(
+        pallet_id=pallet.id, stage=stage, event_metadata=metadata or None, actor_user_id=actor_user_id,
+    ))
+    pallet.lifecycle_status = stage
+
+
+def _parse_scan_payload(raw: str) -> dict:
+    raw = (raw or "").strip()
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+        if isinstance(data, dict) and "id" in data:
+            return data
+    except (ValueError, TypeError):
+        pass
+    # Plain display_id — e.g. a hardware barcode-scanner that just types the
+    # printed code as keystrokes rather than the full QR JSON payload.
+    return {"id": raw}
+
+
+def resolve_pallet_from_scan(db: Session, raw: str, pallet_type: str) -> models.Pallet | None:
+    data = _parse_scan_payload(raw)
+    display_id = data.get("id")
+    if not display_id:
+        return None
+    return (
+        db.query(models.Pallet)
+        .filter(func.lower(models.Pallet.display_id) == display_id.strip().lower())
+        .filter(models.Pallet.pallet_type == pallet_type)
+        .first()
+    )
+
+
+def resolve_location_from_scan(db: Session, raw: str) -> models.Location | None:
+    data = _parse_scan_payload(raw)
+    display_id = data.get("id")
+    if not display_id:
+        return None
+    return (
+        db.query(models.Location)
+        .filter(func.lower(models.Location.display_id) == display_id.strip().lower())
+        .filter(models.Location.is_active.is_(True))
+        .first()
+    )
