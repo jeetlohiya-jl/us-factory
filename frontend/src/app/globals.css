@@ -87,6 +87,13 @@ table.data thead th{text-align:left;font-size:10.5px;letter-spacing:.05em;text-t
 table.data tbody td{padding:13px 20px;border-bottom:1px solid var(--rule);font-size:13.5px;vertical-align:middle;}
 table.data tbody tr:last-child td{border-bottom:none;}
 table.data tbody tr:hover{background:rgba(74,122,46,.03);}
+/* Tighter cell padding for tables with enough columns that the default
+   20px horizontal padding pushes the actions column past typical laptop
+   widths, forcing a horizontal scroll to reach it (e.g. Material
+   Consumption's list, once Start/End Time were added as real columns).
+   Opt-in via .compact on the <table> rather than applied to every
+   table.data, since not every list has been checked against this. */
+table.data.compact thead th, table.data.compact tbody td{padding:11px 12px;}
 .mono{font-family:var(--mono);font-size:12.5px;}
 .badge{display:inline-flex;align-items:center;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:.02em;}
 .badge.draft{background:var(--ink-08);color:var(--ink-70);}

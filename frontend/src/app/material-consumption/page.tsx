@@ -149,16 +149,16 @@ export default function MaterialConsumptionPage() {
       {error && <div className="error-banner">{error}</div>}
 
       <div className="card card-flush">
-        <table className="data">
+        <table className="data compact">
           <thead>
             <tr>
               <th>Category</th><th>SKU Code</th><th>SKU Version</th><th>Pallet Numbers</th>
-              <th>Machine Number/Name</th><th>Date</th><th>Start Time</th><th>End Time</th><th>Status</th><th></th>
+              <th>Machine</th><th>Date</th><th>Start – End Time</th><th>Status</th><th></th>
             </tr>
           </thead>
           <tbody>
             {records.length === 0 ? (
-              <tr className="empty-row"><td colSpan={10}>{loading ? "Loading…" : "No Material Consumption records yet."}</td></tr>
+              <tr className="empty-row"><td colSpan={9}>{loading ? "Loading…" : "No Material Consumption records yet."}</td></tr>
             ) : (
               records.map((r) => {
                 const canRecordEnd = perms?.can_edit && r.status === "draft" && !!r.start_time && !r.end_time
@@ -171,21 +171,25 @@ export default function MaterialConsumptionPage() {
                     <td className="mono">{r.pallet_numbers}</td>
                     <td className="mono">{r.machine || "—"}</td>
                     <td>{r.consumption_date}</td>
-                    <td className="mono">{formatTime12h(r.start_time) || "—"}</td>
-                    <td className="mono">{formatTime12h(r.end_time) || "—"}</td>
+                    <td className="mono">
+                      {r.start_time ? formatTime12h(r.start_time) : "—"}
+                      {r.start_time && (r.end_time ? ` – ${formatTime12h(r.end_time)}` : " – …")}
+                    </td>
                     <td><span className={`badge ${r.status === "saved" ? "approved" : "draft"}`}>{r.status === "saved" ? "Saved" : "Draft"}</span></td>
-                    <td style={{ display: "flex", gap: 10, justifyContent: "flex-end", alignItems: "center" }}>
+                    <td style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "flex-end", alignItems: "center" }}>
                       {canRecordEnd && (
-                        <a
-                          className="btn-tertiary" style={{ color: "var(--red)" }}
+                        <button
+                          type="button" className="btn btn-primary"
+                          style={{ padding: "6px 12px", fontSize: 12, whiteSpace: "nowrap" }}
+                          disabled={endingId === r.id}
                           onClick={(e) => handleRecordEndTime(r.id, e)}
                         >
                           {endingId === r.id ? "Recording…" : "Record End Time"}
-                        </a>
+                        </button>
                       )}
-                      <a className="btn-tertiary">View →</a>
+                      <a className="btn-tertiary" style={{ whiteSpace: "nowrap" }}>View →</a>
                       {perms?.can_delete && (
-                        <a className="btn-tertiary" style={{ color: "var(--red)" }} onClick={(e) => handleDelete(r.id, e)}>Delete</a>
+                        <a className="btn-tertiary" style={{ color: "var(--red)", whiteSpace: "nowrap" }} onClick={(e) => handleDelete(r.id, e)}>Delete</a>
                       )}
                     </td>
                   </tr>
