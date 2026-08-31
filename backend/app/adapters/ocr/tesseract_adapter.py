@@ -69,9 +69,15 @@ def _multi_word_candidates(words: list[tuple[str, float]]) -> list[tuple[str, fl
     two. This still finds the plate when noise words are present, since
     a stray misread emblem token is rarely the single highest-confidence
     letters-only word once compared against the plate's own bold, crisp
-    engraved lettering."""
-    letters_words = [(w, c) for w, c in words if len(w) >= 2 and w.isalpha()]
-    digit_words = [(w, c) for w, c in words if len(w) >= 2 and w.isdigit()]
+    engraved lettering.
+
+    Both parts are also length-capped at 6 characters -- plate series
+    codes and plate numbers are always short, so this keeps a long,
+    unrelated but confidently-read word elsewhere in the photo (a
+    stencilled company name, a decal, a slogan painted on the truck bed)
+    from being mistaken for part of the plate."""
+    letters_words = [(w, c) for w, c in words if 2 <= len(w) <= 6 and w.isalpha()]
+    digit_words = [(w, c) for w, c in words if 2 <= len(w) <= 6 and w.isdigit()]
     if not letters_words or not digit_words:
         return []
     best_letters = max(letters_words, key=lambda x: x[1])
@@ -148,7 +154,18 @@ class TesseractOcrAdapter(OcrPort):
         threshold = MIN_CONFIDENCE.get(field_type, 0.5)
 
         if best_value is None:
+            log.warning(
+                "OCR found no identifier-shaped candidate for field_type=%s. "
+                "Words Tesseract actually read (word, confidence): %s",
+                field_type, [(w, round(c, 2)) for w, c in words],
+            )
             return OcrResult(raw_text=raw_text, extracted_value=None, confidence=0.0, status="failed")
         if best_conf < threshold:
+            log.warning(
+                "OCR candidate for field_type=%s below confidence threshold "
+                "(%.2f < %.2f): best_value=%r. All words read: %s",
+                field_type, best_conf, threshold, best_value,
+                [(w, round(c, 2)) for w, c in words],
+            )
             return OcrResult(raw_text=raw_text, extracted_value=best_value, confidence=best_conf, status="low_confidence")
         return OcrResult(raw_text=raw_text, extracted_value=best_value, confidence=best_conf, status="success")
