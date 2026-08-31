@@ -66,7 +66,8 @@ def serialize_mc_list_item(mc: models.MaterialConsumption) -> schemas.MaterialCo
         id=mc.id, consumption_date=mc.consumption_date, category=mc.category,
         sku_code=mc.sku_code_snapshot, sku_version=mc.sku_version_snapshot,
         pallet_numbers=", ".join(p.pallet.display_id for p in primary) or "(none scanned)",
-        machine=mc.machine.code if mc.machine else None, shift=mc.shift, status=mc.status,
+        machine=mc.machine.code if mc.machine else None, shift=mc.shift,
+        start_time=mc.start_time, end_time=mc.end_time, status=mc.status,
     )
 
 

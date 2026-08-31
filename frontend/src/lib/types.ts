@@ -352,6 +352,8 @@ export interface MaterialConsumptionListItem {
   pallet_numbers: string;
   machine: string | null;
   shift: string | null;
+  start_time: string | null;
+  end_time: string | null;
   status: "draft" | "saved";
 }
 

@@ -134,7 +134,7 @@ def scan_pallet(
 ):
     mc = _get_or_404(db, mc_id)
     try:
-        svc.add_primary_pallet(db, mc, body.payload)
+        svc.add_primary_pallet(db, mc, body.payload, client_time=body.client_time)
         db.commit()
     except svc.MaterialConsumptionError as e:
         db.rollback()

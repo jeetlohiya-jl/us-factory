@@ -391,6 +391,12 @@ class MachineUpdateIn(BaseModel):
 
 class MaterialConsumptionScanIn(BaseModel):
     payload: str
+    # Optional "HH:MM" from the scanning device's own clock, used to stamp
+    # start_time atomically with the very first primary-pallet scan (see
+    # add_primary_pallet). Sent by the frontend so the factory workstation's
+    # local time is what's recorded, not the backend server's -- the backend
+    # can run anywhere, the workstation is what's physically at the factory.
+    client_time: Optional[str] = None
 
 
 class MaterialConsumptionSecondaryScanIn(BaseModel):
@@ -433,6 +439,8 @@ class MaterialConsumptionListItemOut(BaseModel):
     pallet_numbers: str  # comma-joined display of primary pallets
     machine: Optional[str]
     shift: Optional[str]
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
     status: str
 
 

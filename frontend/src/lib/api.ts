@@ -262,8 +262,8 @@ export const api = {
   getMaterialConsumption: (id: string) => request<MaterialConsumptionDetail>(`/api/v1/material-consumption/${id}`),
   updateMaterialConsumptionBasic: (id: string, patch: { machine_id?: string; shift?: string; start_time?: string; end_time?: string }) =>
     request<MaterialConsumptionDetail>(`/api/v1/material-consumption/${id}/basic`, { method: "PUT", body: JSON.stringify(patch) }),
-  scanMaterialConsumptionPallet: (id: string, payload: string) =>
-    request<MaterialConsumptionDetail>(`/api/v1/material-consumption/${id}/scan-pallet`, { method: "POST", body: JSON.stringify({ payload }) }),
+  scanMaterialConsumptionPallet: (id: string, payload: string, clientTime?: string) =>
+    request<MaterialConsumptionDetail>(`/api/v1/material-consumption/${id}/scan-pallet`, { method: "POST", body: JSON.stringify({ payload, client_time: clientTime }) }),
   scanMaterialConsumptionSecondary: (id: string, payload: string, category: SecondaryMaterialCategory) =>
     request<MaterialConsumptionDetail>(`/api/v1/material-consumption/${id}/scan-secondary`, { method: "POST", body: JSON.stringify({ payload, category }) }),
   removeMaterialConsumptionPallet: (id: string, rowId: string) =>

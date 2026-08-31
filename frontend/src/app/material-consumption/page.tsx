@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { useMe } from "@/lib/useMe";
 import type { MaterialConsumptionListItem, MaterialConsumptionDetail, Machine } from "@/lib/types";
-import MaterialConsumptionWizard from "@/components/material-consumption/Wizard";
+import MaterialConsumptionWizard, { nowHHMM, formatTime12h } from "@/components/material-consumption/Wizard";
 
 const CATEGORY_LABELS: Record<string, string> = { tray: "Base Tray", fgtray: "FG Non-Padded Tray" };
 
@@ -22,6 +22,7 @@ export default function MaterialConsumptionPage() {
   const [showFilters, setShowFilters] = useState(false);
 
   const [openMc, setOpenMc] = useState<MaterialConsumptionDetail | null>(null);
+  const [endingId, setEndingId] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -74,6 +75,28 @@ export default function MaterialConsumptionPage() {
       refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to delete record");
+    }
+  }
+
+  /**
+   * "Record End Time" -- captures this device's current time as end_time
+   * and saves (finalizes) the record in one click, directly from the list.
+   * Placed here (rather than inside the wizard) so the worker doesn't need
+   * to reopen a record just to close it out -- press this the moment the
+   * shift is actually done, from wherever the record is visible.
+   */
+  async function handleRecordEndTime(id: string, ev: React.MouseEvent) {
+    ev.stopPropagation();
+    setEndingId(id);
+    setError(null);
+    try {
+      await api.updateMaterialConsumptionBasic(id, { end_time: nowHHMM() });
+      await api.finalizeMaterialConsumption(id);
+      refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to record end time");
+    } finally {
+      setEndingId(null);
     }
   }
 
@@ -130,30 +153,44 @@ export default function MaterialConsumptionPage() {
           <thead>
             <tr>
               <th>Category</th><th>SKU Code</th><th>SKU Version</th><th>Pallet Numbers</th>
-              <th>Machine Number/Name</th><th>Date</th><th>Status</th><th></th>
+              <th>Machine Number/Name</th><th>Date</th><th>Start Time</th><th>End Time</th><th>Status</th><th></th>
             </tr>
           </thead>
           <tbody>
             {records.length === 0 ? (
-              <tr className="empty-row"><td colSpan={8}>{loading ? "Loading…" : "No Material Consumption records yet."}</td></tr>
+              <tr className="empty-row"><td colSpan={10}>{loading ? "Loading…" : "No Material Consumption records yet."}</td></tr>
             ) : (
-              records.map((r) => (
-                <tr key={r.id} style={{ cursor: "pointer" }} onClick={() => openRecord(r.id)}>
-                  <td>{r.category ? (CATEGORY_LABELS[r.category] || r.category) : "—"}</td>
-                  <td className="mono">{r.sku_code || "—"}</td>
-                  <td>{r.sku_version || "—"}</td>
-                  <td className="mono">{r.pallet_numbers}</td>
-                  <td className="mono">{r.machine || "—"}</td>
-                  <td>{r.consumption_date}</td>
-                  <td><span className={`badge ${r.status === "saved" ? "approved" : "draft"}`}>{r.status === "saved" ? "Saved" : "Draft"}</span></td>
-                  <td style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-                    <a className="btn-tertiary">View →</a>
-                    {perms?.can_delete && (
-                      <a className="btn-tertiary" style={{ color: "var(--red)" }} onClick={(e) => handleDelete(r.id, e)}>Delete</a>
-                    )}
-                  </td>
-                </tr>
-              ))
+              records.map((r) => {
+                const canRecordEnd = perms?.can_edit && r.status === "draft" && !!r.start_time && !r.end_time
+                  && r.pallet_numbers !== "(none scanned)";
+                return (
+                  <tr key={r.id} style={{ cursor: "pointer" }} onClick={() => openRecord(r.id)}>
+                    <td>{r.category ? (CATEGORY_LABELS[r.category] || r.category) : "—"}</td>
+                    <td className="mono">{r.sku_code || "—"}</td>
+                    <td>{r.sku_version || "—"}</td>
+                    <td className="mono">{r.pallet_numbers}</td>
+                    <td className="mono">{r.machine || "—"}</td>
+                    <td>{r.consumption_date}</td>
+                    <td className="mono">{formatTime12h(r.start_time) || "—"}</td>
+                    <td className="mono">{formatTime12h(r.end_time) || "—"}</td>
+                    <td><span className={`badge ${r.status === "saved" ? "approved" : "draft"}`}>{r.status === "saved" ? "Saved" : "Draft"}</span></td>
+                    <td style={{ display: "flex", gap: 10, justifyContent: "flex-end", alignItems: "center" }}>
+                      {canRecordEnd && (
+                        <a
+                          className="btn-tertiary" style={{ color: "var(--red)" }}
+                          onClick={(e) => handleRecordEndTime(r.id, e)}
+                        >
+                          {endingId === r.id ? "Recording…" : "Record End Time"}
+                        </a>
+                      )}
+                      <a className="btn-tertiary">View →</a>
+                      {perms?.can_delete && (
+                        <a className="btn-tertiary" style={{ color: "var(--red)" }} onClick={(e) => handleDelete(r.id, e)}>Delete</a>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>

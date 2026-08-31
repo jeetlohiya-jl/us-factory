@@ -77,19 +77,11 @@ def _assert_not_already_allocated(db: Session, pallet: models.Pallet, exclude_mc
         )
 
 
-def add_primary_pallet(db: Session, mc: models.MaterialConsumption, raw_scan: str) -> models.MaterialConsumptionPallet:
+def add_primary_pallet(
+    db: Session, mc: models.MaterialConsumption, raw_scan: str, client_time: str | None = None,
+) -> models.MaterialConsumptionPallet:
     if mc.status != "draft":
         raise MaterialConsumptionError("This Material Consumption record has already been saved and cannot be changed.")
-    if not mc.start_time:
-        # start_time is stamped by the frontend's "Start" button (using the
-        # factory workstation's own local clock -- see PUT /basic) rather
-        # than the backend server's clock, since the backend can run
-        # anywhere (this sandbox, a hosted server in a different timezone,
-        # etc.) while the workstation is physically at the US factory. This
-        # server-side check is the enforcement: scanning is refused until
-        # Start has actually been pressed, so this can't be bypassed by
-        # calling the API directly or from a stale frontend build.
-        raise MaterialConsumptionError("Press Start before scanning pallets.")
 
     pallet = _resolve_scanned_pallet(db, raw_scan)
 
@@ -116,15 +108,27 @@ def add_primary_pallet(db: Session, mc: models.MaterialConsumption, raw_scan: st
                 "Pallet cannot be added. SKU Code / Version does not match the pallets already selected for this Material Consumption record."
             )
     else:
-        # First pallet establishes Category + SKU Code + SKU Version for the whole record.
-        # (start_time is no longer auto-stamped here -- see the Start-button
-        # check above; it's always set explicitly via PUT /basic before any
-        # scan can succeed.)
+        # First pallet establishes Category + SKU Code + SKU Version for the
+        # whole record -- and, per the user's explicit direction, this first
+        # scan IS the start of work: stamp start_time right now, atomically
+        # with this same scan, using the scanning device's own clock
+        # (client_time, sent by the frontend) rather than the backend
+        # server's clock -- the workstation is what's physically on the US
+        # factory floor. Falls back to the server's own clock only if the
+        # frontend didn't send one, so a record is never left without a
+        # start_time at all.
         mc.category = pallet.category
         mc.sku_code_id = pallet.sku_code_id
         mc.sku_version_id = pallet.sku_version_id
         mc.sku_code_snapshot = pallet.sku_code_snapshot
         mc.sku_version_snapshot = pallet.sku_version_snapshot
+        if not mc.start_time:
+            if client_time:
+                mc.start_time = client_time
+            else:
+                import datetime as _dt
+                now = _dt.datetime.now()
+                mc.start_time = f"{now.hour:02d}:{now.minute:02d}"
 
     sort_order = len(mc.pallets)
     row = models.MaterialConsumptionPallet(
@@ -139,8 +143,6 @@ def add_primary_pallet(db: Session, mc: models.MaterialConsumption, raw_scan: st
 def add_secondary_pallet(db: Session, mc: models.MaterialConsumption, raw_scan: str, category: str) -> models.MaterialConsumptionPallet:
     if mc.status != "draft":
         raise MaterialConsumptionError("This Material Consumption record has already been saved and cannot be changed.")
-    if not mc.start_time:
-        raise MaterialConsumptionError("Press Start before scanning pallets.")
     if category not in SECONDARY_ROLES:
         raise MaterialConsumptionError(f"Unknown secondary material category '{category}'.")
 
@@ -297,9 +299,9 @@ def finalize(db: Session, mc: models.MaterialConsumption, actor_user_id=None) ->
     if not mc.shift:
         raise MaterialConsumptionError("Select a Shift before saving.")
     if not mc.start_time:
-        raise MaterialConsumptionError("Press Start before saving.")
+        raise MaterialConsumptionError("Start Time is missing -- scan at least one pallet first, it's recorded automatically.")
     if not mc.end_time:
-        raise MaterialConsumptionError("Press End Shift before saving.")
+        raise MaterialConsumptionError("Press \"Record End Time\" on this record from the Material Consumption list before it can be saved.")
 
     for row in mc.pallets:
         db.refresh(row.pallet)
