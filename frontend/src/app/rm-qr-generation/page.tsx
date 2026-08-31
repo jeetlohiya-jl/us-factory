@@ -92,7 +92,7 @@ export default function RmQrGenerationPage() {
             </button>
             <div className={`filter-panel ${filtersOpen ? "open" : ""}`}>
               <div className="f-row"><label>Date</label><input type="date" value={fDate} onChange={(e) => setFDate(e.target.value)} /></div>
-              <div className="f-row"><label>SKU Code</label><input type="text" placeholder="e.g. SKU-3P" value={fSku} onChange={(e) => setFSku(e.target.value)} /></div>
+              <div className="f-row"><label>SKU Name</label><input type="text" placeholder="e.g. SKU-3P" value={fSku} onChange={(e) => setFSku(e.target.value)} /></div>
               <div className="f-actions"><button className="btn-tertiary" onClick={() => { setFDate(""); setFSku(""); }}>Clear all</button></div>
             </div>
           </div>
@@ -104,7 +104,7 @@ export default function RmQrGenerationPage() {
 
       <div className="card card-flush">
         <table className="data">
-          <thead><tr><th>Shipment Number</th><th>SKU Code</th><th>SKU Version</th><th>Quantity</th><th>Status</th><th>Date</th><th></th><th></th></tr></thead>
+          <thead><tr><th>Shipment Number</th><th>SKU Name</th><th>SKU Version</th><th>Quantity</th><th>Status</th><th>Date</th><th></th><th></th></tr></thead>
           <tbody>
             {items.length === 0 ? (
               <tr className="empty-row"><td colSpan={8}>{loading ? "Loading…" : "No records match your search/filters."}</td></tr>

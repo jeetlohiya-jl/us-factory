@@ -41,7 +41,7 @@ export default function LineItemsEditor({
     <div>
       <table className="qc-obs-table">
         <thead>
-          <tr><th>SKU Code</th><th>SKU Version</th><th>Quantity</th><th /></tr>
+          <tr><th>SKU Name</th><th>SKU Version</th><th>Quantity</th><th /></tr>
         </thead>
         <tbody>
           {items.map((item, i) => (

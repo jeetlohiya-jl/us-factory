@@ -206,7 +206,7 @@ export default function Wizard({
               </div>
               {detail.line_item_snapshots.length > 0 && (
                 <table className="qc-obs-table" style={{ marginTop: 14 }}>
-                  <thead><tr><th>SKU Code</th><th>SKU Version</th><th>Quantity</th></tr></thead>
+                  <thead><tr><th>SKU Name</th><th>SKU Version</th><th>Quantity</th></tr></thead>
                   <tbody>
                     {detail.line_item_snapshots.map((li, i) => (
                       <tr key={i}><td>{li.sku_code || "—"}</td><td>{li.sku_version || "—"}</td><td>{li.quantity}</td></tr>
@@ -233,7 +233,7 @@ export default function Wizard({
                 </div>
               </div>
               <div className="form-grid" style={{ marginBottom: 18 }}>
-                <div className="field"><label>SKU Code <span style={{ color: "var(--red)" }}>*</span></label>
+                <div className="field"><label>SKU Name <span style={{ color: "var(--red)" }}>*</span></label>
                   <select disabled={readOnlyBasic} value={skuCodeId} onChange={(e) => { markTouched(setSkuCodeId)(e.target.value); setSkuVersionId(""); }}>
                     <option value="">Select</option>
                     {categorySkus.map((s) => <option key={s.id} value={s.id}>{s.code}</option>)}

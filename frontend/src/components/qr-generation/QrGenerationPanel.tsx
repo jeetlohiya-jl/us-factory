@@ -82,7 +82,7 @@ export default function QrGenerationPanel({
           {error && <div className="error-banner">{error}</div>}
           <div className="form-grid">
             <div className="field"><label>Shipment Number</label><div className="readonly-val mono">{detail.shipment_number || "—"}</div></div>
-            <div className="field"><label>SKU Code</label><div className="readonly-val mono">{detail.sku_code_snapshot || "—"}</div></div>
+            <div className="field"><label>SKU Name</label><div className="readonly-val mono">{detail.sku_code_snapshot || "—"}</div></div>
             <div className="field"><label>SKU Version</label><div className="readonly-val mono">{detail.sku_version_snapshot || "—"}</div></div>
             <div className="field"><label>Quantity (Pallets)</label><div className="readonly-val mono">{detail.quantity}</div></div>
           </div>

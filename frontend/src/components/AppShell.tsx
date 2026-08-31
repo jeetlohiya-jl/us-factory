@@ -63,6 +63,13 @@ const SETUP_NAV_ITEMS = [
       <path d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-6h6v6M9 9h.01M15 9h.01M9 13h.01M15 13h.01" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
     ),
   },
+  {
+    href: "/skus",
+    label: "SKU Names",
+    icon: (
+      <path d="M20.59 13.41L11 3.83A2 2 0 009.59 3.24L4 3a1 1 0 00-1 1l.24 5.59a2 2 0 00.58 1.41l9.59 9.59a2 2 0 002.83 0l4.35-4.35a2 2 0 000-2.83zM7 8a1 1 0 111-1 1 1 0 01-1 1z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+    ),
+  },
 ];
 
 export default function AppShell({ children }: { children: React.ReactNode }) {

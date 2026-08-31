@@ -75,7 +75,7 @@ export default function FgStoragePage() {
 
       <div className="card card-flush">
         <table className="data">
-          <thead><tr><th>Pallet Number</th><th>SKU Code</th><th>Status</th></tr></thead>
+          <thead><tr><th>Pallet Number</th><th>SKU Name</th><th>Status</th></tr></thead>
           <tbody>
             {pending.length === 0 ? (
               <tr className="empty-row"><td colSpan={3}>{loading ? "Loading…" : "No pallets currently pending storage."}</td></tr>
@@ -109,7 +109,7 @@ export default function FgStoragePage() {
       </div>
       <div className="card card-flush">
         <table className="data">
-          <thead><tr><th>Pallet Number</th><th>SKU Code</th><th>Location</th><th>Stored At</th><th></th></tr></thead>
+          <thead><tr><th>Pallet Number</th><th>SKU Name</th><th>Location</th><th>Stored At</th><th></th></tr></thead>
           <tbody>
             {records.length === 0 ? (
               <tr className="empty-row"><td colSpan={5}>No pallets stored yet.</td></tr>

@@ -288,7 +288,7 @@ export default function Wizard({
               </div>
 
               <div className="section-label">SKU Details</div>
-              <LineItemsEditor items={lineItems} skuCodes={skuCodes} disabled={readOnlyStep1} onChange={markTouched(setLineItems)} />
+              <LineItemsEditor items={lineItems} skuCodes={skuCodes.filter((s) => s.category === category)} disabled={readOnlyStep1} onChange={markTouched(setLineItems)} />
 
               <div className="section-label">Photos</div>
               <div className="hint-text" style={{ marginBottom: 14 }}>

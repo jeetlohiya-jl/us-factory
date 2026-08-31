@@ -55,7 +55,7 @@ export default function RecordDetail({ detail, onClose, onEdit, canEdit }: {
                   <Kv label="QC Date" value={new Date(detail.created_at).toLocaleDateString()} />
                   <Kv label="Submitted" value={detail.submitted_at ? new Date(detail.submitted_at).toLocaleString() : "Not yet submitted"} />
                   <Kv label="Recorded By" value={detail.created_by_name} />
-                  {!isTray && <Kv label="SKU Code" value={detail.sku_code} />}
+                  {!isTray && <Kv label="SKU Name" value={detail.sku_code} />}
                   {!isTray && <Kv label="SKU Version" value={detail.sku_version} />}
                 </div>
               </div>
@@ -64,7 +64,7 @@ export default function RecordDetail({ detail, onClose, onEdit, canEdit }: {
                 <div className="detail-card">
                   <h3>SKU / Version / Quantity</h3>
                   <table className="qc-obs-table">
-                    <thead><tr><th>SKU Code</th><th>SKU Version</th><th>Quantity</th></tr></thead>
+                    <thead><tr><th>SKU Name</th><th>SKU Version</th><th>Quantity</th></tr></thead>
                     <tbody>
                       {detail.line_item_snapshots.map((li, i) => (
                         <tr key={i}><td>{li.sku_code || "—"}</td><td>{li.sku_version || "—"}</td><td>{li.quantity}</td></tr>

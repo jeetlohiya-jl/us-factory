@@ -10,18 +10,18 @@ import CameraQrScanner from "./CameraQrScanner";
  * confirm. Nothing is written to the database until Confirm; both scans
  * are re-validated server-side at confirm time (see storage_service.py).
  *
- * Three input methods feed each step, all landing in the same resolve
- * call so the backend only ever trusts the resolved DB record, never the
- * raw scanned text as fact by itself:
- *   1. A handheld barcode/QR scanner gun (keyboard-emulating "HID"
- *      hardware) types into the text field and submits on Enter.
- *   2. Manual typing/paste into the same text field, submitted via the
- *      Scan button.
- *   3. Live camera scanning ("📷 Scan with Camera") via CameraQrScanner,
- *      which decodes a QR code from the device camera (jsQR) and feeds
- *      the exact same payload into the exact same resolve function.
- * This one shared panel is used by both RM Storage and FG Storage, so all
- * three input methods are available on both automatically.
+ * Two input methods feed each step, both landing in the same resolve call
+ * so the backend only ever trusts the resolved DB record, never the raw
+ * scanned text as fact by itself:
+ *   1. The text field: a handheld barcode/QR scanner gun (keyboard-
+ *      emulating "HID" hardware) types into it and submits on Enter, or an
+ *      operator types/pastes the code by hand and presses Enter.
+ *   2. The "📷 Scan" button opens CameraQrScanner, which decodes a QR code
+ *      from the device camera (jsQR) and feeds the exact same payload into
+ *      the exact same resolve function -- there is no separate manual
+ *      "Scan" button, since Enter on the text field already submits.
+ * This one shared panel is used by both RM Storage and FG Storage, so both
+ * input methods are available on both automatically.
  */
 export default function StorageScanPanel({
   title, hintSub, onScanPallet, onScanLocation, onConfirm, onClose,
@@ -137,10 +137,9 @@ export default function StorageScanPanel({
                             value={palletInput} onChange={(e) => setPalletInput(e.target.value)}
                             onKeyDown={(e) => e.key === "Enter" && handleScanPallet()}
                           />
-                          <button className="btn btn-secondary" disabled={busy || !palletInput.trim()} onClick={() => handleScanPallet()}>Scan</button>
                         </div>
-                        <button type="button" className="btn btn-ghost btn-camera-scan" onClick={() => setCameraStep("pallet")}>
-                          📷 Scan with Camera
+                        <button type="button" className="btn btn-secondary btn-camera-scan" onClick={() => setCameraStep("pallet")}>
+                          📷 Scan
                         </button>
                       </>
                     )
@@ -167,10 +166,9 @@ export default function StorageScanPanel({
                               value={locationInput} onChange={(e) => setLocationInput(e.target.value)}
                               onKeyDown={(e) => e.key === "Enter" && handleScanLocation()}
                             />
-                            <button className="btn btn-secondary" disabled={busy || !locationInput.trim()} onClick={() => handleScanLocation()}>Scan</button>
                           </div>
-                          <button type="button" className="btn btn-ghost btn-camera-scan" onClick={() => setCameraStep("location")}>
-                            📷 Scan with Camera
+                          <button type="button" className="btn btn-secondary btn-camera-scan" onClick={() => setCameraStep("location")}>
+                            📷 Scan
                           </button>
                         </>
                       )
@@ -188,7 +186,7 @@ export default function StorageScanPanel({
                     <tbody>
                       <tr><td>Pallet Number</td><td>{pallet.display_id}</td></tr>
                       <tr><td>Shipment Number</td><td>{pallet.shipment_number || "—"}</td></tr>
-                      <tr><td>SKU Code</td><td>{pallet.sku_code}</td></tr>
+                      <tr><td>SKU Name</td><td>{pallet.sku_code}</td></tr>
                       <tr><td>SKU Version</td><td>{pallet.sku_version}</td></tr>
                       <tr><td>Location</td><td>{location.display_id}</td></tr>
                     </tbody>

@@ -114,7 +114,7 @@ export default function FgQrGenerationPage() {
 
       <div className="card card-flush">
         <table className="data">
-          <thead><tr><th>Shipment Number</th><th>SKU Code</th><th>SKU Version</th><th>Quantity</th><th>Status</th><th>Date</th><th></th><th></th></tr></thead>
+          <thead><tr><th>Shipment Number</th><th>SKU Name</th><th>SKU Version</th><th>Quantity</th><th>Status</th><th>Date</th><th></th><th></th></tr></thead>
           <tbody>
             {items.length === 0 ? (
               <tr className="empty-row"><td colSpan={8}>{loading ? "Loading…" : "No records match your search."}</td></tr>

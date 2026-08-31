@@ -4,12 +4,14 @@ export type InspectionStatus = "draft" | "hold" | "approved";
 export interface SkuVersion {
   id: string;
   version: string;
+  is_active: boolean;
 }
 
 export interface SkuCode {
   id: string;
   code: string;
   category: Category;
+  is_active: boolean;
   versions: SkuVersion[];
 }
 

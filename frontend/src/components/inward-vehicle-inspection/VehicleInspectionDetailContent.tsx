@@ -51,7 +51,7 @@ export default function VehicleInspectionDetailContent({ detail }: { detail: Ins
           <div className="hint-text">No SKU entries recorded.</div>
         ) : (
           <table className="qc-obs-table">
-            <thead><tr><th>SKU Code</th><th>SKU Version</th><th>Quantity</th></tr></thead>
+            <thead><tr><th>SKU Name</th><th>SKU Version</th><th>Quantity</th></tr></thead>
             <tbody>
               {detail.line_items.map((li) => (
                 <tr key={li.id}><td>{li.sku_code || "—"}</td><td>{li.sku_version || "—"}</td><td>{li.quantity}</td></tr>

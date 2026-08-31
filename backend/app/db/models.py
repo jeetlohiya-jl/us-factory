@@ -52,7 +52,13 @@ class SkuCode(Base):
     is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
-    versions = relationship("SkuVersion", back_populates="sku_code")
+    # cascade="all, delete-orphan" so deleting a SkuCode via the ORM (see
+    # app/api/skus.py delete_sku) issues real DELETEs for its versions
+    # instead of SQLAlchemy's default of trying to null out each version's
+    # NOT NULL sku_code_id -- which would raise an IntegrityError and make
+    # deleting an otherwise-unreferenced SKU fail every time it has any
+    # versions at all.
+    versions = relationship("SkuVersion", back_populates="sku_code", cascade="all, delete-orphan")
 
 
 class SkuVersion(Base):

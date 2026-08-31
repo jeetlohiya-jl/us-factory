@@ -9,6 +9,7 @@ class SkuVersionOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: uuid.UUID
     version: str
+    is_active: bool = True
 
 
 class SkuCodeOut(BaseModel):
@@ -16,7 +17,27 @@ class SkuCodeOut(BaseModel):
     id: uuid.UUID
     code: str
     category: str
+    is_active: bool = True
     versions: list[SkuVersionOut] = []
+
+
+class SkuCodeIn(BaseModel):
+    category: str
+    code: str
+
+
+class SkuCodeUpdateIn(BaseModel):
+    code: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class SkuVersionIn(BaseModel):
+    version: str
+
+
+class SkuVersionUpdateIn(BaseModel):
+    version: Optional[str] = None
+    is_active: Optional[bool] = None
 
 
 class VendorOut(BaseModel):

@@ -1,6 +1,6 @@
 import { getAuthHeader } from "./session";
 import type {
-  InspectionDetail, InspectionListItem, SkuCode, ChecklistItemRef, MeResponse, Category, ImageType,
+  InspectionDetail, InspectionListItem, SkuCode, SkuVersion, ChecklistItemRef, MeResponse, Category, ImageType,
   QcMeta, QcListItem, QcDetail, QcManualCategory,
   Pallet, QrGenerationListItem, QrGenerationDetail, StorageRecordDetail, LocationRef, ProductionRun,
   Vendor,
@@ -42,7 +42,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   me: () => request<MeResponse>("/api/v1/me"),
-  skuCodes: () => request<SkuCode[]>("/api/v1/reference/sku-codes"),
+  skuCodes: (category?: string) =>
+    request<SkuCode[]>(`/api/v1/reference/sku-codes${category ? `?category=${category}` : ""}`),
   checklistItems: () => request<ChecklistItemRef[]>("/api/v1/reference/checklist-items"),
 
   vendors: (params?: { category?: string; includeInactive?: boolean }) => {
@@ -52,6 +53,25 @@ export const api = {
     const suffix = qs.toString() ? `?${qs.toString()}` : "";
     return request<Vendor[]>(`/api/v1/vendors${suffix}`);
   },
+
+  skus: (params?: { category?: string; includeInactive?: boolean }) => {
+    const qs = new URLSearchParams();
+    if (params?.category) qs.set("category", params.category);
+    if (params?.includeInactive) qs.set("include_inactive", "true");
+    const suffix = qs.toString() ? `?${qs.toString()}` : "";
+    return request<SkuCode[]>(`/api/v1/skus${suffix}`);
+  },
+  createSku: (category: string, code: string) =>
+    request<SkuCode>("/api/v1/skus", { method: "POST", body: JSON.stringify({ category, code }) }),
+  updateSku: (id: string, patch: { code?: string; is_active?: boolean }) =>
+    request<SkuCode>(`/api/v1/skus/${id}`, { method: "PUT", body: JSON.stringify(patch) }),
+  deleteSku: (id: string) => request<void>(`/api/v1/skus/${id}`, { method: "DELETE" }),
+  addSkuVersion: (skuId: string, version: string) =>
+    request<SkuCode>(`/api/v1/skus/${skuId}/versions`, { method: "POST", body: JSON.stringify({ version }) }),
+  updateSkuVersion: (versionId: string, patch: { version?: string; is_active?: boolean }) =>
+    request<SkuVersion>(`/api/v1/skus/versions/${versionId}`, { method: "PUT", body: JSON.stringify(patch) }),
+  deleteSkuVersion: (versionId: string) =>
+    request<void>(`/api/v1/skus/versions/${versionId}`, { method: "DELETE" }),
   createVendor: (category: Category, name: string) =>
     request<Vendor>("/api/v1/vendors", { method: "POST", body: JSON.stringify({ category, name }) }),
   updateVendor: (id: string, patch: { name?: string; is_active?: boolean }) =>
