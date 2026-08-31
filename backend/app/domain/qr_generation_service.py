@@ -10,6 +10,7 @@ behaviour: one source record -> one QR batch (find-or-create, never
 duplicated), and generating a batch creates N individually-numbered
 pallets that immediately enter pending_storage.
 """
+import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
@@ -22,6 +23,29 @@ class QrGenerationError(Exception):
     pass
 
 
+def _resolve_qc_sku(qc: models.InwardQcRecord) -> tuple[str | None, str | None, uuid.UUID | None, uuid.UUID | None]:
+    """
+    Manual QC categories (Glue, Soaker Pad, Polybag, CFB) carry their single
+    SKU directly on the InwardQcRecord row (sku_code_id/sku_code_snapshot).
+    Tray / FG Non-Padded Tray QC — auto-created from an approved Vehicle
+    Inspection, which can list multiple SKU line items — carries its SKU(s)
+    in the separate line_item_snapshots table instead; the top-level columns
+    are never populated for that category. Fall back to the first line-item
+    snapshot (sort_order 0) when the top-level fields are empty, so RM QR
+    Generation shows real data for Tray-sourced batches instead of "-".
+    """
+    if qc.sku_code_snapshot or qc.sku_code_id:
+        sku_code = qc.sku_code_snapshot or (qc.sku_code.code if qc.sku_code else None)
+        sku_version = qc.sku_version_snapshot or (qc.sku_version.version if qc.sku_version else None)
+        return sku_code, sku_version, qc.sku_code_id, qc.sku_version_id
+    if qc.line_item_snapshots:
+        li = qc.line_item_snapshots[0]
+        sku_code = li.sku_code_snapshot or (li.sku_code.code if li.sku_code else None)
+        sku_version = li.sku_version_snapshot or (li.sku_version.version if li.sku_version else None)
+        return sku_code, sku_version, li.sku_code_id, li.sku_version_id
+    return None, None, None, None
+
+
 def get_or_create_rm_qr_for_qc(db: Session, qc: models.InwardQcRecord) -> models.QrGenerationRecord:
     """
     Called the moment an Inward QC is Accepted. Idempotent — the partial
@@ -29,17 +53,30 @@ def get_or_create_rm_qr_for_qc(db: Session, qc: models.InwardQcRecord) -> models
     duplicate batch; this find-first is what makes repeat calls a no-op
     rather than raising.
     """
+    sku_code, sku_version, sku_code_id, sku_version_id = _resolve_qc_sku(qc)
+    quantity = int(qc.quantity or 0)
+
     existing = (
         db.query(models.QrGenerationRecord)
         .filter(models.QrGenerationRecord.source_inward_qc_id == qc.id)
         .first()
     )
     if existing:
+        # Only a still-pending (not yet generated) batch may be refreshed —
+        # once pallets/QR codes exist the batch's data must never drift, per
+        # "no data duplication that can drift". This lets a correction made
+        # to the source QC/Vehicle Inspection *before* Generate QR is clicked
+        # actually reach the batch, instead of being silently stuck with
+        # whatever was true the instant the QC was first approved.
+        if existing.status == "pending":
+            existing.shipment_number = qc.shipment_number
+            existing.sku_code_id = sku_code_id
+            existing.sku_version_id = sku_version_id
+            existing.sku_code_snapshot = sku_code
+            existing.sku_version_snapshot = sku_version
+            existing.quantity = quantity
+            db.flush()
         return existing
-
-    sku_code = qc.sku_code_snapshot or (qc.sku_code.code if qc.sku_code else None)
-    sku_version = qc.sku_version_snapshot or (qc.sku_version.version if qc.sku_version else None)
-    quantity = int(qc.quantity or 0)
 
     rec = models.QrGenerationRecord(
         batch_display_id=pallet_service.next_batch_display_id(db, "rm"),
@@ -47,8 +84,8 @@ def get_or_create_rm_qr_for_qc(db: Session, qc: models.InwardQcRecord) -> models
         category=qc.category,
         source_inward_qc_id=qc.id,
         shipment_number=qc.shipment_number,
-        sku_code_id=qc.sku_code_id,
-        sku_version_id=qc.sku_version_id,
+        sku_code_id=sku_code_id,
+        sku_version_id=sku_version_id,
         sku_code_snapshot=sku_code,
         sku_version_snapshot=sku_version,
         quantity=quantity,
