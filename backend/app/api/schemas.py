@@ -108,6 +108,7 @@ class InspectionDetailOut(BaseModel):
     images: list[ImageOut]
     checklist_answers: list[ChecklistAnswerOut]
     linked_qc_id: Optional[uuid.UUID] = None
+    linked_qc_shipment_number: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------

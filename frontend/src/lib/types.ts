@@ -77,6 +77,7 @@ export interface InspectionDetail {
   images: InspectionImage[];
   checklist_answers: ChecklistAnswer[];
   linked_qc_id: string | null;
+  linked_qc_shipment_number: string | null;
 }
 
 export interface Permissions {

@@ -62,6 +62,7 @@ def _serialize_detail(db: Session, inspection: models.InwardVehicleInspection) -
         images=[schemas.ImageOut.model_validate(img) for img in inspection.images],
         checklist_answers=checklist_out,
         linked_qc_id=linked_qc.id if linked_qc else None,
+        linked_qc_shipment_number=linked_qc.shipment_number if linked_qc else None,
     ).model_dump()
 
 

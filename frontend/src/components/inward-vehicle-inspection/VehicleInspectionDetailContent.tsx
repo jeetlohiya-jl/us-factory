@@ -86,11 +86,6 @@ export default function VehicleInspectionDetailContent({ detail }: { detail: Ins
             </div>
           ))
         )}
-        {detail.status === "approved" && (
-          <div style={{ marginTop: 14 }}>
-            <Kv label="Inspection Passed Quantity" value={detail.inspection_passed_quantity} />
-          </div>
-        )}
       </div>
 
       <div className="detail-card">
@@ -119,7 +114,10 @@ export default function VehicleInspectionDetailContent({ detail }: { detail: Ins
         <Kv label="Other Remarks" value={detail.remarks || "No remarks"} />
         {detail.linked_qc_id && (
           <div style={{ marginTop: 14 }}>
-            <Kv label="Linked Inward QC" value={`Auto-created (${detail.linked_qc_id.slice(0, 8)}…)`} />
+            <Kv
+              label="Linked Inward QC"
+              value={`Auto-created — Shipment ${detail.linked_qc_shipment_number || detail.shipment_number}`}
+            />
           </div>
         )}
       </div>

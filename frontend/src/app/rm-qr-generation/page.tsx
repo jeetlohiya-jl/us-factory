@@ -4,6 +4,7 @@ import { api } from "@/lib/api";
 import type { QrGenerationDetail, QrGenerationListItem, MeResponse } from "@/lib/types";
 import QrGenerationPanel from "@/components/qr-generation/QrGenerationPanel";
 import ConfirmDialog from "@/components/inward-vehicle-inspection/ConfirmDialog";
+import MoreMenu from "@/components/inward-vehicle-inspection/MoreMenu";
 
 export default function RmQrGenerationPage() {
   const [me, setMe] = useState<MeResponse | null>(null);
@@ -109,10 +110,10 @@ export default function RmQrGenerationPage() {
 
       <div className="card card-flush">
         <table className="data">
-          <thead><tr><th>Shipment Number</th><th>SKU Code</th><th>SKU Version</th><th>Quantity</th><th>Status</th><th>Date</th><th></th></tr></thead>
+          <thead><tr><th>Shipment Number</th><th>SKU Code</th><th>SKU Version</th><th>Quantity</th><th>Status</th><th>Date</th><th></th><th></th></tr></thead>
           <tbody>
             {items.length === 0 ? (
-              <tr className="empty-row"><td colSpan={7}>{loading ? "Loading…" : "No records match your search/filters."}</td></tr>
+              <tr className="empty-row"><td colSpan={8}>{loading ? "Loading…" : "No records match your search/filters."}</td></tr>
             ) : (
               items.map((r) => (
                 <tr key={r.id} className={r.status === "pending" ? "row-pending" : ""}>
@@ -126,10 +127,9 @@ export default function RmQrGenerationPage() {
                     <a className="btn-tertiary" style={{ cursor: "pointer" }} onClick={() => openRecord(r.id)}>
                       {r.status === "generated" ? "View →" : "Generate QR →"}
                     </a>
-                    {" "}
-                    {perms?.can_delete && (
-                      <a className="btn-tertiary" style={{ cursor: "pointer", color: "var(--red)" }} onClick={() => setDeleteTarget(r)}>Delete</a>
-                    )}
+                  </td>
+                  <td onClick={(e) => e.stopPropagation()}>
+                    <MoreMenu canDelete={!!perms?.can_delete} onDelete={() => setDeleteTarget(r)} />
                   </td>
                 </tr>
               ))

@@ -10,3 +10,4 @@ pillow
 qrcode
 python-jose
 passlib
+supabase

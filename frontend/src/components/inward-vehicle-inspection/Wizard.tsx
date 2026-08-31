@@ -39,7 +39,6 @@ export default function Wizard({
   const [transporter, setTransporter] = useState(initialDetail.transporter_name || "");
   const [seal, setSeal] = useState(initialDetail.seal_number || "");
   const [remarks, setRemarks] = useState(initialDetail.remarks || "");
-  const [passedQty, setPassedQty] = useState(initialDetail.inspection_passed_quantity || "");
   const [lineItems, setLineItems] = useState<EditableLineItem[]>(toLineItems(initialDetail));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -66,7 +65,6 @@ export default function Wizard({
       transporter_name: transporter,
       seal_number: seal,
       remarks,
-      inspection_passed_quantity: passedQty,
       line_items: lineItems
         .filter((li) => li.sku_code_id && li.quantity)
         .map((li) => ({ sku_code_id: li.sku_code_id, sku_version_id: li.sku_version_id || null, quantity: parseFloat(li.quantity) || 0 })),
@@ -92,7 +90,7 @@ export default function Wizard({
     saveTimer.current = setTimeout(() => { persistBasic(); }, 900);
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [category, shipmentNumber, truck, container, vendor, invoice, transporter, seal, remarks, passedQty, lineItems, touched]);
+  }, [category, shipmentNumber, truck, container, vendor, invoice, transporter, seal, remarks, lineItems, touched]);
 
   function markTouched<T>(setter: (v: T) => void) {
     return (v: T) => { setTouched(true); setter(v); };
@@ -136,16 +134,12 @@ export default function Wizard({
   }
 
   const complete = detail.checklist_answers.length > 0 && detail.checklist_answers.every((a) => a.answer === "ok" || a.answer === "not_ok");
-  const hasNotOk = detail.checklist_answers.some((a) => a.answer === "not_ok");
 
   async function handleSubmit() {
     setSaving(true);
     setError(null);
     try {
       await persistBasic();
-      if (!hasNotOk) {
-        await api.updateInspection(inspectionId, { inspection_passed_quantity: passedQty });
-      }
       const updated = await api.submit(inspectionId);
       setDetail(updated);
       onSaved();
@@ -258,12 +252,6 @@ export default function Wizard({
           {step === 2 && (
             <div>
               <ChecklistStep answers={detail.checklist_answers} onSetAnswer={handleSetAnswer} disabled={!canFillSection} />
-              {complete && !hasNotOk && (
-                <div className="field" style={{ marginTop: 16 }}>
-                  <label>Inspection Passed Quantity</label>
-                  <input value={passedQty} placeholder="e.g. 40 pallets" onChange={(e) => markTouched(setPassedQty)(e.target.value)} />
-                </div>
-              )}
               <div className="field" style={{ marginTop: 16 }}>
                 <label>Other Remarks (if any)</label>
                 <textarea rows={2} value={remarks} placeholder="No remarks" onChange={(e) => markTouched(setRemarks)(e.target.value)} />
