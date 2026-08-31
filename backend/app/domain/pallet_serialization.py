@@ -25,7 +25,8 @@ def serialize_qr_list_item(rec: models.QrGenerationRecord) -> schemas.QrGenerati
     return schemas.QrGenerationListItemOut(
         id=rec.id, batch_display_id=rec.batch_display_id, qr_type=rec.qr_type,
         shipment_number=rec.shipment_number, sku_code_snapshot=rec.sku_code_snapshot,
-        sku_version_snapshot=rec.sku_version_snapshot, quantity=rec.quantity, status=rec.status,
+        sku_version_snapshot=rec.sku_version_snapshot, country_code=rec.country_code,
+        quantity=rec.quantity, status=rec.status,
         created_at=rec.created_at.isoformat(),
     )
 
@@ -39,7 +40,8 @@ def serialize_qr_detail(rec: models.QrGenerationRecord) -> schemas.QrGenerationD
     return schemas.QrGenerationDetailOut(
         id=rec.id, batch_display_id=rec.batch_display_id, qr_type=rec.qr_type, category=rec.category,
         shipment_number=rec.shipment_number, sku_code_snapshot=rec.sku_code_snapshot,
-        sku_version_snapshot=rec.sku_version_snapshot, quantity=rec.quantity, status=rec.status,
+        sku_version_snapshot=rec.sku_version_snapshot, country_code=rec.country_code,
+        quantity=rec.quantity, status=rec.status,
         created_at=rec.created_at.isoformat(),
         generated_at=rec.generated_at.isoformat() if rec.generated_at else None,
         source_locked=bool(rec.source_inward_qc_id or rec.source_production_run_id),

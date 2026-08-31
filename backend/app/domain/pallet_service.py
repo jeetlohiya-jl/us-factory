@@ -2,17 +2,20 @@
 Shared domain logic for RM + FG QR Generation and RM + FG Storage.
 
 Source of truth for naming/numbering/workflow is the HTML prototype:
-  - RM_QR_PREFIX category->prefix map
-  - "<prefix>-<yymm>-<seq4>" pallet numbering (US-PLT-2608-0091, ...)
+  - CATEGORY_SUFFIX category->suffix map (what's on the pallet)
+  - "<country>-<suffix>-<yymm>-<seq4>" pallet numbering (US-PLT-2608-0091,
+    CN-PLT-2608-0001, ...) — the country identifies where the pallet was
+    packed: the RM vendor's country for an RM pallet, always "US" for FG
+    (see prefix_for_category)
   - "RMQR-<seq4>" / "FGQR-<seq4>" QR-batch numbering
   - one accepted QC (or, for FG, one approved Production Run) -> one QR
     batch -> N individually numbered pallets
   - generated pallets automatically enter "pending_storage"
 
 Deviation from the prototype's markup (per the task's explicit override for
-this implementation): RM and FG pallets share the same display-id
-namespace/prefix — pallet_type is what distinguishes an RM pallet from an FG
-one, rather than a separate "US-FG-PLT" prefix.
+this implementation): RM and FG pallets of the same country+category share
+one display-id namespace/prefix — pallet_type is what distinguishes an RM
+pallet from an FG one, rather than a separate "US-FG-PLT" prefix.
 
 Each pallet and each location is backed by a real QR PNG (via the `qrcode`
 package) encoding a small JSON payload — the pallet/location's immutable
@@ -32,14 +35,33 @@ from sqlalchemy.orm import Session
 from app.db import models
 from app.adapters.storage.factory import get_storage_adapter
 
-RM_QR_PREFIX = {
-    "tray": "US-PLT", "fgtray": "US-PLT", "pad": "US-PAD",
-    "polybag": "US-PB", "cfb": "US-CFB", "glue": "US-GLUE",
+
+# Category -> the part of the pallet-number prefix that identifies WHAT is
+# on the pallet. The other part -- WHERE it was packed -- used to be
+# hardcoded "US" for every pallet; it's now the 2-letter country the pallet
+# was actually packed in (see prefix_for_category below).
+CATEGORY_SUFFIX = {
+    "tray": "PLT", "fgtray": "PLT", "pad": "PAD",
+    "polybag": "PB", "cfb": "CFB", "glue": "GLUE",
 }
 
 
-def prefix_for_category(category: str | None) -> str:
-    return RM_QR_PREFIX.get(category or "", "US-PLT")
+def prefix_for_category(category: str | None, country_code: str | None = None) -> str:
+    """
+    A pallet's display_id prefix identifies both what's on it and where it
+    was packed: "<country>-<category suffix>", e.g. "CN-PLT" for a Tray
+    pallet packed at a China vendor, "US-GLUE" for Glue packed here.
+    country_code is the vendor's country for an RM pallet (resolved from the
+    Inward QC's vendor at batch-creation time -- see
+    qr_generation_service.get_or_create_rm_qr_for_qc) or always "US" for an
+    FG pallet, since finished goods are packed at this US factory regardless
+    of where any RM component shipped from. Defaults to "US" when unknown
+    (a legacy vendor with no country on file) rather than failing the whole
+    batch over missing master data.
+    """
+    suffix = CATEGORY_SUFFIX.get(category or "", "PLT")
+    country = (country_code or "US").strip().upper()
+    return f"{country}-{suffix}"
 
 
 def next_batch_display_id(db: Session, qr_type: str) -> str:
@@ -48,13 +70,15 @@ def next_batch_display_id(db: Session, qr_type: str) -> str:
     return f"{prefix}-{str(count + 1).zfill(4)}"
 
 
-def next_pallet_display_id(db: Session, category: str | None) -> str:
+def next_pallet_display_id(db: Session, category: str | None, country_code: str | None = None) -> str:
     """
     RM and FG pallets intentionally share one namespace per prefix (see
-    module docstring) — the count is over ALL pallets with that prefix,
-    regardless of pallet_type.
+    module docstring) — the count is over ALL pallets with that exact
+    country+category prefix, regardless of pallet_type. A different country
+    naturally starts its own sequence from 0001, since it's a different
+    prefix string.
     """
-    prefix = prefix_for_category(category)
+    prefix = prefix_for_category(category, country_code)
     yymm = datetime.now(timezone.utc).strftime("%y%m")
     count = (
         db.query(models.Pallet)

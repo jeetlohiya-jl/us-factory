@@ -104,16 +104,17 @@ export default function RmQrGenerationPage() {
 
       <div className="card card-flush">
         <table className="data">
-          <thead><tr><th>Shipment Number</th><th>SKU Name</th><th>SKU Version</th><th>Quantity</th><th>Status</th><th>Date</th><th></th><th></th></tr></thead>
+          <thead><tr><th>Shipment Number</th><th>SKU Name</th><th>SKU Version</th><th>Country</th><th>Quantity</th><th>Status</th><th>Date</th><th></th><th></th></tr></thead>
           <tbody>
             {items.length === 0 ? (
-              <tr className="empty-row"><td colSpan={8}>{loading ? "Loading…" : "No records match your search/filters."}</td></tr>
+              <tr className="empty-row"><td colSpan={9}>{loading ? "Loading…" : "No records match your search/filters."}</td></tr>
             ) : (
               items.map((r) => (
                 <tr key={r.id} className={r.status === "pending" ? "row-pending" : ""}>
                   <td className="mono">{r.shipment_number}</td>
                   <td className="mono">{r.sku_code_snapshot}</td>
                   <td>{r.sku_version_snapshot}</td>
+                  <td className="mono">{r.country_code || "—"}</td>
                   <td>{r.quantity}</td>
                   <td><span className={`badge ${r.status === "generated" ? "generated" : "pending"}`}>{r.status}</span></td>
                   <td>{new Date(r.created_at).toLocaleDateString()}</td>

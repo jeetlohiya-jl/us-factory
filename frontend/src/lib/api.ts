@@ -72,9 +72,9 @@ export const api = {
     request<SkuVersion>(`/api/v1/skus/versions/${versionId}`, { method: "PUT", body: JSON.stringify(patch) }),
   deleteSkuVersion: (versionId: string) =>
     request<void>(`/api/v1/skus/versions/${versionId}`, { method: "DELETE" }),
-  createVendor: (category: Category, name: string) =>
-    request<Vendor>("/api/v1/vendors", { method: "POST", body: JSON.stringify({ category, name }) }),
-  updateVendor: (id: string, patch: { name?: string; is_active?: boolean }) =>
+  createVendor: (category: Category, name: string, country: string) =>
+    request<Vendor>("/api/v1/vendors", { method: "POST", body: JSON.stringify({ category, name, country }) }),
+  updateVendor: (id: string, patch: { name?: string; country?: string; is_active?: boolean }) =>
     request<Vendor>(`/api/v1/vendors/${id}`, { method: "PUT", body: JSON.stringify(patch) }),
   deleteVendor: (id: string) =>
     request<void>(`/api/v1/vendors/${id}`, { method: "DELETE" }),

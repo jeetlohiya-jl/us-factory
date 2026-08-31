@@ -83,6 +83,10 @@ class Vendor(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
     category = Column(Text, nullable=False)
     name = Column(Text, nullable=False)
+    # 2-letter country code (e.g. "CN", "US") -- the country this vendor
+    # ships/packs from. Drives the country prefix on RM pallet display_ids
+    # generated from this vendor's Inward QC (see qr_generation_service).
+    country = Column(Text, nullable=True)
     is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
@@ -411,6 +415,12 @@ class QrGenerationRecord(Base):
     sku_version_id = Column(UUID(as_uuid=True), ForeignKey("sku_versions.id"), nullable=True)
     sku_code_snapshot = Column(Text, nullable=True)
     sku_version_snapshot = Column(Text, nullable=True)
+    # Snapshotted at batch-creation time (see qr_generation_service), same
+    # reasoning as sku_code_snapshot: the country that determines this
+    # batch's pallet-number prefix must never drift if the vendor's own
+    # country is edited later. Always "US" for FG batches -- finished goods
+    # are packed at this US factory regardless of any RM vendor upstream.
+    country_code = Column(Text, nullable=True)
     quantity = Column(Integer, nullable=False, default=0)
     status = Column(Text, nullable=False, default="pending")  # 'pending' | 'generated'
     created_by = Column(UUID(as_uuid=True), ForeignKey("app_users.id"), nullable=True)

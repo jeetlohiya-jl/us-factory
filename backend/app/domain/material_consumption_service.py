@@ -8,8 +8,8 @@ RM/FG Storage scan-then-resolve-server-side pattern in storage_service.py.
 
 Primary categories consumed into production: 'tray' (Base Tray) and
 'fgtray' (FG Non-Padded Tray) -- the same two RM categories the rest of the
-app already treats as tray variants (see pallet_service.RM_QR_PREFIX, where
-both map to the US-PLT prefix). Pad / Polybag / CFB / Glue are the
+app already treats as tray variants (see pallet_service.CATEGORY_SUFFIX,
+where both map to the "PLT" suffix). Pad / Polybag / CFB / Glue are the
 *secondary* materials for a Material Consumption record even though they
 are ordinary RM pallets of their own, generated and stored exactly the same
 way -- so secondary materials are scanned and validated through this same

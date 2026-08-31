@@ -45,16 +45,19 @@ class VendorOut(BaseModel):
     id: uuid.UUID
     category: str
     name: str
+    country: Optional[str] = None
     is_active: bool
 
 
 class VendorIn(BaseModel):
     category: str
     name: str
+    country: str
 
 
 class VendorUpdateIn(BaseModel):
     name: Optional[str] = None
+    country: Optional[str] = None
     is_active: Optional[bool] = None
 
 
@@ -297,6 +300,7 @@ class QrGenerationListItemOut(BaseModel):
     shipment_number: Optional[str]
     sku_code_snapshot: Optional[str]
     sku_version_snapshot: Optional[str]
+    country_code: Optional[str] = None
     quantity: int
     status: str
     created_at: str
@@ -310,6 +314,7 @@ class QrGenerationDetailOut(BaseModel):
     shipment_number: Optional[str]
     sku_code_snapshot: Optional[str]
     sku_version_snapshot: Optional[str]
+    country_code: Optional[str] = None
     quantity: int
     status: str
     created_at: str

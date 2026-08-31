@@ -38,6 +38,7 @@ export default function Wizard({
   const [vendorOptions, setVendorOptions] = useState<Vendor[]>([]);
   const [addingVendor, setAddingVendor] = useState(false);
   const [newVendorName, setNewVendorName] = useState("");
+  const [newVendorCountry, setNewVendorCountry] = useState("");
   const [vendorError, setVendorError] = useState<string | null>(null);
   const [invoice, setInvoice] = useState(initialDetail.invoice_number || "");
   const [transporter, setTransporter] = useState(initialDetail.transporter_name || "");
@@ -111,14 +112,19 @@ export default function Wizard({
 
   async function handleAddVendor() {
     const name = newVendorName.trim();
-    if (!name) return;
+    const country = newVendorCountry.trim();
+    if (!name || country.length !== 2) {
+      setVendorError("Vendor name and a 2-letter country code (e.g. US, CN) are both required.");
+      return;
+    }
     setVendorError(null);
     try {
-      const created = await api.createVendor(category, name);
+      const created = await api.createVendor(category, name, country);
       setVendorOptions((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
       markTouched(setVendor)(created.name);
       setAddingVendor(false);
       setNewVendorName("");
+      setNewVendorCountry("");
     } catch (e) {
       setVendorError(e instanceof Error ? e.message : "Could not add vendor.");
     }
@@ -249,6 +255,12 @@ export default function Wizard({
                       <input
                         autoFocus value={newVendorName} placeholder="New vendor name"
                         onChange={(e) => setNewVendorName(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && handleAddVendor()}
+                      />
+                      <input
+                        value={newVendorCountry} placeholder="Country" maxLength={2}
+                        style={{ width: 60, textTransform: "uppercase" }}
+                        onChange={(e) => setNewVendorCountry(e.target.value.toUpperCase())}
                         onKeyDown={(e) => e.key === "Enter" && handleAddVendor()}
                       />
                       <button type="button" className="btn-tertiary" onClick={handleAddVendor}>Add</button>

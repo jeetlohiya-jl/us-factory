@@ -19,6 +19,7 @@ export interface Vendor {
   id: string;
   category: Category;
   name: string;
+  country: string | null;
   is_active: boolean;
 }
 
@@ -267,6 +268,7 @@ export interface QrGenerationListItem {
   shipment_number: string | null;
   sku_code_snapshot: string | null;
   sku_version_snapshot: string | null;
+  country_code: string | null;
   quantity: number;
   status: "pending" | "generated";
   created_at: string;

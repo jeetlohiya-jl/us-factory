@@ -29,7 +29,10 @@ export default function VendorsPage() {
   const [error, setError] = useState<string | null>(null);
   const [category, setCategory] = useState<Category>("pad");
   const [newName, setNewName] = useState("");
+  const [newCountry, setNewCountry] = useState("");
   const [showInactive, setShowInactive] = useState(false);
+  const [editingCountryId, setEditingCountryId] = useState<string | null>(null);
+  const [editingCountryValue, setEditingCountryValue] = useState("");
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -47,14 +50,29 @@ export default function VendorsPage() {
 
   async function handleAdd() {
     const name = newName.trim();
-    if (!name) return;
+    const country = newCountry.trim();
+    if (!name || country.length !== 2) return;
     setError(null);
     try {
-      await api.createVendor(category, name);
+      await api.createVendor(category, name, country);
       setNewName("");
+      setNewCountry("");
       refresh();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Failed to add vendor");
+    }
+  }
+
+  async function handleSaveCountry(v: Vendor) {
+    const country = editingCountryValue.trim();
+    if (country.length !== 2) return;
+    setError(null);
+    try {
+      await api.updateVendor(v.id, { country });
+      setEditingCountryId(null);
+      refresh();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Failed to update country");
     }
   }
 
@@ -85,7 +103,11 @@ export default function VendorsPage() {
       <div className="page-head2">
         <div>
           <h1>Vendors</h1>
-          <div className="desc">Manages the per-category vendor list used by the Vendor Name dropdown on Inward Vehicle Inspection.</div>
+          <div className="desc">
+            Manages the per-category vendor list used by the Vendor Name dropdown on Inward Vehicle Inspection.
+            A vendor&apos;s Country sets the country prefix on every RM pallet number generated from its shipments
+            (e.g. a China vendor produces CN-PLT-... pallet numbers).
+          </div>
         </div>
       </div>
 
@@ -109,7 +131,16 @@ export default function VendorsPage() {
                 onKeyDown={(e) => e.key === "Enter" && handleAdd()}
               />
             </div>
-            <button className="btn btn-primary" disabled={!newName.trim()} onClick={handleAdd}>+ Add Vendor</button>
+            <div className="field" style={{ maxWidth: 120 }}>
+              <label>Country</label>
+              <input
+                value={newCountry} placeholder="e.g. CN" maxLength={2}
+                style={{ textTransform: "uppercase" }}
+                onChange={(e) => setNewCountry(e.target.value.toUpperCase())}
+                onKeyDown={(e) => e.key === "Enter" && handleAdd()}
+              />
+            </div>
+            <button className="btn btn-primary" disabled={!newName.trim() || newCountry.trim().length !== 2} onClick={handleAdd}>+ Add Vendor</button>
           </div>
         </div>
       )}
@@ -124,15 +155,36 @@ export default function VendorsPage() {
 
       <div className="card card-flush">
         <table className="data">
-          <thead><tr><th>Category</th><th>Vendor Name</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>Category</th><th>Vendor Name</th><th>Country</th><th>Status</th><th></th></tr></thead>
           <tbody>
             {visible.length === 0 ? (
-              <tr className="empty-row"><td colSpan={4}>{loading ? "Loading…" : "No vendors yet — add one above."}</td></tr>
+              <tr className="empty-row"><td colSpan={5}>{loading ? "Loading…" : "No vendors yet — add one above."}</td></tr>
             ) : (
               visible.map((v) => (
                 <tr key={v.id}>
                   <td>{CATEGORY_LABELS[v.category] || v.category}</td>
                   <td className="mono">{v.name}</td>
+                  <td className="mono">
+                    {editingCountryId === v.id ? (
+                      <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                        <input
+                          autoFocus value={editingCountryValue} maxLength={2}
+                          style={{ width: 48, textTransform: "uppercase" }}
+                          onChange={(e) => setEditingCountryValue(e.target.value.toUpperCase())}
+                          onKeyDown={(e) => e.key === "Enter" && handleSaveCountry(v)}
+                        />
+                        <a className="btn-tertiary" style={{ cursor: "pointer" }} onClick={() => handleSaveCountry(v)}>Save</a>
+                        <a className="btn-tertiary" style={{ cursor: "pointer" }} onClick={() => setEditingCountryId(null)}>Cancel</a>
+                      </span>
+                    ) : (
+                      <a
+                        style={{ cursor: canEdit ? "pointer" : "default", textDecoration: canEdit ? "underline" : "none" }}
+                        onClick={() => { if (canEdit) { setEditingCountryId(v.id); setEditingCountryValue(v.country || ""); } }}
+                      >
+                        {v.country || "—"}
+                      </a>
+                    )}
+                  </td>
                   <td><span className={`badge ${v.is_active ? "accepted" : "draft"}`}>{v.is_active ? "Active" : "Inactive"}</span></td>
                   <td style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
                     {canEdit && (

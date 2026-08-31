@@ -84,6 +84,7 @@ export default function QrGenerationPanel({
             <div className="field"><label>Shipment Number</label><div className="readonly-val mono">{detail.shipment_number || "—"}</div></div>
             <div className="field"><label>SKU Name</label><div className="readonly-val mono">{detail.sku_code_snapshot || "—"}</div></div>
             <div className="field"><label>SKU Version</label><div className="readonly-val mono">{detail.sku_version_snapshot || "—"}</div></div>
+            <div className="field"><label>Country</label><div className="readonly-val mono">{detail.country_code || "—"}</div></div>
             <div className="field"><label>Quantity (Pallets)</label><div className="readonly-val mono">{detail.quantity}</div></div>
           </div>
           <div className="hint-text" style={{ marginBottom: 6 }}>
@@ -91,6 +92,11 @@ export default function QrGenerationPanel({
               ? `Auto-created from ${detail.source_inward_qc_id ? "Inward QC" : "Production Run"} ${detail.source_display_id || ""}. These fields are locked.`
               : ""}
           </div>
+          {detail.qr_type === "rm" && (
+            <div className="hint-text" style={{ marginBottom: 6 }}>
+              Pallet numbers for this batch start with &quot;{detail.country_code || "US"}-&quot; — the country of the vendor on the source Inward QC.
+            </div>
+          )}
           {!isGenerated && (
             <div className="hint-text" style={{ marginBottom: 6 }}>
               {detail.quantity > 0 ? `This will generate ${detail.quantity} unique pallet QR code(s).` : "Enter a quantity greater than 0 before generating QR codes."}

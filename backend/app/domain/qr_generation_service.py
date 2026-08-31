@@ -46,6 +46,39 @@ def _resolve_qc_sku(qc: models.InwardQcRecord) -> tuple[str | None, str | None, 
     return None, None, None, None
 
 
+def _resolve_qc_country(db: Session, qc: models.InwardQcRecord) -> str:
+    """
+    The country an RM pallet was packed in is the country of the vendor
+    named on the Inward QC (vendor_name is a plain text snapshot, not a
+    foreign key -- see Vendor's own docstring -- so this is a best-effort
+    lookup by category+name, same as every other vendor_name usage in this
+    app). Falls back to "US" when the vendor can't be matched (a vendor
+    deleted since, a legacy free-text name never in the managed list, or a
+    vendor that predates the country field) so a missing lookup can never
+    block QR generation -- it only means the pallet gets the same "US-"
+    prefix every pallet got before this feature existed.
+
+    The vendor lookup category is NOT always qc.category: a Tray / FG
+    Non-Padded Tray QC is auto-created with qc.category == "fgtray", but the
+    Vendor Name dropdown on the *source Vehicle Inspection* -- where this
+    vendor_name was actually chosen -- is scoped to the inspection's own
+    category, "tray" (the Vendors admin screen's managed category list is
+    tray/pad/polybag/cfb/glue; "fgtray" is never a Vendor category). So for
+    a QC with a linked vehicle inspection, look the vendor up under that
+    inspection's category instead, or the vendor set up for this vendor
+    name would never be found.
+    """
+    if not qc.vendor_name:
+        return "US"
+    lookup_category = qc.vehicle_inspection.category if qc.vehicle_inspection else qc.category
+    vendor = (
+        db.query(models.Vendor)
+        .filter(models.Vendor.category == lookup_category, models.Vendor.name == qc.vendor_name)
+        .first()
+    )
+    return (vendor.country if vendor and vendor.country else "US")
+
+
 def get_or_create_rm_qr_for_qc(db: Session, qc: models.InwardQcRecord) -> models.QrGenerationRecord:
     """
     Called the moment an Inward QC is Accepted. Idempotent — the partial
@@ -54,6 +87,7 @@ def get_or_create_rm_qr_for_qc(db: Session, qc: models.InwardQcRecord) -> models
     rather than raising.
     """
     sku_code, sku_version, sku_code_id, sku_version_id = _resolve_qc_sku(qc)
+    country_code = _resolve_qc_country(db, qc)
     quantity = int(qc.quantity or 0)
 
     existing = (
@@ -74,6 +108,7 @@ def get_or_create_rm_qr_for_qc(db: Session, qc: models.InwardQcRecord) -> models
             existing.sku_version_id = sku_version_id
             existing.sku_code_snapshot = sku_code
             existing.sku_version_snapshot = sku_version
+            existing.country_code = country_code
             existing.quantity = quantity
             db.flush()
         return existing
@@ -88,6 +123,7 @@ def get_or_create_rm_qr_for_qc(db: Session, qc: models.InwardQcRecord) -> models
         sku_version_id=sku_version_id,
         sku_code_snapshot=sku_code,
         sku_version_snapshot=sku_version,
+        country_code=country_code,
         quantity=quantity,
         status="pending",
     )
@@ -118,6 +154,10 @@ def get_or_create_fg_qr_for_production_run(db: Session, run: models.ProductionRu
         sku_version_id=run.sku_version_id,
         sku_code_snapshot=sku_code,
         sku_version_snapshot=sku_version,
+        # Always "US": finished goods are packed at this US factory
+        # regardless of which country any upstream RM component shipped
+        # from -- unlike RM, FG's country is never vendor-dependent.
+        country_code="US",
         quantity=int(run.total_fg_pallets or 0),
         status="pending",
     )
@@ -139,7 +179,7 @@ def generate_pallets(db: Session, rec: models.QrGenerationRecord, actor_user_id=
         raise QrGenerationError("Enter a quantity greater than 0 before generating QR codes.")
 
     for _ in range(rec.quantity):
-        display_id = pallet_service.next_pallet_display_id(db, rec.category)
+        display_id = pallet_service.next_pallet_display_id(db, rec.category, rec.country_code)
         pallet = models.Pallet(
             display_id=display_id,
             pallet_type=rec.qr_type,

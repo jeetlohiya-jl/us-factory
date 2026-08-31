@@ -41,9 +41,12 @@ def create_vendor(
 ):
     name = payload.name.strip()
     category = payload.category.strip()
+    country = payload.country.strip().upper()
     if not name:
         raise HTTPException(status_code=422, detail="Vendor name is required.")
-    vendor = models.Vendor(category=category, name=name, is_active=True)
+    if len(country) != 2 or not country.isalpha():
+        raise HTTPException(status_code=422, detail="Country must be a 2-letter code (e.g. US, CN).")
+    vendor = models.Vendor(category=category, name=name, country=country, is_active=True)
     db.add(vendor)
     try:
         db.commit()
@@ -69,6 +72,11 @@ def update_vendor(
         if not name:
             raise HTTPException(status_code=422, detail="Vendor name is required.")
         vendor.name = name
+    if payload.country is not None:
+        country = payload.country.strip().upper()
+        if len(country) != 2 or not country.isalpha():
+            raise HTTPException(status_code=422, detail="Country must be a 2-letter code (e.g. US, CN).")
+        vendor.country = country
     if payload.is_active is not None:
         vendor.is_active = payload.is_active
     try:
