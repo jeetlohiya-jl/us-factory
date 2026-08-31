@@ -67,6 +67,26 @@ export default function MaterialConsumptionPage() {
     }
   }
 
+  /**
+   * "+ Add Machine" -- one record is always for exactly one Machine (see
+   * the Wizard's Production Information section), so pallets consumed on a
+   * second machine in the same shift need their own record. This is a
+   * shortcut for that: create a new draft and pre-fill its Shift from the
+   * record the link was clicked on, so the worker only has to pick the
+   * (different) Machine before scanning -- not re-enter the shift too.
+   */
+  async function handleAddMachine(shift: string, ev: React.MouseEvent) {
+    ev.stopPropagation();
+    setError(null);
+    try {
+      const mc = await api.createMaterialConsumptionDraft();
+      const updated = await api.updateMaterialConsumptionBasic(mc.id, { shift });
+      setOpenMc(updated);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to create record");
+    }
+  }
+
   async function handleDelete(id: string, ev: React.MouseEvent) {
     ev.stopPropagation();
     if (!confirm("Delete this Material Consumption record?")) return;
@@ -187,9 +207,16 @@ export default function MaterialConsumptionPage() {
                           {endingId === r.id ? "Recording…" : "Record End Time"}
                         </button>
                       )}
+                      {perms?.can_create && r.shift && (
+                        <a
+                          className="btn-tertiary" style={{ whiteSpace: "nowrap" }}
+                          onClick={(e) => handleAddMachine(r.shift as string, e)}
+                        >
+                          + Add Machine ({r.shift})
+                        </a>
+                      )}
                       {/* View + Delete always stay paired on one line, same as every other
-                          list in the app -- only the optional Record End Time button above
-                          gets its own row. */}
+                          list in the app -- only the optional buttons above get their own row. */}
                       <div style={{ display: "flex", gap: 10, alignItems: "center", whiteSpace: "nowrap" }}>
                         <a className="btn-tertiary">View →</a>
                         {perms?.can_delete && (

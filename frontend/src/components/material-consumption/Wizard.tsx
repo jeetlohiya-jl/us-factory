@@ -85,6 +85,11 @@ export default function MaterialConsumptionWizard({
   const [detail, setDetail] = useState<MaterialConsumptionDetail>(initialDetail);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Closed by default -- "" means the Secondary Materials picker is closed.
+  // Picking a category opens just that one scan box; nothing is shown or
+  // persisted for a category that's never picked (see combined list below,
+  // which only ever renders categories that actually have scanned rows).
+  const [secondaryCategory, setSecondaryCategory] = useState<SecondaryMaterialCategory | "">("");
 
   const isFinalized = detail.status === "saved";
   const canEdit = (permissions.can_create || permissions.can_edit) && !isFinalized;
@@ -189,9 +194,44 @@ export default function MaterialConsumptionWizard({
         <div className="sp-body">
           {error && <div className="error-banner">{error}</div>}
 
+          <div className="section-label" style={{ marginTop: 0 }}>Production Information</div>
+          <div className="hint-text" style={{ marginBottom: 10 }}>
+            Choose the Machine and Shift this record is for before scanning — every pallet scanned below is consumed on this Machine. If pallets go to a different machine, start a separate record for it.
+          </div>
+          <div className="form-grid" style={{ marginBottom: 18 }}>
+            <div className="field">
+              <label>Machine</label>
+              <select disabled={!canEdit} value={detail.machine_id || ""} onChange={(e) => patchBasic({ machine_id: e.target.value })}>
+                <option value="">Select</option>
+                {machines.map((m) => <option key={m.id} value={m.id}>{m.code}</option>)}
+              </select>
+            </div>
+            <div className="field">
+              <label>Shift</label>
+              <select disabled={!canEdit} value={detail.shift || ""} onChange={(e) => patchBasic({ shift: e.target.value })}>
+                <option value="">Select</option>
+                {shifts.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            <div className="field">
+              <label>Start Time</label>
+              <div className={`readonly-val mono${detail.start_time ? " done" : ""}`}>
+                {detail.start_time ? formatTime12h(detail.start_time) : "— (recorded when first pallet is scanned)"}
+              </div>
+            </div>
+            <div className="field">
+              <label>End Time</label>
+              <div className={`readonly-val mono${detail.end_time ? " done" : ""}`}>
+                {detail.end_time
+                  ? formatTime12h(detail.end_time)
+                  : "— (use \"Record End Time\" on the Material Consumption list once done)"}
+              </div>
+            </div>
+          </div>
+
           <div className="section-label">Scan Pallet QR</div>
           <div className="hint-text" style={{ marginBottom: 10 }}>
-            Scan every RM pallet physically picked for this production run. The first pallet sets the Category, SKU Name and SKU Version for this record — every additional pallet must match, and its scan time is recorded as this record's Start Time automatically.
+            Scan every RM pallet physically picked for this Machine. The first pallet sets the Category, SKU Name and SKU Version for this record — every additional pallet must match, and its scan time is recorded as this record's Start Time automatically.
           </div>
 
           {detail.pallets.length > 0 && (
@@ -229,70 +269,55 @@ export default function MaterialConsumptionWizard({
             </tbody>
           </table>
 
-          <div className="section-label">Production Information</div>
-          <div className="form-grid" style={{ marginBottom: 24 }}>
-            <div className="field">
-              <label>Machine</label>
-              <select disabled={!canEdit} value={detail.machine_id || ""} onChange={(e) => patchBasic({ machine_id: e.target.value })}>
-                <option value="">Select</option>
-                {machines.map((m) => <option key={m.id} value={m.id}>{m.code}</option>)}
-              </select>
-            </div>
-            <div className="field">
-              <label>Shift</label>
-              <select disabled={!canEdit} value={detail.shift || ""} onChange={(e) => patchBasic({ shift: e.target.value })}>
-                <option value="">Select</option>
-                {shifts.map((s) => <option key={s} value={s}>{s}</option>)}
-              </select>
-            </div>
-            <div className="field">
-              <label>Start Time</label>
-              <div className="readonly-val mono">
-                {detail.start_time ? formatTime12h(detail.start_time) : "— (recorded when first pallet is scanned)"}
-              </div>
-            </div>
-            <div className="field">
-              <label>End Time</label>
-              <div className="readonly-val mono">
-                {detail.end_time
-                  ? formatTime12h(detail.end_time)
-                  : "— (use \"Record End Time\" on the Material Consumption list once done)"}
-              </div>
-            </div>
-          </div>
-
-          <div className="section-label" style={{ fontSize: 15, marginBottom: 12 }}>Secondary Materials</div>
-          {SECONDARY_CATEGORIES.map((cat) => {
-            const rows = detail.secondary_materials[cat];
-            return (
-              <div key={cat} style={{ marginBottom: 20 }}>
-                <div className="section-label">{SECONDARY_LABELS[cat]}</div>
-                {rows.length === 0 ? (
-                  <div className="hint-text" style={{ marginBottom: 8 }}>No {SECONDARY_LABELS[cat]} consumption added yet.</div>
-                ) : (
-                  <table className="qc-obs-table" style={{ marginBottom: 8 }}>
-                    <thead><tr><th>Pallet</th><th>SKU</th><th style={{ width: 110 }}>Quantity</th><th></th></tr></thead>
-                    <tbody>
-                      {rows.map((r) => (
-                        <tr key={r.id}>
-                          <td className="mono">{r.pallet_display_id}</td>
-                          <td>{r.sku_code}</td>
-                          <td>
-                            <input
-                              type="number" step="0.01" disabled={!canEdit} defaultValue={String(r.quantity)}
-                              onBlur={(e) => handleQuantityChange(r.id, e.target.value)}
-                            />
-                          </td>
-                          <td>{canEdit && <a className="btn-tertiary" style={{ cursor: "pointer" }} onClick={() => handleRemove(r.id)}>Remove</a>}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-                {canEdit && <ScanBox placeholder={`Scan or enter ${SECONDARY_LABELS[cat]} pallet QR / ID`} busy={busy} onScan={(p) => handleSecondaryScan(cat, p)} />}
-              </div>
+          <div className="section-label">Secondary Materials</div>
+          {(() => {
+            const combined = SECONDARY_CATEGORIES.flatMap((cat) => detail.secondary_materials[cat].map((r) => ({ ...r, cat })));
+            return combined.length > 0 ? (
+              <table className="qc-obs-table" style={{ marginBottom: 14 }}>
+                <thead><tr><th style={{ width: 90 }}>Type</th><th>Pallet</th><th>SKU</th><th style={{ width: 110 }}>Quantity</th><th></th></tr></thead>
+                <tbody>
+                  {combined.map((r) => (
+                    <tr key={r.id}>
+                      <td>{SECONDARY_LABELS[r.cat]}</td>
+                      <td className="mono">{r.pallet_display_id}</td>
+                      <td>{r.sku_code}</td>
+                      <td>
+                        <input
+                          type="number" step="0.01" disabled={!canEdit} defaultValue={String(r.quantity)}
+                          onBlur={(e) => handleQuantityChange(r.id, e.target.value)}
+                        />
+                      </td>
+                      <td>{canEdit && <a className="btn-tertiary" style={{ cursor: "pointer" }} onClick={() => handleRemove(r.id)}>Remove</a>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <div className="hint-text" style={{ marginBottom: 14 }}>No secondary materials added yet.</div>
             );
-          })}
+          })()}
+
+          {canEdit && (
+            <div className="field" style={{ marginBottom: 24, maxWidth: 320 }}>
+              <label>Add Secondary Material</label>
+              <select
+                value={secondaryCategory}
+                onChange={(e) => setSecondaryCategory(e.target.value as SecondaryMaterialCategory | "")}
+              >
+                <option value="">Select to scan…</option>
+                {SECONDARY_CATEGORIES.map((cat) => <option key={cat} value={cat}>{SECONDARY_LABELS[cat]}</option>)}
+              </select>
+              {secondaryCategory && (
+                <div style={{ marginTop: 10 }}>
+                  <ScanBox
+                    placeholder={`Scan or enter ${SECONDARY_LABELS[secondaryCategory]} pallet QR / ID`}
+                    busy={busy}
+                    onScan={(p) => handleSecondaryScan(secondaryCategory, p)}
+                  />
+                </div>
+              )}
+            </div>
+          )}
         </div>
         <div className="sp-foot">
           <button className="btn btn-ghost" onClick={handleCancel}>Cancel</button>

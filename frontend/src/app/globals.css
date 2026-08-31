@@ -180,6 +180,7 @@ table.data.compact thead th, table.data.compact tbody td{padding:11px 12px;}
 .field label{display:block;font-size:11px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:var(--ink-50);margin-bottom:6px;}
 .field input,.field select,.field textarea{width:100%;padding:10px 12px;border:1px solid var(--ink-15);border-radius:8px;background:var(--white);font-size:13.5px;color:var(--ink);}
 .field .readonly-val{padding:10px 12px;border:1px dashed var(--ink-15);border-radius:8px;background:var(--cream);font-size:13.5px;color:var(--ink-70);font-family:var(--mono);}
+.field .readonly-val.done{border:1px solid var(--green-soft);background:#f4f8f1;color:var(--green-deep);font-weight:600;}
 .section-label{font-family:var(--serif);font-size:16px;margin:22px 0 12px;}
 .section-label:first-child{margin-top:0;}
 
