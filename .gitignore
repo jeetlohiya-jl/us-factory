@@ -9,7 +9,10 @@ backend/venv/
 backend/.venv/
 *.pyc
 
-# Frontend has its own .gitignore (node_modules, .next, .env*, etc.)
+# Frontend has its own .gitignore (node_modules, .next, .env*, etc.) — this
+# one catches the dev-server log it doesn't cover.
+frontend/nextdev.log
+frontend/*.log
 
 # Local dev artifacts / delivered zips — not part of the source tree
 *.zip
