@@ -11,3 +11,5 @@ qrcode
 python-jose
 passlib
 supabase
+pdfplumber
+pdf2image

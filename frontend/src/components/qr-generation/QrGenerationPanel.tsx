@@ -4,12 +4,6 @@ import type { QrGenerationDetail, Pallet } from "@/lib/types";
 import { PALLET_STAGE_LABELS, PALLET_STAGE_BADGE_CLASS } from "@/lib/types";
 import PalletTile from "./PalletTile";
 
-function chunk<T>(arr: T[], size: number): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-  return out;
-}
-
 /**
  * "New RM/FG QR Generation Record" side panel from the prototype
  * (panel-qr / panel-fgqr): source-locked fields, a hint line, and — once
@@ -18,13 +12,16 @@ function chunk<T>(arr: T[], size: number): T[][] {
  * content plus each pallet's live lifecycle status, matching section E's
  * "Generated Pallets: every pallet ID, lifecycle status, storage status".
  *
- * Printing: a warehouse label printer prints a fixed sheet of 2x2 QR
- * labels, not "the whole page as shown on screen" — so the on-screen
- * pallet grid (with checkboxes to choose which pallets go to this print
- * run) is a separate DOM subtree from what actually prints. `.no-print`
- * hides all screen chrome under print media; `.print-only` — normally
- * hidden — becomes the only visible content, laid out as one 2x2 grid of
- * labels per physical sheet (`page-break-after` between sheets).
+ * Printing: the physical printer is a 2in x 2in label printer — one QR
+ * per label, fed one at a time (a roll/peel-stack printer, not a sheet
+ * printer) — so "the whole page as shown on screen" must never print.
+ * The on-screen pallet grid (with checkboxes + a quantity shortcut to
+ * choose which/how many pallets go to this run) is a separate DOM subtree
+ * from what actually prints. `.no-print` hides all screen chrome under
+ * print media; `.print-only` — normally hidden — becomes the only visible
+ * content: one `.qr-print-page` per selected pallet, each sized to exactly
+ * 2in x 2in via `@page` in globals.css, `page-break-after` between them so
+ * each pallet comes out as its own label.
  */
 export default function QrGenerationPanel({
   title, detail, canGenerate, onGenerate, onClose,
@@ -64,8 +61,11 @@ export default function QrGenerationPanel({
     });
   }
 
+  function selectFirstN(n: number) {
+    setSelected(new Set(detail.pallets.slice(0, Math.max(0, Math.min(n, detail.pallets.length))).map((p) => p.id)));
+  }
+
   const selectedPallets: Pallet[] = detail.pallets.filter((p) => selected.has(p.id));
-  const printSheets = chunk(selectedPallets, 4);
 
   return (
     <>
@@ -105,9 +105,22 @@ export default function QrGenerationPanel({
                   {selected.size} of {detail.pallets.length} selected for printing
                 </span>
               </div>
-              <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
                 <a className="btn-tertiary" style={{ cursor: "pointer" }} onClick={() => setSelected(new Set(detail.pallets.map((p) => p.id)))}>Select all</a>
                 <a className="btn-tertiary" style={{ cursor: "pointer" }} onClick={() => setSelected(new Set())}>Clear selection</a>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: "auto" }}>
+                  <label style={{ fontSize: 12.5, color: "var(--ink-50)" }}>Print quantity</label>
+                  <input
+                    type="number" min={0} max={detail.pallets.length}
+                    style={{ width: 64, fontFamily: "var(--mono)" }}
+                    value={selected.size}
+                    onChange={(e) => selectFirstN(parseInt(e.target.value, 10) || 0)}
+                  />
+                  <span style={{ fontSize: 12.5, color: "var(--ink-50)" }}>of {detail.pallets.length}</span>
+                </div>
+              </div>
+              <div className="hint-text" style={{ marginBottom: 10 }}>
+                Each pallet prints as its own 2in × 2in label — set "Print quantity" to print the first N pallets, or use the checkboxes below to hand-pick specific ones.
               </div>
               <div className="scan-grid" style={{ gridTemplateColumns: "repeat(3,1fr)" }}>
                 {detail.pallets.map((p) => (
@@ -156,17 +169,15 @@ export default function QrGenerationPanel({
         </div>
       </div>
 
-      {/* Print-only output: one 2x2 sheet of labels per physical page, built
-          only from the pallets checked above. Invisible on screen. */}
+      {/* Print-only output: one 2in x 2in label per selected pallet, one
+          physical label per page. Invisible on screen. */}
       {isGenerated && (
         <div className="print-only">
-          {printSheets.map((sheet, i) => (
-            <div className="qr-print-page" key={i}>
-              {sheet.map((p) => (
-                <div className="qr-print-label" key={p.id}>
-                  <PalletTile pallet={p} />
-                </div>
-              ))}
+          {selectedPallets.map((p) => (
+            <div className="qr-print-page" key={p.id}>
+              <div className="qr-print-label">
+                <PalletTile pallet={p} />
+              </div>
             </div>
           ))}
         </div>

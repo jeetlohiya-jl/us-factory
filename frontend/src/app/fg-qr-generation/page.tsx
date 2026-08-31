@@ -1,13 +1,14 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import type { QrGenerationDetail, QrGenerationListItem, MeResponse, ProductionRun } from "@/lib/types";
+import { useMe } from "@/lib/useMe";
+import type { QrGenerationDetail, QrGenerationListItem, ProductionRun } from "@/lib/types";
 import QrGenerationPanel from "@/components/qr-generation/QrGenerationPanel";
 import ConfirmDialog from "@/components/inward-vehicle-inspection/ConfirmDialog";
 import MoreMenu from "@/components/inward-vehicle-inspection/MoreMenu";
 
 export default function FgQrGenerationPage() {
-  const [me, setMe] = useState<MeResponse | null>(null);
+  const me = useMe();
   const [items, setItems] = useState<QrGenerationListItem[]>([]);
   const [runs, setRuns] = useState<ProductionRun[]>([]);
   const [loading, setLoading] = useState(true);
@@ -34,13 +35,6 @@ export default function FgQrGenerationPage() {
       setLoading(false);
     }
   }, [search]);
-
-  useEffect(() => {
-    const loadMe = () => api.me().then(setMe).catch(() => setMe(null));
-    loadMe();
-    window.addEventListener("factory_os_user_changed", loadMe);
-    return () => window.removeEventListener("factory_os_user_changed", loadMe);
-  }, []);
 
   useEffect(() => {
     const t = setTimeout(refresh, 250);

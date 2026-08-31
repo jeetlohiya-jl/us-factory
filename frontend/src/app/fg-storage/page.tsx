@@ -1,12 +1,13 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import type { Pallet, StorageRecordDetail, MeResponse } from "@/lib/types";
+import { useMe } from "@/lib/useMe";
+import type { Pallet, StorageRecordDetail } from "@/lib/types";
 import StorageScanPanel from "@/components/storage/StorageScanPanel";
 import StorageRecordDetailPanel from "@/components/storage/StorageRecordDetailPanel";
 
 export default function FgStoragePage() {
-  const [me, setMe] = useState<MeResponse | null>(null);
+  const me = useMe();
   const [pending, setPending] = useState<Pallet[]>([]);
   const [records, setRecords] = useState<StorageRecordDetail[]>([]);
   const [loading, setLoading] = useState(true);
@@ -35,13 +36,6 @@ export default function FgStoragePage() {
       setLoading(false);
     }
   }, [search, recordsSearch]);
-
-  useEffect(() => {
-    const loadMe = () => api.me().then(setMe).catch(() => setMe(null));
-    loadMe();
-    window.addEventListener("factory_os_user_changed", loadMe);
-    return () => window.removeEventListener("factory_os_user_changed", loadMe);
-  }, []);
 
   useEffect(() => {
     const t = setTimeout(refresh, 250);

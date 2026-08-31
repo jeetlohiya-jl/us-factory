@@ -166,6 +166,14 @@ export interface QcAttributeValue {
   value: string | null;
 }
 
+export interface CoaSuggestion {
+  attribute_definition_id: string;
+  label: string;
+  extracted_value: string | null;
+  status: "matched" | "not_found";
+  source_line: string | null;
+}
+
 export interface QcFgtrayAnswer {
   criteria_id: string;
   label: string;
@@ -207,6 +215,9 @@ export interface QcDetail {
   fgtray_answers: QcFgtrayAnswer[];
   attribute_values: QcAttributeValue[];
   vehicle_inspection: InspectionDetail | null;
+  // Only ever present on the response to uploadQcCoa — a one-shot batch of
+  // suggested Observation values parsed from the COA just uploaded.
+  coa_suggestions?: CoaSuggestion[];
 }
 
 // ---------------------------------------------------------------------------

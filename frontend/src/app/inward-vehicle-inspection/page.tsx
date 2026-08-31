@@ -1,7 +1,8 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
-import type { Category, InspectionDetail, InspectionListItem, MeResponse, SkuCode } from "@/lib/types";
+import { useMe } from "@/lib/useMe";
+import type { Category, InspectionDetail, InspectionListItem, SkuCode } from "@/lib/types";
 import MoreMenu from "@/components/inward-vehicle-inspection/MoreMenu";
 import Wizard from "@/components/inward-vehicle-inspection/Wizard";
 import RecordDetail from "@/components/inward-vehicle-inspection/RecordDetail";
@@ -13,7 +14,7 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 export default function InwardVehicleInspectionPage() {
-  const [me, setMe] = useState<MeResponse | null>(null);
+  const me = useMe();
   const [skuCodes, setSkuCodes] = useState<SkuCode[]>([]);
   const [items, setItems] = useState<InspectionListItem[]>([]);
   const [matchedCount, setMatchedCount] = useState(0);
@@ -51,11 +52,7 @@ export default function InwardVehicleInspectionPage() {
   }, [search, fStatus, fCategory, fDate]);
 
   useEffect(() => {
-    const loadMe = () => api.me().then(setMe).catch(() => setMe(null));
-    loadMe();
     api.skuCodes().then(setSkuCodes).catch(() => setSkuCodes([]));
-    window.addEventListener("factory_os_user_changed", loadMe);
-    return () => window.removeEventListener("factory_os_user_changed", loadMe);
   }, []);
 
   useEffect(() => {

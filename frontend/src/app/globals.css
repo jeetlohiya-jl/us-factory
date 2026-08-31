@@ -126,25 +126,28 @@ table.data tbody tr:hover{background:rgba(74,122,46,.03);}
 .scan-input-row{display:flex;gap:8px;margin-top:10px;}
 .scan-input-row input{flex:1;font-family:var(--mono);}
 
-/* Print-only QR label sheets: hidden on screen, the only thing visible
-   when printing (see QrGenerationPanel). One physical sheet = a 2x2 grid
-   of labels, matching a standard 2x2 label-printer layout. */
+/* Print-only QR labels: hidden on screen, the only thing visible when
+   printing (see QrGenerationPanel). A "2x2 label printer" prints discrete
+   2in x 2in die-cut labels one at a time (a roll/peel-stack printer, e.g.
+   Zebra/Dymo desktop label printers) -- NOT a 4-up sheet -- so one pallet's
+   QR = one physical label = one page here, sized to match exactly. */
 .print-only{display:none;}
 @media print{
+  @page{size:2in 2in;margin:0;}
   body *{visibility:hidden;}
   .print-only, .print-only *{visibility:visible;}
   .no-print{display:none !important;}
   .print-only{display:block;position:absolute;top:0;left:0;width:100%;margin:0;padding:0;}
   .qr-print-page{
-    display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;
-    width:100%;height:100vh;box-sizing:border-box;gap:6mm;padding:6mm;
-    page-break-after:always;
+    width:2in;height:2in;box-sizing:border-box;
+    display:flex;align-items:center;justify-content:center;
+    page-break-after:always;break-after:page;
   }
-  .qr-print-page:last-child{page-break-after:auto;}
-  .qr-print-label{display:flex;align-items:center;justify-content:center;border:1px dashed var(--ink-30);}
-  .qr-print-label .qr-tile{width:100%;height:100%;border:none;justify-content:center;}
-  .qr-print-label .qr-tile img{width:60%;height:auto;max-width:220px;}
-  .qr-print-label .qr-tile .qr-id{font-size:14px;font-weight:700;}
+  .qr-print-page:last-child{page-break-after:auto;break-after:auto;}
+  .qr-print-label{display:flex;align-items:center;justify-content:center;width:100%;height:100%;}
+  .qr-print-label .qr-tile{width:100%;height:100%;border:none;justify-content:center;gap:4px;padding:6px;}
+  .qr-print-label .qr-tile img{width:72%;height:auto;max-width:1.5in;}
+  .qr-print-label .qr-tile .qr-id{font-size:11px;font-weight:700;}
 }
 
 .panel-overlay{position:fixed;inset:0;background:rgba(26,29,21,.38);z-index:90;display:none;}

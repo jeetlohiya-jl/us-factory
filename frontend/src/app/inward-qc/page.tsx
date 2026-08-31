@@ -1,7 +1,8 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
-import type { QcDetail, QcListItem, QcManualCategory, QcMeta, MeResponse, SkuCode } from "@/lib/types";
+import { useMe } from "@/lib/useMe";
+import type { QcDetail, QcListItem, QcManualCategory, QcMeta, SkuCode } from "@/lib/types";
 import MoreMenu from "@/components/inward-vehicle-inspection/MoreMenu";
 import ConfirmDialog from "@/components/inward-vehicle-inspection/ConfirmDialog";
 import CategoryPicker from "@/components/inward-qc/CategoryPicker";
@@ -18,7 +19,7 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 export default function InwardQcPage() {
-  const [me, setMe] = useState<MeResponse | null>(null);
+  const me = useMe();
   const [meta, setMeta] = useState<QcMeta | null>(null);
   const [skuCodes, setSkuCodes] = useState<SkuCode[]>([]);
   const [items, setItems] = useState<QcListItem[]>([]);
@@ -58,12 +59,8 @@ export default function InwardQcPage() {
   }, [search, fStatus, fCategory, fDate]);
 
   useEffect(() => {
-    const loadMe = () => api.me().then(setMe).catch(() => setMe(null));
-    loadMe();
     api.qcMeta().then(setMeta).catch(() => setMeta(null));
     api.skuCodes().then(setSkuCodes).catch(() => setSkuCodes([]));
-    window.addEventListener("factory_os_user_changed", loadMe);
-    return () => window.removeEventListener("factory_os_user_changed", loadMe);
   }, []);
 
   useEffect(() => {

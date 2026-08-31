@@ -25,6 +25,12 @@ export default function AttributeObservations({
                 </select>
               ) : (
                 <input
+                  // Keyed on the current value so a value injected from
+                  // outside (a COA-parse suggestion filling this field
+                  // programmatically, not by the operator typing) remounts
+                  // the input with the new defaultValue -- an uncontrolled
+                  // input otherwise never reflects a prop-driven update.
+                  key={v.value ?? ""}
                   type={v.field_type === "number" ? "number" : "text"}
                   placeholder={v.field_type === "number" ? "0" : "Enter value"}
                   disabled={disabled}

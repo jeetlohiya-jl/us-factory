@@ -11,6 +11,7 @@ from app.api.deps import get_current_user
 from app.adapters.auth.base import AuthenticatedUser
 from app.adapters.storage.factory import get_storage_adapter
 from app.domain import inward_qc_service as svc
+from app.domain import coa_parsing_service
 from app.api.inward_vehicle_inspections import _serialize_detail as _serialize_vehicle_inspection, _get_or_404 as _get_vehicle_inspection_or_404
 
 router = APIRouter(prefix="/api/v1/inward-qc", tags=["inward-qc"])
@@ -248,7 +249,26 @@ async def upload_coa(
     qc.coa_storage_path = storage_path
     qc.coa_filename = file.filename or "coa"
     db.commit()
-    return _serialize_detail(db, _get_or_404(db, qc_id))
+
+    detail = _serialize_detail(db, _get_or_404(db, qc_id))
+    try:
+        attr_defs = svc.get_attribute_definitions(db, qc.category)
+        text = coa_parsing_service.extract_text(content, file.filename or "coa", file.content_type)
+        detail["coa_suggestions"] = coa_parsing_service.parse_coa_values(
+            text,
+            [
+                coa_parsing_service.AttrDefLike(
+                    id=d.id, label=d.label, field_type=d.field_type, options_json=d.options_json,
+                )
+                for d in attr_defs
+            ],
+        )
+    except Exception:
+        # Parsing is a best-effort convenience on top of a successful
+        # upload -- a parsing failure (corrupt file, unreadable scan, etc.)
+        # must never take down the upload itself. Manual entry still works.
+        detail["coa_suggestions"] = []
+    return detail
 
 
 @router.delete("/{qc_id}/coa")
