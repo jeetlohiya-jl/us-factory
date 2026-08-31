@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import type { Pallet } from "@/lib/types";
+import CameraQrScanner from "./CameraQrScanner";
 
 /**
  * RM/FG Storage's "New Storage Record" panel — the exact two-step scan
@@ -9,12 +10,18 @@ import type { Pallet } from "@/lib/types";
  * confirm. Nothing is written to the database until Confirm; both scans
  * are re-validated server-side at confirm time (see storage_service.py).
  *
- * The "scan" itself is a text field an operator's handheld barcode/QR
- * scanner (a keyboard-emulating "HID" scanner gun, the standard warehouse
- * hardware) types into and submits — this is the same mechanism a live
- * camera-based scan would feed into, just without requiring camera access
- * in this environment; either way the backend only ever trusts the
- * resolved DB record, never the raw scanned text as fact by itself.
+ * Three input methods feed each step, all landing in the same resolve
+ * call so the backend only ever trusts the resolved DB record, never the
+ * raw scanned text as fact by itself:
+ *   1. A handheld barcode/QR scanner gun (keyboard-emulating "HID"
+ *      hardware) types into the text field and submits on Enter.
+ *   2. Manual typing/paste into the same text field, submitted via the
+ *      Scan button.
+ *   3. Live camera scanning ("📷 Scan with Camera") via CameraQrScanner,
+ *      which decodes a QR code from the device camera (jsQR) and feeds
+ *      the exact same payload into the exact same resolve function.
+ * This one shared panel is used by both RM Storage and FG Storage, so all
+ * three input methods are available on both automatically.
  */
 export default function StorageScanPanel({
   title, hintSub, onScanPallet, onScanLocation, onConfirm, onClose,
@@ -33,13 +40,20 @@ export default function StorageScanPanel({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
+  // Which step (if any) currently has its camera scanner open. Camera
+  // scanning is a third input method alongside the HID-scanner-gun /
+  // manual text field above -- it just fills the same input and drives
+  // the exact same resolve call, so it's covered by RM and FG Storage
+  // alike since both render this one shared panel.
+  const [cameraStep, setCameraStep] = useState<"pallet" | "location" | null>(null);
 
-  async function handleScanPallet() {
-    if (!palletInput.trim()) return;
+  async function handleScanPallet(payload?: string) {
+    const raw = (payload ?? palletInput).trim();
+    if (!raw) return;
     setBusy(true);
     setError(null);
     try {
-      const p = await onScanPallet(palletInput.trim());
+      const p = await onScanPallet(raw);
       setPallet(p);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not resolve that pallet QR.");
@@ -48,17 +62,29 @@ export default function StorageScanPanel({
     }
   }
 
-  async function handleScanLocation() {
-    if (!locationInput.trim()) return;
+  async function handleScanLocation(payload?: string) {
+    const raw = (payload ?? locationInput).trim();
+    if (!raw) return;
     setBusy(true);
     setError(null);
     try {
-      const loc = await onScanLocation(locationInput.trim());
+      const loc = await onScanLocation(raw);
       setLocation(loc);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not resolve that location QR.");
     } finally {
       setBusy(false);
+    }
+  }
+
+  function handleCameraDetected(step: "pallet" | "location", text: string) {
+    setCameraStep(null);
+    if (step === "pallet") {
+      setPalletInput(text);
+      handleScanPallet(text);
+    } else {
+      setLocationInput(text);
+      handleScanLocation(text);
     }
   }
 
@@ -98,14 +124,26 @@ export default function StorageScanPanel({
                   <div className="scan-icon">📦</div>
                   <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 6 }}>Step 1 — Scan Pallet QR</div>
                   {!pallet ? (
-                    <div className="scan-input-row">
-                      <input
-                        type="text" placeholder="Scan or enter pallet QR / ID" autoFocus
-                        value={palletInput} onChange={(e) => setPalletInput(e.target.value)}
-                        onKeyDown={(e) => e.key === "Enter" && handleScanPallet()}
+                    cameraStep === "pallet" ? (
+                      <CameraQrScanner
+                        onDetected={(text) => handleCameraDetected("pallet", text)}
+                        onCancel={() => setCameraStep(null)}
                       />
-                      <button className="btn btn-secondary" disabled={busy || !palletInput.trim()} onClick={handleScanPallet}>Scan</button>
-                    </div>
+                    ) : (
+                      <>
+                        <div className="scan-input-row">
+                          <input
+                            type="text" placeholder="Scan or enter pallet QR / ID" autoFocus
+                            value={palletInput} onChange={(e) => setPalletInput(e.target.value)}
+                            onKeyDown={(e) => e.key === "Enter" && handleScanPallet()}
+                          />
+                          <button className="btn btn-secondary" disabled={busy || !palletInput.trim()} onClick={() => handleScanPallet()}>Scan</button>
+                        </div>
+                        <button type="button" className="btn btn-ghost btn-camera-scan" onClick={() => setCameraStep("pallet")}>
+                          📷 Scan with Camera
+                        </button>
+                      </>
+                    )
                   ) : (
                     <div className="scan-result">✓ {pallet.display_id} ({pallet.sku_code})</div>
                   )}
@@ -116,14 +154,26 @@ export default function StorageScanPanel({
                     <div className="scan-icon">📍</div>
                     <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 6 }}>Step 2 — Scan Location QR</div>
                     {!location ? (
-                      <div className="scan-input-row">
-                        <input
-                          type="text" placeholder="Scan or enter location QR / ID" autoFocus
-                          value={locationInput} onChange={(e) => setLocationInput(e.target.value)}
-                          onKeyDown={(e) => e.key === "Enter" && handleScanLocation()}
+                      cameraStep === "location" ? (
+                        <CameraQrScanner
+                          onDetected={(text) => handleCameraDetected("location", text)}
+                          onCancel={() => setCameraStep(null)}
                         />
-                        <button className="btn btn-secondary" disabled={busy || !locationInput.trim()} onClick={handleScanLocation}>Scan</button>
-                      </div>
+                      ) : (
+                        <>
+                          <div className="scan-input-row">
+                            <input
+                              type="text" placeholder="Scan or enter location QR / ID" autoFocus
+                              value={locationInput} onChange={(e) => setLocationInput(e.target.value)}
+                              onKeyDown={(e) => e.key === "Enter" && handleScanLocation()}
+                            />
+                            <button className="btn btn-secondary" disabled={busy || !locationInput.trim()} onClick={() => handleScanLocation()}>Scan</button>
+                          </div>
+                          <button type="button" className="btn btn-ghost btn-camera-scan" onClick={() => setCameraStep("location")}>
+                            📷 Scan with Camera
+                          </button>
+                        </>
+                      )
                     ) : (
                       <div className="scan-result">✓ {pallet.display_id} ({pallet.sku_code}) → {location.display_id}</div>
                     )}

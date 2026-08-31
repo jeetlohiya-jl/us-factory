@@ -125,6 +125,13 @@ table.data tbody tr:hover{background:rgba(74,122,46,.03);}
 .qr-tile .qr-id{font-family:var(--mono);font-size:10px;text-align:center;word-break:break-all;color:var(--ink-70);}
 .scan-input-row{display:flex;gap:8px;margin-top:10px;}
 .scan-input-row input{flex:1;font-family:var(--mono);}
+.btn-camera-scan{display:block;width:100%;margin-top:8px;font-size:12.5px;}
+
+/* Live camera QR scanning (third input method alongside the HID scanner
+   gun and manual text entry, in StorageScanPanel). */
+.camera-scanner{margin-top:10px;text-align:center;}
+.camera-scanner-video{width:100%;max-width:320px;border-radius:10px;border:1.5px solid var(--ink-15);background:#000;aspect-ratio:4/3;object-fit:cover;}
+.camera-scanner .hint-text{margin-top:6px;}
 
 /* Print-only QR labels: hidden on screen, the only thing visible when
    printing (see QrGenerationPanel). A "2x2 label printer" prints discrete
