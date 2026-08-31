@@ -7,11 +7,12 @@ import type { Category, Vendor } from "@/lib/types";
 const CATEGORY_LABELS: Record<Category, string> = {
   tray: "Tray", pad: "Soaker Pad", polybag: "Polybag", cfb: "CFB", glue: "Glue",
 };
-// Tray vendors aren't offered on Inward Vehicle Inspection today (Tray QC is
-// only ever auto-created from an approved inspection, never entered by hand
-// the way Pad/Polybag/CFB/Glue are) -- keep the manager scoped to the
-// categories that actually use a typed vendor name.
-const MANAGED_CATEGORIES: Category[] = ["pad", "polybag", "cfb", "glue"];
+// All five Inward Vehicle Inspection categories carry a Vendor Name field
+// on the inspection itself (Tray QC being auto-created from an approved
+// inspection doesn't change that -- the inspection's own Vendor Name is
+// entered regardless of category), so every category needs its own vendor
+// list here too.
+const MANAGED_CATEGORIES: Category[] = ["tray", "pad", "polybag", "cfb", "glue"];
 
 /**
  * Admin screen for the per-category Vendor master list backing the Vendor
