@@ -176,7 +176,7 @@ export default function MaterialConsumptionPage() {
                       {r.start_time && (r.end_time ? ` – ${formatTime12h(r.end_time)}` : " – …")}
                     </td>
                     <td><span className={`badge ${r.status === "saved" ? "approved" : "draft"}`}>{r.status === "saved" ? "Saved" : "Draft"}</span></td>
-                    <td style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "flex-end", alignItems: "center" }}>
+                    <td style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
                       {canRecordEnd && (
                         <button
                           type="button" className="btn btn-primary"
@@ -187,10 +187,15 @@ export default function MaterialConsumptionPage() {
                           {endingId === r.id ? "Recording…" : "Record End Time"}
                         </button>
                       )}
-                      <a className="btn-tertiary" style={{ whiteSpace: "nowrap" }}>View →</a>
-                      {perms?.can_delete && (
-                        <a className="btn-tertiary" style={{ color: "var(--red)", whiteSpace: "nowrap" }} onClick={(e) => handleDelete(r.id, e)}>Delete</a>
-                      )}
+                      {/* View + Delete always stay paired on one line, same as every other
+                          list in the app -- only the optional Record End Time button above
+                          gets its own row. */}
+                      <div style={{ display: "flex", gap: 10, alignItems: "center", whiteSpace: "nowrap" }}>
+                        <a className="btn-tertiary">View →</a>
+                        {perms?.can_delete && (
+                          <a className="btn-tertiary" style={{ color: "var(--red)" }} onClick={(e) => handleDelete(r.id, e)}>Delete</a>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );
