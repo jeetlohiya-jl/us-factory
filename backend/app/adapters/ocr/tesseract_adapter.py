@@ -51,6 +51,36 @@ def _looks_like_identifier(token: str) -> bool:
     return has_letter and has_digit
 
 
+def _multi_word_candidates(words: list[tuple[str, float]]) -> list[tuple[str, float]]:
+    """Vehicle registration plates are very often printed on two separate
+    lines/groups -- a letters part (state/series code) and a digits part
+    (the number) -- so Tesseract reads them back as two SEPARATE words,
+    e.g. "TAV" and "3657", each of which fails _looks_like_identifier on
+    its own since neither one word contains both a letter and a digit.
+    Without this, a plate OCR read perfectly well (high confidence on
+    both words) was reported as a total failure just because no single
+    word happened to mix letters and digits.
+
+    Rather than blindly concatenating adjacent words -- which is fragile
+    the moment a stray misread token (a crest, an emblem, a bolt) sits
+    between the real letters and digits in Tesseract's reading order --
+    take the single BEST-confidence all-letters word and the single
+    BEST-confidence all-digits word anywhere in the image and join those
+    two. This still finds the plate when noise words are present, since
+    a stray misread emblem token is rarely the single highest-confidence
+    letters-only word once compared against the plate's own bold, crisp
+    engraved lettering."""
+    letters_words = [(w, c) for w, c in words if len(w) >= 2 and w.isalpha()]
+    digit_words = [(w, c) for w, c in words if len(w) >= 2 and w.isdigit()]
+    if not letters_words or not digit_words:
+        return []
+    best_letters = max(letters_words, key=lambda x: x[1])
+    best_digits = max(digit_words, key=lambda x: x[1])
+    joined = best_letters[0] + best_digits[0]
+    avg_conf = (best_letters[1] + best_digits[1]) / 2
+    return [(joined, avg_conf)]
+
+
 class TesseractOcrAdapter(OcrPort):
     def extract_identifier(self, image_bytes: bytes, field_type: str) -> OcrResult:
         try:
@@ -104,8 +134,13 @@ class TesseractOcrAdapter(OcrPort):
                 best_conf = max(matching) if matching else 0.5
 
         if best_value is None:
-            # generic fallback: highest-confidence token that looks like an identifier
+            # Generic fallback: the best-scoring candidate that looks like an
+            # identifier, considering both single words (a seal number that
+            # really is one contiguous alphanumeric code) and 2-3 word runs
+            # joined together (a vehicle plate split across separate words
+            # by Tesseract -- see _multi_word_candidates).
             candidates = [(w, c) for w, c in words if _looks_like_identifier(w)]
+            candidates += _multi_word_candidates(words)
             if candidates:
                 candidates.sort(key=lambda x: x[1], reverse=True)
                 best_value, best_conf = candidates[0]
