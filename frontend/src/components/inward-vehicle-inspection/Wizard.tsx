@@ -48,7 +48,6 @@ export default function Wizard({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [touched, setTouched] = useState(false);
-  const isNew = useRef(true);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isFinalized = detail.status === "approved" || detail.status === "hold";
@@ -186,7 +185,15 @@ export default function Wizard({
   }
 
   async function handleCancel() {
-    if (!touched && detail.status === "draft" && isNew.current) {
+    // Always defer to the backend's own is_inspection_blank check rather
+    // than gating on the `touched` flag: typing into a field (even one you
+    // then cleared again) permanently set touched=true for the rest of this
+    // session, which meant Cancel stopped asking the backend at all -- so a
+    // genuinely blank draft (all fields empty, no photos, no line items, no
+    // checklist answers) never got cleaned up. The backend already knows
+    // how to tell a truly blank record from one with real data; the
+    // frontend just needs to always ask it, every time, on a draft.
+    if (detail.status === "draft") {
       try { await api.discardIfBlank(inspectionId); } catch { /* best-effort */ }
     }
     onClose(false);
