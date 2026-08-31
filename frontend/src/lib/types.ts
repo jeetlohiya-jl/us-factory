@@ -107,6 +107,7 @@ export interface MeResponse {
     inward_qc: Permissions;
     rm_qr_generation: Permissions;
     rm_storage: Permissions;
+    material_consumption: Permissions;
     fg_qr_generation: Permissions;
     fg_storage: Permissions;
   };
@@ -314,4 +315,66 @@ export interface ProductionRun {
   total_fg_pallets: number;
   status: string;
   has_fg_qr: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Material Consumption
+// ---------------------------------------------------------------------------
+
+export interface Machine {
+  id: string;
+  code: string;
+  is_active: boolean;
+}
+
+export type SecondaryMaterialCategory = "cfb" | "pad" | "glue" | "polybag";
+
+export interface MaterialConsumptionPalletRow {
+  id: string;
+  role: "primary" | SecondaryMaterialCategory;
+  pallet_id: string;
+  pallet_display_id: string;
+  sku_code: string | null;
+  sku_version: string | null;
+  category: string | null;
+  quantity: string | number;
+  status: PalletLifecycleStatus;
+}
+
+export interface MaterialConsumptionListItem {
+  id: string;
+  consumption_date: string;
+  category: string | null;
+  sku_code: string | null;
+  sku_version: string | null;
+  pallet_numbers: string;
+  machine: string | null;
+  shift: string | null;
+  status: "draft" | "saved";
+}
+
+export interface MaterialConsumptionDetail {
+  id: string;
+  consumption_date: string;
+  category: string | null;
+  sku_code_id: string | null;
+  sku_version_id: string | null;
+  sku_code: string | null;
+  sku_version: string | null;
+  machine_id: string | null;
+  machine: string | null;
+  shift: string | null;
+  start_time: string | null;
+  end_time: string | null;
+  status: "draft" | "saved";
+  production_run_id: string | null;
+  production_run_number: string | null;
+  ipqc_id: string | null;
+  pallets: MaterialConsumptionPalletRow[];
+  secondary_materials: {
+    cfb: MaterialConsumptionPalletRow[];
+    pad: MaterialConsumptionPalletRow[];
+    glue: MaterialConsumptionPalletRow[];
+    polybag: MaterialConsumptionPalletRow[];
+  };
 }

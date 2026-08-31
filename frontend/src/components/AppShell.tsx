@@ -40,6 +40,13 @@ const NAV_ITEMS = [
     ),
   },
   {
+    href: "/material-consumption",
+    label: "Material Consumption",
+    icon: (
+      <path d="M3 7h18M3 12h18M3 17h18" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    ),
+  },
+  {
     href: "/fg-qr-generation",
     label: "FG QR Generation",
     icon: (
@@ -68,6 +75,13 @@ const SETUP_NAV_ITEMS = [
     label: "SKU Names",
     icon: (
       <path d="M20.59 13.41L11 3.83A2 2 0 009.59 3.24L4 3a1 1 0 00-1 1l.24 5.59a2 2 0 00.58 1.41l9.59 9.59a2 2 0 002.83 0l4.35-4.35a2 2 0 000-2.83zM7 8a1 1 0 111-1 1 1 0 01-1 1z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+    ),
+  },
+  {
+    href: "/machines",
+    label: "Machines",
+    icon: (
+      <path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
     ),
   },
 ];

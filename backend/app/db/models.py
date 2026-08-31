@@ -89,6 +89,18 @@ class Vendor(Base):
     __table_args__ = (UniqueConstraint("category", "name"),)
 
 
+class Machine(Base):
+    """Machine master data for Material Consumption / Production, following
+    the exact same admin-managed-list pattern as Vendor (see Vendor above)
+    rather than the prototype's hardcoded MACHINES array duplicated in
+    several places in its markup."""
+    __tablename__ = "machines"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    code = Column(Text, nullable=False, unique=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+
 class InwardVehicleInspection(Base):
     __tablename__ = "inward_vehicle_inspections"
     id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
@@ -309,12 +321,69 @@ class ProductionRun(Base):
     category = Column(Text, nullable=False, default="fgtray")
     total_fg_pallets = Column(Integer, nullable=False, default=0)
     shift = Column(Text, nullable=True)
+    # Added for Material Consumption: a run is found-or-created by
+    # (production_date, shift) -- NOT machine -- so multiple Material
+    # Consumption records on different machines for the same date/shift
+    # attach to the one run (see ProductionRunMachine below).
+    production_date = Column(Text, nullable=True)
     status = Column(Text, nullable=False, default="approved")
     created_by = Column(UUID(as_uuid=True), ForeignKey("app_users.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
     sku_code = relationship("SkuCode")
     sku_version = relationship("SkuVersion")
+    machines = relationship("ProductionRunMachine", back_populates="production_run", cascade="all, delete-orphan")
+    material_consumptions = relationship("MaterialConsumption", back_populates="production_run")
+    ipqc_record = relationship("IpqcRecord", back_populates="production_run", uselist=False)
+
+
+class ProductionRunMachine(Base):
+    """Join table: a Production Run can span multiple machines (each
+    contributed by a different Material Consumption record on the same
+    date+shift); a machine can appear on many runs over time."""
+    __tablename__ = "production_run_machines"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    production_run_id = Column(UUID(as_uuid=True), ForeignKey("production_runs.id", ondelete="CASCADE"), nullable=False)
+    machine_id = Column(UUID(as_uuid=True), ForeignKey("machines.id"), nullable=False)
+
+    production_run = relationship("ProductionRun", back_populates="machines")
+    machine = relationship("Machine")
+
+    __table_args__ = (UniqueConstraint("production_run_id", "machine_id"),)
+
+
+class IpqcRecord(Base):
+    """
+    Minimal IPQC entity, added strictly to give Material Consumption's
+    Production Run a real downstream link to satisfy the requested
+    traceability chain (Material Consumption -> Production Run -> IPQC) --
+    mirroring exactly how ProductionRun itself was previously added as a
+    minimal stub strictly to give FG QR Generation a real upstream source
+    (see the ProductionRun docstring above). A full IPQC module (inspection
+    blocks, pass/fail criteria, shift-incharge workflow, etc., as sketched
+    in the prototype's IPQC_RECORDS) was not requested and is intentionally
+    not built here.
+
+    One IPQC record per Production Run (unique constraint on
+    production_run_id) is the dedup mechanism: since a Production Run is
+    itself found-or-created by (date, shift) and never duplicated, keying
+    IPQC 1:1 off the run automatically prevents a second Material
+    Consumption record on the same date+shift from ever creating a second
+    IPQC record for that shift.
+    """
+    __tablename__ = "ipqc_records"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    production_run_id = Column(UUID(as_uuid=True), ForeignKey("production_runs.id", ondelete="CASCADE"), nullable=False, unique=True)
+    sku_code_id = Column(UUID(as_uuid=True), ForeignKey("sku_codes.id"), nullable=True)
+    sku_version_id = Column(UUID(as_uuid=True), ForeignKey("sku_versions.id"), nullable=True)
+    sku_code_snapshot = Column(Text, nullable=True)
+    sku_version_snapshot = Column(Text, nullable=True)
+    shift = Column(Text, nullable=True)
+    production_date = Column(Text, nullable=True)
+    status = Column(Text, nullable=False, default="pending")
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+    production_run = relationship("ProductionRun", back_populates="ipqc_record")
 
 
 class Location(Base):
@@ -420,3 +489,77 @@ class StorageRecord(Base):
     source_inward_qc = relationship("InwardQcRecord")
     source_production_run = relationship("ProductionRun")
     stored_by_user = relationship("AppUser")
+
+
+class MaterialConsumption(Base):
+    """
+    Records the actual RM pallets an operator physically picked from RM
+    Storage and consumed for production -- explicit scan-driven selection,
+    never FIFO/auto-assignment (per the task's explicit override). Category
+    + SKU Code + SKU Version are never entered here; they are established
+    by the first scanned primary pallet and snapshotted onto this row so
+    the record stays readable even if the SKU/pallet master data changes
+    later (same snapshot pattern as Pallet.sku_code_snapshot elsewhere).
+
+    category is restricted to the two primary-material categories that are
+    actually consumed into production ('tray' == Base Tray, 'fgtray' == FG
+    Non-Padded Tray) -- Pad/Polybag/CFB/Glue are the *secondary* materials
+    for this record (see MaterialConsumptionPallet.role) even though they
+    are RM pallets of their own, generated the same way.
+    """
+    __tablename__ = "material_consumptions"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    consumption_date = Column(Text, nullable=False)
+    category = Column(Text, nullable=True)  # 'tray' | 'fgtray' -- set by the first primary pallet scan
+    sku_code_id = Column(UUID(as_uuid=True), ForeignKey("sku_codes.id"), nullable=True)
+    sku_version_id = Column(UUID(as_uuid=True), ForeignKey("sku_versions.id"), nullable=True)
+    sku_code_snapshot = Column(Text, nullable=True)
+    sku_version_snapshot = Column(Text, nullable=True)
+    machine_id = Column(UUID(as_uuid=True), ForeignKey("machines.id"), nullable=True)
+    shift = Column(Text, nullable=True)
+    start_time = Column(Text, nullable=True)
+    end_time = Column(Text, nullable=True)
+    status = Column(Text, nullable=False, default="draft")  # 'draft' | 'saved'
+    production_run_id = Column(UUID(as_uuid=True), ForeignKey("production_runs.id"), nullable=True)
+    created_by = Column(UUID(as_uuid=True), ForeignKey("app_users.id"), nullable=True)
+    updated_by = Column(UUID(as_uuid=True), ForeignKey("app_users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    sku_code = relationship("SkuCode")
+    sku_version = relationship("SkuVersion")
+    machine = relationship("Machine")
+    production_run = relationship("ProductionRun", back_populates="material_consumptions")
+    pallets = relationship(
+        "MaterialConsumptionPallet", back_populates="material_consumption",
+        cascade="all, delete-orphan", order_by="MaterialConsumptionPallet.sort_order",
+    )
+
+
+class MaterialConsumptionPallet(Base):
+    """
+    Every pallet attached to a Material Consumption record -- both the
+    primary RM pallets being consumed (role='primary') AND the secondary
+    materials (role='cfb'/'pad'/'glue'/'polybag') -- in ONE table so a
+    single unique constraint on pallet_id enforces, at the database level,
+    that a pallet can never be attached to more than one *active*
+    (draft-or-saved) Material Consumption record at a time, in any role.
+    Deleting the owning MaterialConsumption row (only ever allowed while
+    it's still a draft, see the delete-dependency check in the API) frees
+    the pallet immediately via cascade.
+
+    Structured, not a comma-separated string -- see MaterialConsumption's
+    module docstring and the task's explicit "do not store the pallet
+    relationship only as a comma-separated display string" instruction.
+    """
+    __tablename__ = "material_consumption_pallets"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    material_consumption_id = Column(UUID(as_uuid=True), ForeignKey("material_consumptions.id", ondelete="CASCADE"), nullable=False)
+    role = Column(Text, nullable=False)  # 'primary' | 'cfb' | 'pad' | 'glue' | 'polybag'
+    pallet_id = Column(UUID(as_uuid=True), ForeignKey("pallets.id"), nullable=False, unique=True)
+    quantity = Column(Numeric, nullable=False, default=1)
+    sort_order = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+    material_consumption = relationship("MaterialConsumption", back_populates="pallets")
+    pallet = relationship("Pallet")

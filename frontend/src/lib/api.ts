@@ -3,7 +3,7 @@ import type {
   InspectionDetail, InspectionListItem, SkuCode, SkuVersion, ChecklistItemRef, MeResponse, Category, ImageType,
   QcMeta, QcListItem, QcDetail, QcManualCategory,
   Pallet, QrGenerationListItem, QrGenerationDetail, StorageRecordDetail, LocationRef, ProductionRun,
-  Vendor,
+  Vendor, Machine, MaterialConsumptionListItem, MaterialConsumptionDetail, SecondaryMaterialCategory,
 } from "./types";
 
 const BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
@@ -242,4 +242,40 @@ export const api = {
 
   // -- Locations (reference, shared by RM + FG storage) --------------------
   listLocations: () => request<LocationRef[]>("/api/v1/locations"),
+
+  // -- Machines (master data for Material Consumption) ---------------------
+  machines: (includeInactive = false) =>
+    request<Machine[]>(`/api/v1/machines${includeInactive ? "?include_inactive=true" : ""}`),
+  createMachine: (code: string) => request<Machine>("/api/v1/machines", { method: "POST", body: JSON.stringify({ code }) }),
+  updateMachine: (id: string, patch: { code?: string; is_active?: boolean }) =>
+    request<Machine>(`/api/v1/machines/${id}`, { method: "PUT", body: JSON.stringify(patch) }),
+  deleteMachine: (id: string) => request<void>(`/api/v1/machines/${id}`, { method: "DELETE" }),
+
+  // -- Material Consumption -------------------------------------------------
+  listMaterialConsumption: (params: { search?: string; category?: string; date?: string } = {}) => {
+    const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v) as [string, string][]);
+    return request<MaterialConsumptionListItem[]>(`/api/v1/material-consumption?${qs}`);
+  },
+  materialConsumptionShifts: () => request<string[]>("/api/v1/material-consumption/shifts"),
+  createMaterialConsumptionDraft: () =>
+    request<MaterialConsumptionDetail>("/api/v1/material-consumption/draft", { method: "POST" }),
+  getMaterialConsumption: (id: string) => request<MaterialConsumptionDetail>(`/api/v1/material-consumption/${id}`),
+  updateMaterialConsumptionBasic: (id: string, patch: { machine_id?: string; shift?: string; start_time?: string; end_time?: string }) =>
+    request<MaterialConsumptionDetail>(`/api/v1/material-consumption/${id}/basic`, { method: "PUT", body: JSON.stringify(patch) }),
+  scanMaterialConsumptionPallet: (id: string, payload: string) =>
+    request<MaterialConsumptionDetail>(`/api/v1/material-consumption/${id}/scan-pallet`, { method: "POST", body: JSON.stringify({ payload }) }),
+  scanMaterialConsumptionSecondary: (id: string, payload: string, category: SecondaryMaterialCategory) =>
+    request<MaterialConsumptionDetail>(`/api/v1/material-consumption/${id}/scan-secondary`, { method: "POST", body: JSON.stringify({ payload, category }) }),
+  removeMaterialConsumptionPallet: (id: string, rowId: string) =>
+    request<MaterialConsumptionDetail>(`/api/v1/material-consumption/${id}/pallets/${rowId}`, { method: "DELETE" }),
+  setMaterialConsumptionPalletQuantity: (id: string, rowId: string, quantity: string) =>
+    request<MaterialConsumptionDetail>(`/api/v1/material-consumption/${id}/pallets/${rowId}/quantity`, { method: "PUT", body: JSON.stringify({ quantity }) }),
+  saveMaterialConsumptionDraft: (id: string) =>
+    request<MaterialConsumptionDetail>(`/api/v1/material-consumption/${id}/save-draft`, { method: "POST" }),
+  finalizeMaterialConsumption: (id: string) =>
+    request<MaterialConsumptionDetail>(`/api/v1/material-consumption/${id}/finalize`, { method: "POST" }),
+  discardMaterialConsumptionIfBlank: (id: string) =>
+    request<void>(`/api/v1/material-consumption/${id}/if-blank`, { method: "DELETE" }),
+  deleteMaterialConsumption: (id: string) =>
+    request<{ ok: boolean }>(`/api/v1/material-consumption/${id}`, { method: "DELETE" }),
 };

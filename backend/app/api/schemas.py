@@ -358,3 +358,95 @@ class ProductionRunOut(BaseModel):
     total_fg_pallets: int
     status: str
     has_fg_qr: bool = False
+
+
+# ---------------------------------------------------------------------------
+# Machines (master data for Material Consumption / Production)
+# ---------------------------------------------------------------------------
+
+class MachineOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    code: str
+    is_active: bool = True
+
+
+class MachineIn(BaseModel):
+    code: str
+
+
+class MachineUpdateIn(BaseModel):
+    code: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+# ---------------------------------------------------------------------------
+# Material Consumption
+# ---------------------------------------------------------------------------
+
+class MaterialConsumptionScanIn(BaseModel):
+    payload: str
+
+
+class MaterialConsumptionSecondaryScanIn(BaseModel):
+    payload: str
+    category: str  # 'cfb' | 'pad' | 'glue' | 'polybag'
+
+
+class MaterialConsumptionBasicUpdate(BaseModel):
+    machine_id: Optional[uuid.UUID] = None
+    shift: Optional[str] = None
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+
+
+class MaterialConsumptionPalletOut(BaseModel):
+    id: uuid.UUID
+    role: str
+    pallet_id: uuid.UUID
+    pallet_display_id: str
+    sku_code: Optional[str] = None
+    sku_version: Optional[str] = None
+    category: Optional[str] = None
+    quantity: Decimal
+    status: str  # the pallet's own lifecycle_status, for display
+
+
+class MaterialConsumptionSecondaryMaterialsOut(BaseModel):
+    cfb: list[MaterialConsumptionPalletOut] = []
+    pad: list[MaterialConsumptionPalletOut] = []
+    glue: list[MaterialConsumptionPalletOut] = []
+    polybag: list[MaterialConsumptionPalletOut] = []
+
+
+class MaterialConsumptionListItemOut(BaseModel):
+    id: uuid.UUID
+    consumption_date: str
+    category: Optional[str]
+    sku_code: Optional[str]
+    sku_version: Optional[str]
+    pallet_numbers: str  # comma-joined display of primary pallets
+    machine: Optional[str]
+    shift: Optional[str]
+    status: str
+
+
+class MaterialConsumptionDetailOut(BaseModel):
+    id: uuid.UUID
+    consumption_date: str
+    category: Optional[str]
+    sku_code_id: Optional[uuid.UUID]
+    sku_version_id: Optional[uuid.UUID]
+    sku_code: Optional[str]
+    sku_version: Optional[str]
+    machine_id: Optional[uuid.UUID]
+    machine: Optional[str]
+    shift: Optional[str]
+    start_time: Optional[str]
+    end_time: Optional[str]
+    status: str
+    production_run_id: Optional[uuid.UUID]
+    production_run_number: Optional[str] = None
+    ipqc_id: Optional[uuid.UUID] = None
+    pallets: list[MaterialConsumptionPalletOut] = []
+    secondary_materials: MaterialConsumptionSecondaryMaterialsOut = MaterialConsumptionSecondaryMaterialsOut()
