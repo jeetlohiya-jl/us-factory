@@ -1,8 +1,9 @@
 "use client";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { api } from "@/lib/api";
 import type { InspectionDetail, InspectionImage } from "@/lib/types";
 import Lightbox from "./Lightbox";
+import CameraCapture from "./CameraCapture";
 
 export default function MultiImageField({
   inspectionId, images, disabled, onChange, label = "Damage Pictures",
@@ -16,10 +17,12 @@ export default function MultiImageField({
   const [busyId, setBusyId] = useState<string | "new" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
-  const addRef = useRef<HTMLInputElement>(null);
-  const replaceRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  // "new" while capturing a photo to add, an image id while capturing a
+  // replacement for that image, or null when no camera view is open.
+  const [capturing, setCapturing] = useState<string | "new" | null>(null);
 
   async function handleAdd(file: File) {
+    setCapturing(null);
     setBusyId("new");
     setError(null);
     try {
@@ -29,11 +32,11 @@ export default function MultiImageField({
       setError(e instanceof Error ? e.message : "Upload failed");
     } finally {
       setBusyId(null);
-      if (addRef.current) addRef.current.value = "";
     }
   }
 
   async function handleReplace(imageId: string, file: File) {
+    setCapturing(null);
     setBusyId(imageId);
     setError(null);
     try {
@@ -70,31 +73,24 @@ export default function MultiImageField({
             )}
             {!disabled && (
               <div className="img-thumb-actions">
-                <button disabled={busyId === img.id} onClick={() => replaceRefs.current[img.id]?.click()}>Replace</button>
+                <button disabled={busyId === img.id} onClick={() => setCapturing(img.id)}>Replace</button>
                 <button disabled={busyId === img.id} onClick={() => handleDelete(img.id)}>Delete</button>
               </div>
             )}
-            <input
-              ref={(el) => { replaceRefs.current[img.id] = el; }}
-              type="file"
-              accept="image/*"
-              style={{ display: "none" }}
-              onChange={(e) => e.target.files?.[0] && handleReplace(img.id, e.target.files[0])}
-            />
           </div>
         ))}
         {!disabled && (
-          <label className="img-add-tile">
+          <button type="button" className="img-add-tile" onClick={() => setCapturing("new")}>
             + Add More
-            <input
-              ref={addRef}
-              type="file"
-              accept="image/*"
-              onChange={(e) => e.target.files?.[0] && handleAdd(e.target.files[0])}
-            />
-          </label>
+          </button>
         )}
       </div>
+      {capturing && (
+        <CameraCapture
+          onCapture={(file) => (capturing === "new" ? handleAdd(file) : handleReplace(capturing, file))}
+          onCancel={() => setCapturing(null)}
+        />
+      )}
       {busyId && <div className="hint-text">Processing…</div>}
       {error && <div className="hint-text" style={{ color: "var(--red)" }}>{error}</div>}
       {lightboxSrc && <Lightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />}

@@ -1,8 +1,9 @@
 "use client";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { api } from "@/lib/api";
 import type { ImageType, InspectionDetail, InspectionImage } from "@/lib/types";
 import Lightbox from "./Lightbox";
+import CameraCapture from "./CameraCapture";
 
 const OCR_LABEL: Record<string, string> = {
   success: "OCR matched",
@@ -24,9 +25,10 @@ export default function ImageField({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lightbox, setLightbox] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [capturing, setCapturing] = useState(false);
 
   async function handleFile(file: File) {
+    setCapturing(false);
     setBusy(true);
     setError(null);
     try {
@@ -38,7 +40,6 @@ export default function ImageField({
       setError(e instanceof Error ? e.message : "Upload failed");
     } finally {
       setBusy(false);
-      if (inputRef.current) inputRef.current.value = "";
     }
   }
 
@@ -66,34 +67,20 @@ export default function ImageField({
             <img src={api.mediaUrl(image.public_url)} alt={label} onClick={() => setLightbox(true)} />
             {!disabled && (
               <div className="img-thumb-actions">
-                <button onClick={() => inputRef.current?.click()} disabled={busy}>Replace</button>
+                <button onClick={() => setCapturing(true)} disabled={busy}>Replace</button>
                 <button onClick={handleDelete} disabled={busy}>Delete</button>
               </div>
             )}
           </div>
         ) : (
           !disabled && (
-            <label className="img-add-tile">
+            <button type="button" className="img-add-tile" onClick={() => setCapturing(true)}>
               + Add
-              <input
-                ref={inputRef}
-                type="file"
-                accept="image/*"
-                onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
-              />
-            </label>
+            </button>
           )
         )}
-        {image?.public_url && !disabled && (
-          <input
-            ref={inputRef}
-            type="file"
-            accept="image/*"
-            style={{ display: "none" }}
-            onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
-          />
-        )}
       </div>
+      {capturing && <CameraCapture onCapture={handleFile} onCancel={() => setCapturing(false)} />}
       {busy && <div className="hint-text">Processing…</div>}
       {error && <div className="hint-text" style={{ color: "var(--red)" }}>{error}</div>}
       {image?.ocr_status && (
