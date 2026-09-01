@@ -2,7 +2,9 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { DEV_USERS, getCurrentDevEmail, setCurrentDevEmail } from "@/lib/session";
+import type { Session } from "@supabase/supabase-js";
+import { supabase } from "@/lib/supabaseClient";
+import { signInWithGoogle, signOut } from "@/lib/session";
 
 /**
  * Shell matching the approved prototype's sidebar visual language (brand
@@ -87,15 +89,42 @@ const SETUP_NAV_ITEMS = [
 ];
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
-  const [email, setEmail] = useState(DEV_USERS[0].email);
+  const [session, setSession] = useState<Session | null>(null);
+  const [checkedSession, setCheckedSession] = useState(false);
   const pathname = usePathname();
 
   useEffect(() => {
-    setEmail(getCurrentDevEmail());
-    const onChange = () => setEmail(getCurrentDevEmail());
-    window.addEventListener("factory_os_user_changed", onChange);
-    return () => window.removeEventListener("factory_os_user_changed", onChange);
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      setCheckedSession(true);
+    });
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      setSession(newSession);
+      // Same signal useMe() already listens for, so switching users (or
+      // signing in/out) still forces a fresh /me + permissions fetch.
+      window.dispatchEvent(new Event("factory_os_user_changed"));
+    });
+    return () => sub.subscription.unsubscribe();
   }, []);
+
+  if (!checkedSession) {
+    return <div className="auth-loading">Loading…</div>;
+  }
+
+  if (!session) {
+    return (
+      <div className="auth-gate">
+        <div className="auth-gate-card">
+          <div className="sb-mark" style={{ margin: "0 auto 16px" }}>C</div>
+          <h1>US Factory</h1>
+          <div className="desc">Cirkla Manufacturing — sign in to continue</div>
+          <button className="btn btn-primary" style={{ marginTop: 20 }} onClick={() => signInWithGoogle()}>
+            Sign in with Google
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="app">
@@ -124,13 +153,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           ))}
         </div>
         <div className="sb-foot">
-          <div>Signed in as {DEV_USERS.find((u) => u.email === email)?.label || email}</div>
+          <div>Signed in as {session.user.email}</div>
           <div className="sb-role">
-            <select value={email} onChange={(e) => setCurrentDevEmail(e.target.value)}>
-              {DEV_USERS.map((u) => (
-                <option key={u.email} value={u.email}>{u.label}</option>
-              ))}
-            </select>
+            <button className="btn-tertiary" onClick={() => signOut()}>Sign out</button>
           </div>
         </div>
       </div>

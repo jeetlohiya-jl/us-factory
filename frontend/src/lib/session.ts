@@ -1,30 +1,37 @@
 "use client";
+import type { Session } from "@supabase/supabase-js";
+import { supabase } from "./supabaseClient";
+
 /**
- * Dev session stand-in. Supabase Auth with Google OAuth isn't wired up yet
- * (no live Supabase project for this task), so the signed-in user is kept in
- * memory here and sent as a "dev:<email>" bearer token, which the backend's
- * DevAuthAdapter resolves to a real row in app_users. Swapping in real
- * Supabase sessions later means replacing this module's getToken()/getUser()
- * with a Supabase client call — nothing else (API client, components) changes.
+ * Real Supabase Auth session (Google OAuth) -- replaces the old dev
+ * stand-in that sent a fake "dev:<email>" bearer token trusted with no
+ * password check. The backend's SupabaseAuthAdapter (already written,
+ * app/adapters/auth/supabase_adapter.py) validates the real JWT this
+ * produces and looks the signed-in email up in app_users, same as before.
+ *
+ * Signing in with an email that has no row in app_users (or an inactive
+ * one) still gets a real Supabase session, but every API call will come
+ * back 401 -- that's the backend correctly refusing an unrecognized user,
+ * not a bug here.
  */
-export const DEV_USERS = [
-  { email: "r.fernandez@cirkla.com", label: "R. Fernandez (Admin)" },
-  { email: "staff@cirkla.com", label: "S. Staff (Staff)" },
-];
 
-const STORAGE_KEY = "factory_os_dev_user";
-
-export function getCurrentDevEmail(): string {
-  if (typeof window === "undefined") return DEV_USERS[0].email;
-  return window.localStorage.getItem(STORAGE_KEY) || DEV_USERS[0].email;
+export async function getSession(): Promise<Session | null> {
+  const { data } = await supabase.auth.getSession();
+  return data.session;
 }
 
-export function setCurrentDevEmail(email: string) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(STORAGE_KEY, email);
-  window.dispatchEvent(new Event("factory_os_user_changed"));
+export async function getAuthHeader(): Promise<string> {
+  const session = await getSession();
+  return session ? `Bearer ${session.access_token}` : "";
 }
 
-export function getAuthHeader(): string {
-  return `Bearer dev:${getCurrentDevEmail()}`;
+export async function signInWithGoogle() {
+  await supabase.auth.signInWithOAuth({
+    provider: "google",
+    options: { redirectTo: typeof window !== "undefined" ? window.location.origin : undefined },
+  });
+}
+
+export async function signOut() {
+  await supabase.auth.signOut();
 }
