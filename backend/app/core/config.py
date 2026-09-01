@@ -22,6 +22,11 @@ class Settings(BaseSettings):
     # Auth adapter selection: "dev" (static bearer-token users, default while
     # Supabase Google OAuth isn't wired up) or "supabase".
     auth_provider: str = "dev"
+    # No longer read by SupabaseAuthAdapter -- it verifies against the
+    # project's JWKS endpoint (derived from supabase_url) instead of a
+    # shared secret, since newer/migrated Supabase projects sign tokens
+    # with an asymmetric key that has no shared secret to configure here.
+    # Left in place only so an already-set env var doesn't error out.
     supabase_jwt_secret: str | None = None
 
     # OCR adapter selection: "tesseract" (real, local, default) or "none".
