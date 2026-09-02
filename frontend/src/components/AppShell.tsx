@@ -49,6 +49,13 @@ const NAV_ITEMS = [
     ),
   },
   {
+    href: "/production",
+    label: "Production",
+    icon: (
+      <path d="M3 4h7v7H3zM14 4h7v7h-7zM3 15h7v7H3zM14 15h7v7h-7z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+    ),
+  },
+  {
     href: "/fg-qr-generation",
     label: "FG QR Generation",
     icon: (

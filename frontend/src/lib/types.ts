@@ -109,6 +109,7 @@ export interface MeResponse {
     rm_qr_generation: Permissions;
     rm_storage: Permissions;
     material_consumption: Permissions;
+    production: Permissions;
     fg_qr_generation: Permissions;
     fg_storage: Permissions;
   };
@@ -391,4 +392,53 @@ export interface MaterialConsumptionDetail {
   production_run_number: string | null;
   ipqc_id: string | null;
   machine_entries: MaterialConsumptionMachineEntry[];
+}
+
+// ---------------------------------------------------------------------------
+// Production -- read-only: every record is auto-created by Material
+// Consumption's finalize() (see material_consumption_service.py), never a
+// manual "New Record" flow. One entry per machine on the run, each carrying
+// that machine's own linked Material Consumption data (category/SKU/
+// pallets/times) -- exactly the machine_entries shape Material Consumption
+// itself uses, since a run's machine entries ARE its source MC record(s)'
+// machine entries.
+// ---------------------------------------------------------------------------
+
+export interface ProductionMachineEntry {
+  machine_consumption_id: string; // the MaterialConsumptionMachineEntry id -- for stable list keys only
+  material_consumption_id: string;
+  machine: string | null;
+  category: string | null;
+  sku_code: string | null;
+  sku_version: string | null;
+  start_time: string | null;
+  end_time: string | null;
+  pallets: MaterialConsumptionPalletRow[];
+}
+
+export interface ProductionListItem {
+  id: string;
+  run_number: string;
+  shipment_number: string | null;
+  machines: string; // comma-joined machine codes, matching the prototype's table shape
+  shift: string | null;
+  sku_code: string | null;
+  operator: string | null;
+  status: string;
+  date: string | null;
+}
+
+export interface ProductionDetail {
+  id: string;
+  run_number: string;
+  shipment_number: string | null;
+  shift: string | null;
+  date: string | null;
+  status: string;
+  operator: string | null;
+  sku_codes: string; // distinct SKU codes across every machine entry, comma-joined
+  machine_entries: ProductionMachineEntry[];
+  ipqc_id: string | null;
+  ipqc_status: string | null;
+  fg_qr_batches: { id: string; batch_display_id: string; status: string }[];
 }

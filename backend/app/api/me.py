@@ -10,7 +10,7 @@ router = APIRouter(prefix="/api/v1", tags=["me"])
 
 MODULES = [
     "inward_vehicle_inspection", "inward_qc",
-    "rm_qr_generation", "rm_storage", "material_consumption", "fg_qr_generation", "fg_storage",
+    "rm_qr_generation", "rm_storage", "material_consumption", "production", "fg_qr_generation", "fg_storage",
 ]
 
 

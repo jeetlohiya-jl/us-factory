@@ -5,6 +5,7 @@ import type {
   QcMeta, QcListItem, QcDetail, QcManualCategory,
   Pallet, QrGenerationListItem, QrGenerationDetail, StorageRecordDetail, LocationRef, ProductionRun,
   Vendor, Machine, MaterialConsumptionListItem, MaterialConsumptionDetail, SecondaryMaterialCategory,
+  MaterialConsumptionPalletRow, ProductionListItem, ProductionDetail, ProductionMachineEntry,
 } from "./types";
 
 const BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
@@ -423,6 +424,173 @@ async function getMaterialConsumptionSb(id: string): Promise<MaterialConsumption
   return flattenMcDetail(data as unknown as RawMc);
 }
 
+// -- Production: read-only, direct Supabase -------------------------------
+// Every Production Run is auto-created by Material Consumption's finalize()
+// (find_or_create_production_run in material_consumption_service.py) --
+// there is no manual "New Record" flow and therefore no write function
+// here at all. "Machines" on the list comes from production_run_machines
+// (visible independent of Material Consumption view permission, same as
+// the run itself); the per-machine drill-down on the detail view comes
+// from the linked material_consumptions -> machine_entries (gracefully
+// empty if the viewer can't see Material Consumption data).
+
+type RawProdMcPalletShallow = { role: string; pallet: { shipment_number: string | null } | null };
+type RawProdMcShallow = { machine_entries: { pallets: RawProdMcPalletShallow[] }[] };
+
+type RawProductionRunList = {
+  id: string; run_number: string; shipment_number: string | null; shift: string | null;
+  production_date: string | null; status: string;
+  sku_code: { code: string } | null;
+  machines: { machine: { code: string } | null }[];
+  created_by_user: { full_name: string } | null;
+  material_consumptions: RawProdMcShallow[];
+};
+
+const PRODUCTION_LIST_SELECT =
+  "id,run_number,shipment_number,shift,production_date,status," +
+  "sku_code:sku_codes(code)," +
+  "machines:production_run_machines(machine:machines(code))," +
+  "created_by_user:app_users(full_name)," +
+  "material_consumptions(machine_entries:material_consumption_machine_entries(pallets:material_consumption_pallets(role,pallet:pallets(shipment_number))))";
+
+/** Production Runs never store their own shipment number (nothing in the
+ * current workflow enters one) -- but every primary pallet a linked
+ * Material Consumption entry consumed carries its own shipment_number
+ * snapshot, so it's derivable through the existing FK chain rather than
+ * left blank when it doesn't have to be. */
+function deriveShipmentNumber(mcs: RawProdMcShallow[]): string | null {
+  for (const mc of mcs || []) {
+    for (const e of mc.machine_entries || []) {
+      for (const p of e.pallets || []) {
+        if (p.role === "primary" && p.pallet?.shipment_number) return p.pallet.shipment_number;
+      }
+    }
+  }
+  return null;
+}
+
+function flattenProductionListItem(raw: RawProductionRunList): ProductionListItem {
+  return {
+    id: raw.id, run_number: raw.run_number,
+    shipment_number: raw.shipment_number ?? deriveShipmentNumber(raw.material_consumptions),
+    machines: (raw.machines || []).filter((m) => m.machine).map((m) => m.machine!.code).join(", "),
+    shift: raw.shift, sku_code: raw.sku_code?.code ?? null,
+    operator: raw.created_by_user?.full_name ?? null,
+    status: raw.status, date: raw.production_date,
+  };
+}
+
+async function listProductionSb(params: { search?: string; date?: string; shift?: string; machine?: string } = {}): Promise<ProductionListItem[]> {
+  const { data, error } = await supabase.from("production_runs").select(PRODUCTION_LIST_SELECT).order("created_at", { ascending: false });
+  if (error) throw new ApiError(500, error.message);
+  let rows = ((data || []) as unknown as RawProductionRunList[]).map(flattenProductionListItem);
+  if (params.date) rows = rows.filter((r) => r.date === params.date);
+  if (params.shift) rows = rows.filter((r) => r.shift === params.shift);
+  if (params.machine) rows = rows.filter((r) => r.machines.split(", ").includes(params.machine!));
+  if (params.search) {
+    const s = params.search.toLowerCase();
+    rows = rows.filter((r) => [r.machines, r.sku_code, r.operator].some((v) => (v || "").toLowerCase().includes(s)));
+  }
+  return rows;
+}
+
+type RawProdPallet = {
+  id: string; role: string; pallet_id: string; quantity: string | number; sort_order: number;
+  pallet: { display_id: string; sku_code: string | null; sku_version: string | null; category: string | null; lifecycle_status: string; shipment_number: string | null } | null;
+};
+
+const PRODUCTION_PALLET_SELECT =
+  "id,role,pallet_id,quantity,sort_order," +
+  "pallet:pallets(display_id,sku_code:sku_code_snapshot,sku_version:sku_version_snapshot,category,lifecycle_status,shipment_number)";
+
+function prodFlattenPallet(row: RawProdPallet): MaterialConsumptionPalletRow {
+  return {
+    id: row.id, role: row.role as MaterialConsumptionPalletRow["role"], pallet_id: row.pallet_id,
+    pallet_display_id: row.pallet?.display_id ?? "",
+    sku_code: row.pallet?.sku_code ?? null, sku_version: row.pallet?.sku_version ?? null,
+    category: row.pallet?.category ?? null, quantity: row.quantity,
+    status: (row.pallet?.lifecycle_status ?? "generated") as MaterialConsumptionPalletRow["status"],
+  };
+}
+
+type RawProdMachineEntry = {
+  id: string; machine: { code: string } | null; category: string | null;
+  sku_code: string | null; sku_version: string | null; start_time: string | null; end_time: string | null;
+  sort_order: number; pallets: RawProdPallet[];
+};
+
+const PRODUCTION_MACHINE_ENTRY_SELECT =
+  "id,machine:machines(code),category,sku_code:sku_code_snapshot,sku_version:sku_version_snapshot,start_time,end_time,sort_order," +
+  `pallets:material_consumption_pallets(${PRODUCTION_PALLET_SELECT})`;
+
+type RawProdMc = { id: string; status: string; machine_entries: RawProdMachineEntry[] };
+
+const PRODUCTION_DETAIL_SELECT =
+  "id,run_number,shipment_number,shift,production_date,status," +
+  "created_by_user:app_users(full_name)," +
+  "ipqc_record:ipqc_records(id,status)," +
+  "fg_qr_batches:qr_generation_records(id,batch_display_id,status,qr_type)," +
+  `material_consumptions(id,status,machine_entries:material_consumption_machine_entries(${PRODUCTION_MACHINE_ENTRY_SELECT}))`;
+
+type RawProductionRunDetail = {
+  id: string; run_number: string; shipment_number: string | null; shift: string | null; production_date: string | null; status: string;
+  created_by_user: { full_name: string } | null;
+  ipqc_record: { id: string; status: string } | { id: string; status: string }[] | null;
+  fg_qr_batches: { id: string; batch_display_id: string; status: string; qr_type: string }[];
+  material_consumptions: RawProdMc[];
+};
+
+function deriveShipmentNumberFromEntries(mcs: RawProdMc[]): string | null {
+  for (const mc of mcs || []) {
+    for (const e of sortedBySortOrder(mc.machine_entries || [])) {
+      for (const p of sortedBySortOrder(e.pallets || [])) {
+        if (p.role === "primary" && p.pallet?.shipment_number) return p.pallet.shipment_number;
+      }
+    }
+  }
+  return null;
+}
+
+/** run -> ProductionDetail. Machine entries are flattened straight from the
+ * linked Material Consumption record(s)' own machine_entries -- a
+ * Production Run's machine breakdown IS its source Material Consumption
+ * data, per the task's "each machine must have its own corresponding
+ * Production entry, with the correct linked machine/material data". */
+function flattenProductionDetail(raw: RawProductionRunDetail): ProductionDetail {
+  const ipqc = raw.ipqc_record;
+  const ipqcObj = Array.isArray(ipqc) ? ipqc[0] ?? null : ipqc;
+  const mcs = raw.material_consumptions || [];
+  const machineEntries: ProductionMachineEntry[] = [];
+  for (const mc of mcs) {
+    for (const e of sortedBySortOrder(mc.machine_entries || [])) {
+      machineEntries.push({
+        machine_consumption_id: e.id, material_consumption_id: mc.id,
+        machine: e.machine?.code ?? null, category: e.category,
+        sku_code: e.sku_code, sku_version: e.sku_version,
+        start_time: e.start_time, end_time: e.end_time,
+        pallets: sortedBySortOrder(e.pallets || []).filter((p) => p.role === "primary").map(prodFlattenPallet),
+      });
+    }
+  }
+  const skuCodes = Array.from(new Set(machineEntries.map((e) => e.sku_code).filter((v): v is string => !!v)));
+  return {
+    id: raw.id, run_number: raw.run_number,
+    shipment_number: raw.shipment_number ?? deriveShipmentNumberFromEntries(mcs),
+    shift: raw.shift, date: raw.production_date, status: raw.status,
+    operator: raw.created_by_user?.full_name ?? null,
+    sku_codes: skuCodes.join(", "),
+    machine_entries: machineEntries,
+    ipqc_id: ipqcObj?.id ?? null, ipqc_status: ipqcObj?.status ?? null,
+    fg_qr_batches: (raw.fg_qr_batches || []).filter((b) => b.qr_type === "fg").map((b) => ({ id: b.id, batch_display_id: b.batch_display_id, status: b.status })),
+  };
+}
+
+async function getProductionSb(id: string): Promise<ProductionDetail> {
+  const { data, error } = await supabase.from("production_runs").select(PRODUCTION_DETAIL_SELECT).eq("id", id).single();
+  if (error || !data) throw new ApiError(404, "Production record not found");
+  return flattenProductionDetail(data as unknown as RawProductionRunDetail);
+}
+
 // Sku_codes rows always come back with their versions embedded via
 // PostgREST's nested-resource select -- matches the joinedload(versions)
 // every FastAPI /skus and /reference/sku-codes route already did, with the
@@ -801,4 +969,11 @@ export const api = {
     request<void>(`/api/v1/material-consumption/${id}/if-blank`, { method: "DELETE" }),
   deleteMaterialConsumption: (id: string) =>
     request<{ ok: boolean }>(`/api/v1/material-consumption/${id}`, { method: "DELETE" }),
+
+  // -- Production -------------------------------------------------------
+  // Read-only: every record is auto-created by Material Consumption's
+  // finalize() -- there is no create/update/delete function here.
+  listProduction: (params: { search?: string; date?: string; shift?: string; machine?: string } = {}) =>
+    listProductionSb(params),
+  getProduction: (id: string) => getProductionSb(id),
 };
