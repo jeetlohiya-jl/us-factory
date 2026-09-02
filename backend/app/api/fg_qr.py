@@ -108,8 +108,12 @@ def create_fg_qr_from_run(
     run = db.query(models.ProductionRun).filter(models.ProductionRun.id == run_id).first()
     if not run:
         raise HTTPException(status_code=404, detail="Production Run not found")
-    if run.status != "approved":
-        raise HTTPException(status_code=422, detail="Only an approved Production Run can feed FG QR Generation.")
+    # 'saved' is the status prodSaveRecord actually sets once a user
+    # completes a Production record's editable fields (Rejection
+    # Classification / Wastage / FG Pallets); 'approved' is kept for
+    # backward compatibility with pre-existing dev/test data.
+    if run.status not in ("saved", "approved"):
+        raise HTTPException(status_code=422, detail="Only a saved/completed Production Run can feed FG QR Generation.")
     rec = qr_generation_service.get_or_create_fg_qr_for_production_run(db, run)
     db.commit()
     return serialize_qr_detail(_get_or_404(db, rec.id))

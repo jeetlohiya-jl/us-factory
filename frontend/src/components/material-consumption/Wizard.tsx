@@ -109,25 +109,6 @@ function MachineEntryPanel({
         )}
       </div>
 
-      <div className="form-grid" style={{ marginBottom: 14 }}>
-        <div className="field">
-          <label>Start Time</label>
-          <div className={`readonly-val mono${entry.start_time ? " done" : ""}`}>
-            {entry.start_time ? formatTime12h(entry.start_time) : "— (recorded when first pallet is scanned)"}
-          </div>
-        </div>
-        <div className="field">
-          <label>End Time</label>
-          {entry.end_time ? (
-            <div className="readonly-val mono done">{formatTime12h(entry.end_time)}</div>
-          ) : canEdit && hasPrimary && entry.start_time ? (
-            <button type="button" className="btn btn-secondary" disabled={busy} onClick={onRecordEndTime}>Record End Time</button>
-          ) : (
-            <div className="readonly-val mono">— (scan a pallet first)</div>
-          )}
-        </div>
-      </div>
-
       <div className="section-label">Associated Pallet</div>
       {hasPrimary && (
         <div className="detail-card" style={{ marginBottom: 14 }}>
@@ -213,6 +194,17 @@ function MachineEntryPanel({
           )}
         </div>
       )}
+
+      {/* End Time: a small, low-emphasis control tucked at the bottom of the
+          machine's box -- Start Time isn't shown at all here since it's
+          stamped automatically the moment the first pallet is scanned. */}
+      <div style={{ marginTop: 16, paddingTop: 12, borderTop: "1px solid var(--rule)", display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10 }}>
+        {entry.end_time ? (
+          <span className="mono" style={{ fontSize: 12.5, opacity: 0.7 }}>Ended {formatTime12h(entry.end_time)}</span>
+        ) : canEdit && hasPrimary && entry.start_time ? (
+          <button type="button" className="btn-tertiary" style={{ cursor: "pointer" }} disabled={busy} onClick={onRecordEndTime}>Record End Time</button>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -407,9 +399,6 @@ export default function MaterialConsumptionWizard({
           {page === 1 ? (
             <>
               <div className="section-label" style={{ marginTop: 0 }}>Production Details</div>
-              <div className="hint-text" style={{ marginBottom: 10 }}>
-                Choose the Shift, then add every Machine that consumed material this shift. Each machine gets its own Pallet and Secondary Material scan set on the next page.
-              </div>
               <div className="form-grid" style={{ marginBottom: 18 }}>
                 <div className="field">
                   <label>Shift</label>
@@ -447,9 +436,6 @@ export default function MaterialConsumptionWizard({
             </>
           ) : (
             <>
-              <div className="hint-text" style={{ marginBottom: 14 }}>
-                Scan every RM pallet physically picked for each machine below. The first pallet on a machine sets its Category, SKU Name and SKU Version — every additional pallet on that machine must match, and its scan time is recorded as that machine&apos;s Start Time automatically.
-              </div>
               {detail.machine_entries.map((entry, i) => (
                 <MachineEntryPanel
                   key={entry.id}

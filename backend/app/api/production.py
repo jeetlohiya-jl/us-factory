@@ -8,6 +8,7 @@ Generation" for approved runs, exactly as an approved Inward QC feeds RM QR
 Generation.
 """
 import uuid
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session, joinedload
@@ -165,6 +166,12 @@ def save_production_run(
 
     if run.status == "pending":
         run.status = "saved"
+
+    # Records who actually filled in and saved this record's editable
+    # fields -- every save re-stamps this, not just the first, so the
+    # record always reflects whoever most recently completed it.
+    run.completed_by = uuid.UUID(current_user.user_id)
+    run.completed_at = datetime.utcnow()
 
     db.commit()
     db.refresh(run)

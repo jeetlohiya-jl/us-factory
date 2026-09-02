@@ -35,6 +35,21 @@ const REJECTION_FIELDS: { key: keyof ProductionDetail["rejection_classification"
 
 type EditableWastage = { machine_id: string | null; trays: number | null; reason: string | null };
 
+// Production Details rows, matching the prototype's PROD_ATTRIBUTES exactly
+// (label text included) -- one row per attribute, one column per machine.
+const PROD_DETAIL_ROWS: { label: string; get: (e: ProductionDetail["machine_entries"][number]) => React.ReactNode }[] = [
+  { label: "SKU Name", get: (e) => e.sku_code },
+  { label: "Weight", get: (e) => e.production_details?.prod_weight },
+  { label: "Pcs/Sleeve", get: (e) => e.production_details?.prod_pcs_per_sleeve },
+  { label: "Sleeve/Case", get: (e) => e.production_details?.prod_sleeve_per_case },
+  { label: "Total No. of Pcs/Pallet", get: (e) => e.production_details?.prod_total_pcs_per_pallet },
+  { label: "Total No. of Pallets", get: (e) => e.production_details?.prod_total_pallets },
+  { label: "Target Shots", get: (e) => e.production_details?.prod_target_shots },
+  { label: "Pad Type/Name/Code", get: (e) => e.production_details?.prod_pad_type },
+  { label: "Pad Color", get: (e) => e.production_details?.prod_pad_color },
+  { label: "Case Type (Combo/Regular)", get: (e) => e.production_details?.prod_case_type },
+];
+
 function sumProductionDetails(entries: ProductionDetail["machine_entries"], key: "prod_total_pcs_per_pallet"): number | null {
   let total = 0;
   let any = false;
@@ -144,8 +159,43 @@ export default function ProductionDetailPanel({
               <Kv label="Total PCS/Pallet" value={totalPcsPerPallet ?? "—"} />
               <Kv label="Total Rejections" value={totalRejections} />
               <Kv label="FG Pallets Generated" value={record.total_fg_pallets || "—"} />
+              <Kv
+                label="Completed By"
+                value={record.completed_by ? (
+                  <>
+                    {record.completed_by}
+                    {record.completed_at && <span style={{ opacity: 0.65 }}> · {new Date(record.completed_at).toLocaleString()}</span>}
+                  </>
+                ) : "Not yet completed"}
+              />
             </div>
           </div>
+
+          {record.machine_entries.length > 0 && (
+            <div className="detail-card">
+              <h3>Production Details</h3>
+              <div style={{ overflowX: "auto" }}>
+                <table className="qc-obs-table">
+                  <thead>
+                    <tr>
+                      <th>Attribute</th>
+                      {record.machine_entries.map((e, i) => <th key={e.machine_consumption_id}>{e.machine || `Machine #${i + 1}`}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {PROD_DETAIL_ROWS.map((row) => (
+                      <tr key={row.label}>
+                        <td>{row.label}</td>
+                        {record.machine_entries.map((e) => (
+                          <td key={e.machine_consumption_id}>{row.get(e) ?? "—"}</td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           <div className="detail-card">
             <h3>Machine Entries</h3>
@@ -164,23 +214,6 @@ export default function ProductionDetailPanel({
                       value={entry.start_time ? `${formatTime12h(entry.start_time)}${entry.end_time ? ` – ${formatTime12h(entry.end_time)}` : " – …"}` : "—"}
                     />
                   </div>
-
-                  {entry.production_details && (
-                    <>
-                      <div className="section-label">Production Details</div>
-                      <div className="detail-grid">
-                        <Kv label="Weight" value={entry.production_details.prod_weight} />
-                        <Kv label="Pcs/Sleeve" value={entry.production_details.prod_pcs_per_sleeve} />
-                        <Kv label="Sleeve/Case" value={entry.production_details.prod_sleeve_per_case} />
-                        <Kv label="Total No. of Pcs/Pallet" value={entry.production_details.prod_total_pcs_per_pallet} />
-                        <Kv label="Total No. of Pallets" value={entry.production_details.prod_total_pallets} />
-                        <Kv label="Target Shots" value={entry.production_details.prod_target_shots} />
-                        <Kv label="Pad Type" value={entry.production_details.prod_pad_type} />
-                        <Kv label="Pad Color" value={entry.production_details.prod_pad_color} />
-                        <Kv label="Case Type" value={entry.production_details.prod_case_type} />
-                      </div>
-                    </>
-                  )}
 
                   <table className="qc-obs-table" style={{ marginTop: 10 }}>
                     <thead><tr><th>Pallet</th><th>SKU Name</th><th>SKU Version</th><th style={{ width: 90 }}>Quantity</th></tr></thead>

@@ -325,14 +325,40 @@ def find_or_create_production_run(db: Session, mc: models.MaterialConsumption, a
     return run
 
 
+IPQC_MANUFACTURER_PLACEHOLDER = "Cirkla Manufacturing (placeholder)"
+
+
+def _derive_shipment_number(mc: models.MaterialConsumption) -> str | None:
+    """Mirrors the frontend's deriveShipmentNumber (api.ts): the first
+    primary pallet's own shipment_number snapshot, walked in machine/pallet
+    sort order -- an MC record never stores its own shipment number, but
+    every primary pallet it consumed carries one."""
+    for row in sorted(_all_pallets(mc), key=lambda r: (r.machine_entry.sort_order, r.sort_order)):
+        if row.role == "primary" and row.pallet and row.pallet.shipment_number:
+            return row.pallet.shipment_number
+    return None
+
+
 def find_or_create_ipqc(db: Session, run: models.ProductionRun, mc: models.MaterialConsumption) -> models.IpqcRecord:
     """One IPQC record per Production Run (unique constraint on
     production_run_id backstops this) -- dedup falls straight out of the
-    Production Run being itself found-or-created by (date, shift)."""
+    Production Run being itself found-or-created by (date, shift), matching
+    maFindOrCreateIpqc's own linkId of 'ma-run:'+date+'|'+shift exactly.
+
+    Autopopulates every field the prototype's maFindOrCreateIpqc fills in:
+    Shipment Number (derived from the consumed primary pallet, same as
+    Production), Batch Code ("<date> / <shift>"), Manufacturer (the same
+    fixed placeholder string the prototype uses), and Pad Color / Weight /
+    Dimensions / Absorption Rate from the SKU Version's Production Details
+    lookup (SKU_PRODUCTION_DETAILS in the prototype -- sku_versions.prod_*
+    here). Shift Incharge is left blank, same as the prototype
+    (incharge:'') -- it's filled in by whoever completes the inspection.
+    """
     existing = db.query(models.IpqcRecord).filter(models.IpqcRecord.production_run_id == run.id).first()
     if existing:
         return existing
     first_with_sku = next((e for e in mc.machine_entries if e.category), None)
+    sku_version = first_with_sku.sku_version if first_with_sku else None
     rec = models.IpqcRecord(
         production_run_id=run.id,
         sku_code_id=first_with_sku.sku_code_id if first_with_sku else None,
@@ -340,6 +366,14 @@ def find_or_create_ipqc(db: Session, run: models.ProductionRun, mc: models.Mater
         sku_code_snapshot=first_with_sku.sku_code_snapshot if first_with_sku else None,
         sku_version_snapshot=first_with_sku.sku_version_snapshot if first_with_sku else None,
         shift=mc.shift, production_date=mc.consumption_date, status="pending",
+        shipment_number=_derive_shipment_number(mc),
+        batch_code=f"{mc.consumption_date} / {mc.shift}" if mc.consumption_date and mc.shift else None,
+        manufacturer=IPQC_MANUFACTURER_PLACEHOLDER,
+        pad_color=sku_version.prod_pad_color if sku_version else None,
+        weight=sku_version.prod_weight if sku_version else None,
+        dimensions=sku_version.prod_dimensions if sku_version else None,
+        absorption_rate=sku_version.prod_absorption_rate if sku_version else None,
+        shift_incharge=None,
     )
     db.add(rec)
     db.flush()

@@ -310,9 +310,6 @@ export default function Wizard({
               <LineItemsEditor items={lineItems} skuCodes={skuCodes.filter((s) => s.category === category)} disabled={readOnlyStep1} onChange={markTouched(setLineItems)} />
 
               <div className="section-label">Photos</div>
-              <div className="hint-text" style={{ marginBottom: 14 }}>
-                Uploading a Container, Truck Number or Seal photo runs OCR automatically and fills in the matching field below — you can still edit it by hand. If OCR can&apos;t read the image clearly, enter the value manually.
-              </div>
               <div className="form-grid">
                 <ImageField inspectionId={inspectionId} imageType="container" label="Container Photo" image={imageOf("container")} disabled={!canFillSection} onChange={(d) => { setDetail(d); setContainer(d.container_number || ""); }} />
                 <ImageField inspectionId={inspectionId} imageType="truck" label="Truck Number Photo" image={imageOf("truck")} disabled={!canFillSection} onChange={(d) => { setDetail(d); setTruck(d.truck_number || ""); }} />

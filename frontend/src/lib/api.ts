@@ -6,6 +6,7 @@ import type {
   Pallet, QrGenerationListItem, QrGenerationDetail, StorageRecordDetail, LocationRef, ProductionRun,
   Vendor, Machine, MaterialConsumptionListItem, MaterialConsumptionDetail, SecondaryMaterialCategory,
   MaterialConsumptionPalletRow, ProductionListItem, ProductionDetail, ProductionMachineEntry, ProductionSavePayload,
+  IpqcListItem, IpqcDetail, IpqcSavePayload,
 } from "./types";
 
 const BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
@@ -458,7 +459,7 @@ const PRODUCTION_LIST_SELECT =
   "rejection_damage,rejection_misplaced_glue,rejection_misplaced_pad,rejection_glue_on_pad,rejection_pad_placement_direction,rejection_adhesion_issue," +
   "sku_code:sku_codes(code)," +
   "machines:production_run_machines(machine:machines(code))," +
-  "created_by_user:app_users(full_name)," +
+  "created_by_user:app_users!production_runs_created_by_fkey(full_name)," +
   "material_consumptions(machine_entries:material_consumption_machine_entries(pallets:material_consumption_pallets(role,pallet:pallets(shipment_number)),sku_version_ref:sku_versions(prod_total_pcs_per_pallet)))";
 
 function sumRejections(raw: {
@@ -575,9 +576,10 @@ type RawProdMc = { id: string; status: string; machine_entries: RawProdMachineEn
 const PRODUCTION_WASTAGE_SELECT = "id,machine_id,machine:machines(code),trays,reason,sort_order";
 
 const PRODUCTION_DETAIL_SELECT =
-  "id,run_number,shipment_number,shift,production_date,status,total_fg_pallets," +
+  "id,run_number,shipment_number,shift,production_date,status,total_fg_pallets,completed_at," +
   "rejection_damage,rejection_misplaced_glue,rejection_misplaced_pad,rejection_glue_on_pad,rejection_pad_placement_direction,rejection_adhesion_issue," +
-  "created_by_user:app_users(full_name)," +
+  "created_by_user:app_users!production_runs_created_by_fkey(full_name)," +
+  "completed_by_user:app_users!production_runs_completed_by_fkey(full_name)," +
   "ipqc_record:ipqc_records(id,status)," +
   "fg_qr_batches:qr_generation_records(id,batch_display_id,status,qr_type)," +
   `wastage_entries:production_wastage_entries(${PRODUCTION_WASTAGE_SELECT}),` +
@@ -589,11 +591,12 @@ type RawProdWastageEntry = {
 
 type RawProductionRunDetail = {
   id: string; run_number: string; shipment_number: string | null; shift: string | null; production_date: string | null; status: string;
-  total_fg_pallets: number;
+  total_fg_pallets: number; completed_at: string | null;
   rejection_damage: number | string; rejection_misplaced_glue: number | string;
   rejection_misplaced_pad: number | string; rejection_glue_on_pad: number | string;
   rejection_pad_placement_direction: number | string; rejection_adhesion_issue: number | string;
   created_by_user: { full_name: string } | null;
+  completed_by_user: { full_name: string } | null;
   ipqc_record: { id: string; status: string } | { id: string; status: string }[] | null;
   fg_qr_batches: { id: string; batch_display_id: string; status: string; qr_type: string }[];
   wastage_entries: RawProdWastageEntry[];
@@ -654,6 +657,8 @@ function flattenProductionDetail(raw: RawProductionRunDetail): ProductionDetail 
       id: w.id, machine_id: w.machine_id, machine: w.machine?.code ?? null,
       trays: w.trays == null ? null : Number(w.trays), reason: w.reason, sort_order: w.sort_order,
     })),
+    completed_by: raw.completed_by_user?.full_name ?? null,
+    completed_at: raw.completed_at,
     ipqc_id: ipqcObj?.id ?? null, ipqc_status: ipqcObj?.status ?? null,
     fg_qr_batches: (raw.fg_qr_batches || []).filter((b) => b.qr_type === "fg").map((b) => ({ id: b.id, batch_display_id: b.batch_display_id, status: b.status })),
   };
@@ -665,6 +670,85 @@ async function getProductionSb(id: string): Promise<ProductionDetail> {
   return flattenProductionDetail(data as unknown as RawProductionRunDetail);
 }
 
+// -- IPQC: list/detail via Supabase, save via FastAPI ------------------------
+// Records are auto-created (never manually) by Material Consumption's
+// finalize() -- see material_consumption_service.find_or_create_ipqc --
+// so there is no create function here, only list/detail reads and the one
+// editable-fields save (Shift Incharge + Check Time blocks).
+
+type RawIpqcListItem = {
+  id: string; shipment_number: string | null; sku_code_snapshot: string | null; sku_version_snapshot: string | null;
+  shift_incharge: string | null; status: string; production_date: string | null; shift: string | null;
+};
+
+const IPQC_LIST_SELECT =
+  "id,shipment_number,sku_code_snapshot,sku_version_snapshot,shift_incharge,status,production_date,shift";
+
+function flattenIpqcListItem(raw: RawIpqcListItem): IpqcListItem {
+  return {
+    id: raw.id, shipment_number: raw.shipment_number,
+    sku_code: raw.sku_code_snapshot, sku_version: raw.sku_version_snapshot,
+    shift_incharge: raw.shift_incharge, status: raw.status,
+    date: raw.production_date, shift: raw.shift,
+  };
+}
+
+async function listIpqcSb(params: { search?: string; date?: string; shift?: string; status?: string } = {}): Promise<IpqcListItem[]> {
+  const { data, error } = await supabase.from("ipqc_records").select(IPQC_LIST_SELECT).order("created_at", { ascending: false });
+  if (error) throw new ApiError(500, error.message);
+  let rows = ((data || []) as unknown as RawIpqcListItem[]).map(flattenIpqcListItem);
+  if (params.date) rows = rows.filter((r) => r.date === params.date);
+  if (params.shift) rows = rows.filter((r) => r.shift === params.shift);
+  if (params.status) rows = rows.filter((r) => r.status === params.status);
+  if (params.search) {
+    const s = params.search.toLowerCase();
+    rows = rows.filter((r) => [r.sku_code, r.shift_incharge, r.shipment_number].some((v) => (v || "").toLowerCase().includes(s)));
+  }
+  return rows;
+}
+
+type RawIpqcBlockDefect = { defect_sr: number; failure: number | string | null; reason: string | null };
+type RawIpqcCheckBlock = { id: string; check_time: string | null; overall_result: string | null; sort_order: number; defects: RawIpqcBlockDefect[] };
+type RawIpqcRecordDetail = {
+  id: string; production_run_id: string; shipment_number: string | null; batch_code: string | null;
+  manufacturer: string | null; shift: string | null; production_date: string | null;
+  pad_color: string | null; weight: string | null; dimensions: string | null; absorption_rate: string | null;
+  sku_code_snapshot: string | null; sku_version_snapshot: string | null; shift_incharge: string | null; status: string;
+  production_run: { run_number: string; material_consumptions: { id: string; status: string }[] } | { run_number: string; material_consumptions: { id: string; status: string }[] }[] | null;
+  check_blocks: RawIpqcCheckBlock[];
+};
+
+const IPQC_DETAIL_SELECT =
+  "id,production_run_id,shipment_number,batch_code,manufacturer,shift,production_date," +
+  "pad_color,weight,dimensions,absorption_rate,sku_code_snapshot,sku_version_snapshot,shift_incharge,status," +
+  "production_run:production_runs(run_number,material_consumptions(id,status))," +
+  "check_blocks:ipqc_check_blocks(id,check_time,overall_result,sort_order,defects:ipqc_block_defects(defect_sr,failure,reason))";
+
+function flattenIpqcDetail(raw: RawIpqcRecordDetail): IpqcDetail {
+  const runObj = Array.isArray(raw.production_run) ? raw.production_run[0] ?? null : raw.production_run;
+  return {
+    id: raw.id, production_run_id: raw.production_run_id, production_run_number: runObj?.run_number ?? null,
+    shipment_number: raw.shipment_number, batch_code: raw.batch_code, manufacturer: raw.manufacturer,
+    shift: raw.shift, date: raw.production_date,
+    pad_color: raw.pad_color, weight: raw.weight, dimensions: raw.dimensions, absorption_rate: raw.absorption_rate,
+    sku_code: raw.sku_code_snapshot, sku_version: raw.sku_version_snapshot,
+    shift_incharge: raw.shift_incharge, status: raw.status,
+    check_blocks: sortedBySortOrder(raw.check_blocks || []).map((b) => ({
+      id: b.id, check_time: b.check_time, overall_result: b.overall_result, sort_order: b.sort_order,
+      defects: (b.defects || []).map((d) => ({
+        defect_sr: d.defect_sr, failure: d.failure == null ? null : Number(d.failure), reason: d.reason,
+      })).sort((a, c) => a.defect_sr - c.defect_sr),
+    })),
+    material_consumptions: runObj?.material_consumptions ?? [],
+  };
+}
+
+async function getIpqcSb(id: string): Promise<IpqcDetail> {
+  const { data, error } = await supabase.from("ipqc_records").select(IPQC_DETAIL_SELECT).eq("id", id).single();
+  if (error || !data) throw new ApiError(404, "IPQC record not found");
+  return flattenIpqcDetail(data as unknown as RawIpqcRecordDetail);
+}
+
 // Sku_codes rows always come back with their versions embedded via
 // PostgREST's nested-resource select -- matches the joinedload(versions)
 // every FastAPI /skus and /reference/sku-codes route already did, with the
@@ -673,7 +757,8 @@ async function getProductionSb(id: string): Promise<ProductionDetail> {
 const SKU_SELECT =
   "id, code, category, is_active, " +
   "versions:sku_versions(id, version, is_active, prod_weight, prod_pcs_per_sleeve, prod_sleeve_per_case, " +
-  "prod_total_pcs_per_pallet, prod_total_pallets, prod_target_shots, prod_pad_type, prod_pad_color, prod_case_type)";
+  "prod_total_pcs_per_pallet, prod_total_pallets, prod_target_shots, prod_pad_type, prod_pad_color, prod_case_type, " +
+  "prod_dimensions, prod_absorption_rate)";
 
 export const api = {
   me: () => request<MeResponse>("/api/v1/me"),
@@ -1064,6 +1149,20 @@ export const api = {
   getProduction: (id: string) => getProductionSb(id),
   saveProduction: (id: string, payload: ProductionSavePayload) =>
     request<{ id: string; status: string }>(`/api/v1/production-runs/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+
+  // -- IPQC -----------------------------------------------------------
+  // Same split as Production: list/detail reads Supabase-direct (every
+  // record is auto-created by Material Consumption's finalize()), the one
+  // editable-fields save (Shift Incharge + Check Time blocks) through
+  // FastAPI.
+  listIpqc: (params: { search?: string; date?: string; shift?: string; status?: string } = {}) =>
+    listIpqcSb(params),
+  getIpqc: (id: string) => getIpqcSb(id),
+  saveIpqc: (id: string, payload: IpqcSavePayload) =>
+    request<{ id: string; status: string }>(`/api/v1/ipqc-records/${id}`, {
       method: "PUT",
       body: JSON.stringify(payload),
     }),

@@ -92,6 +92,12 @@ class SkuVersion(Base):
     prod_pad_type = Column(Text, nullable=True)
     prod_pad_color = Column(Text, nullable=True)
     prod_case_type = Column(Text, nullable=True)
+    # Completes the prototype's SKU_PRODUCTION_DETAILS lookup (migration
+    # 0015) -- these two weren't needed by Production but IPQC's
+    # autopopulation (Dimensions of Pad, Absorption Rate) reads them from
+    # the exact same per-SKU-Version reference data.
+    prod_dimensions = Column(Text, nullable=True)
+    prod_absorption_rate = Column(Text, nullable=True)
 
     sku_code = relationship("SkuCode", back_populates="versions")
 
@@ -377,6 +383,12 @@ class ProductionRun(Base):
     rejection_glue_on_pad = Column(Numeric, nullable=False, default=0)
     rejection_pad_placement_direction = Column(Numeric, nullable=False, default=0)
     rejection_adhesion_issue = Column(Numeric, nullable=False, default=0)
+    # Who actually filled in and saved the editable fields above (migration
+    # 0014) -- distinct from created_by, which is whoever's Material
+    # Consumption save auto-created this run. A run can sit Pending for a
+    # while before a (possibly different) user opens and completes it.
+    completed_by = Column(UUID(as_uuid=True), ForeignKey("app_users.id"), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
 
     sku_code = relationship("SkuCode")
     sku_version = relationship("SkuVersion")
@@ -387,6 +399,7 @@ class ProductionRun(Base):
         "ProductionWastageEntry", back_populates="production_run",
         cascade="all, delete-orphan", order_by="ProductionWastageEntry.sort_order",
     )
+    completed_by_user = relationship("AppUser", foreign_keys=[completed_by])
 
 
 class ProductionRunMachine(Base):
@@ -424,15 +437,10 @@ class ProductionWastageEntry(Base):
 
 class IpqcRecord(Base):
     """
-    Minimal IPQC entity, added strictly to give Material Consumption's
-    Production Run a real downstream link to satisfy the requested
-    traceability chain (Material Consumption -> Production Run -> IPQC) --
-    mirroring exactly how ProductionRun itself was previously added as a
-    minimal stub strictly to give FG QR Generation a real upstream source
-    (see the ProductionRun docstring above). A full IPQC module (inspection
-    blocks, pass/fail criteria, shift-incharge workflow, etc., as sketched
-    in the prototype's IPQC_RECORDS) was not requested and is intentionally
-    not built here.
+    IPQC (In-Process Quality Control) -- auto-created (never duplicated) the
+    moment its Production Run's first Material Consumption record is
+    finalized (see material_consumption_service.find_or_create_ipqc),
+    exactly mirroring the prototype's maFindOrCreateIpqc / linkId dedup.
 
     One IPQC record per Production Run (unique constraint on
     production_run_id) is the dedup mechanism: since a Production Run is
@@ -440,6 +448,14 @@ class IpqcRecord(Base):
     IPQC 1:1 off the run automatically prevents a second Material
     Consumption record on the same date+shift from ever creating a second
     IPQC record for that shift.
+
+    Fields below split the same way as Production's editable-fields work:
+    shipment_number/batch_code/manufacturer/pad_color/weight/dimensions/
+    absorption_rate are autopopulated at creation from the source Material
+    Consumption + SKU Version and never re-entered (locked in the
+    prototype's IPQC_LOCKABLE_IDS); shift_incharge and the check blocks
+    (ipqc_check_blocks) are genuinely user-entered, saved atomically via
+    FastAPI's PUT /api/v1/ipqc-records/{id}.
     """
     __tablename__ = "ipqc_records"
     id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
@@ -452,8 +468,65 @@ class IpqcRecord(Base):
     production_date = Column(Text, nullable=True)
     status = Column(Text, nullable=False, default="pending")
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    # Autopopulated from Material Consumption / SKU Version at creation --
+    # locked/read-only in the UI, matching IPQC_LOCKABLE_IDS in the prototype.
+    shipment_number = Column(Text, nullable=True)
+    batch_code = Column(Text, nullable=True)
+    manufacturer = Column(Text, nullable=True)
+    pad_color = Column(Text, nullable=True)
+    weight = Column(Text, nullable=True)
+    dimensions = Column(Text, nullable=True)
+    absorption_rate = Column(Text, nullable=True)
+    # User-entered, editable regardless of source (not in IPQC_LOCKABLE_IDS).
+    shift_incharge = Column(Text, nullable=True)
 
     production_run = relationship("ProductionRun", back_populates="ipqc_record")
+    check_blocks = relationship(
+        "IpqcCheckBlock", back_populates="ipqc_record",
+        cascade="all, delete-orphan", order_by="IpqcCheckBlock.sort_order",
+    )
+
+
+class IpqcCheckBlock(Base):
+    """One IPQC inspection block ("Check Time: HH:MM" card in the
+    prototype) -- a record can have several, added via '+ Add Another
+    Record'. check_time is stamped once at creation (server time), never
+    user-edited afterward, matching the prototype (no oninput handler on
+    block.time). overall_result is a free-text field the user types,
+    exactly like the prototype's #ipqc-*-overall input -- never computed."""
+    __tablename__ = "ipqc_check_blocks"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    ipqc_record_id = Column(UUID(as_uuid=True), ForeignKey("ipqc_records.id", ondelete="CASCADE"), nullable=False)
+    check_time = Column(Text, nullable=True)
+    overall_result = Column(Text, nullable=True)
+    sort_order = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+    ipqc_record = relationship("IpqcRecord", back_populates="check_blocks")
+    defects = relationship(
+        "IpqcBlockDefect", back_populates="block",
+        cascade="all, delete-orphan", order_by="IpqcBlockDefect.defect_sr",
+    )
+
+
+class IpqcBlockDefect(Base):
+    """One defect row's Failure count + Reason within one check block.
+    defect_sr matches the prototype's fixed IPQC_DEFECTS list (sr 1, 2, 3,
+    6, 7, 8, 9, 10 -- the type/classification/method text is static
+    reference data, not stored per record, same as Production's Rejection
+    Classification labels). Result (OK / NOT OK) is never stored -- it's
+    computed from failure (0 = OK, >=1 = NOT OK), matching
+    ipqcRecalcResult exactly."""
+    __tablename__ = "ipqc_block_defects"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    block_id = Column(UUID(as_uuid=True), ForeignKey("ipqc_check_blocks.id", ondelete="CASCADE"), nullable=False)
+    defect_sr = Column(Integer, nullable=False)
+    failure = Column(Numeric, nullable=True)
+    reason = Column(Text, nullable=True)
+
+    block = relationship("IpqcCheckBlock", back_populates="defects")
+
+    __table_args__ = (UniqueConstraint("block_id", "defect_sr"),)
 
 
 class Location(Base):

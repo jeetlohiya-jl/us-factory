@@ -214,7 +214,6 @@ export default function Wizard({
                   </tbody>
                 </table>
               )}
-              <div className="hint-text">Populated from the approved Vehicle Inspection that created this record — no re-entry needed.</div>
             </div>
           )}
 
@@ -246,7 +245,6 @@ export default function Wizard({
                   </select>
                 </div>
               </div>
-              <div className="hint-text" style={{ marginBottom: 18 }}>Sampling Size and Upper Limit for Acceptance will be shown on the QC Observations page, where the record is actually taken.</div>
               <CoaField qcId={qcId} filename={detail.coa_filename} url={detail.coa_url} disabled={readOnlyBasic} onChange={setDetail} />
             </div>
           )}

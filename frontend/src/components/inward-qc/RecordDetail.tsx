@@ -71,7 +71,6 @@ export default function RecordDetail({ detail, onClose, onEdit, canEdit }: {
                       ))}
                     </tbody>
                   </table>
-                  <div className="hint-text">Snapshotted from the source Vehicle Inspection at the time this QC record was created.</div>
                 </div>
               )}
 

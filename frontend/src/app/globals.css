@@ -126,6 +126,18 @@ table.data.compact thead th, table.data.compact tbody td{padding:11px 12px;}
 .plan-callout .pc-item .v{font-family:var(--mono);font-size:15px;font-weight:600;}
 .empty-row td{text-align:center;color:var(--ink-50);padding:34px;font-size:13px;}
 
+.classification-badge{display:inline-flex;padding:5px 12px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:.02em;white-space:nowrap;}
+.classification-badge.unacceptable{background:var(--red);color:#fff;}
+.classification-badge.critical{background:var(--butter);color:var(--ink);}
+.classification-badge.major{background:var(--amber-bg);color:var(--amber);}
+.classification-badge.minor{background:var(--ink-08);color:var(--ink-70);}
+.classification-badge.functional{background:var(--ink-08);color:var(--ink-70);}
+.result-badge{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:20px;font-size:11px;font-weight:700;}
+.result-badge.ok{background:var(--green-mid);color:#fff;}
+.result-badge.notok{background:var(--red);color:#fff;}
+.result-badge.pending{background:var(--ink-08);color:var(--ink-50);}
+.calc-tag{font-size:9px;color:var(--ink-50);text-transform:uppercase;letter-spacing:.04em;font-weight:700;margin-left:2px;}
+
 .scan-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;}
 .scan-card{border:1.5px dashed var(--ink-15);border-radius:12px;padding:22px;text-align:center;background:var(--white);}
 .scan-card.done{border-style:solid;border-color:var(--green-soft);background:#f4f8f1;}

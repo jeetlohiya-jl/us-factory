@@ -14,11 +14,6 @@ export default function ChecklistStep({
   return (
     <div>
       <div className="section-label">Vehicle conditions to be inspected for:</div>
-      {!complete && (
-        <div className="hint-text" style={{ fontWeight: 700, marginBottom: 14 }}>
-          Mark OK / NOT OK for every condition to enable Submit. Use Save Draft to keep this Pending in the meantime.
-        </div>
-      )}
       {complete && (
         <div className="hint-text" style={{ fontWeight: 700, marginBottom: 14, color: hasNotOk ? "var(--red)" : "var(--green-deep)" }}>
           {hasNotOk ? "One or more conditions are NOT OK — this record will be set to Hold." : "All conditions OK — this record will be set to Approved."}

@@ -18,6 +18,11 @@ export interface SkuVersion {
   prod_pad_type?: string | null;
   prod_pad_color?: string | null;
   prod_case_type?: string | null;
+  // Completes SKU_PRODUCTION_DETAILS (migration 0015) -- not used by
+  // Production, but IPQC's autopopulation (Dimensions of Pad, Absorption
+  // Rate) reads these off the same per-SKU-Version reference data.
+  prod_dimensions?: string | null;
+  prod_absorption_rate?: string | null;
 }
 
 export interface SkuCode {
@@ -123,6 +128,7 @@ export interface MeResponse {
     rm_storage: Permissions;
     material_consumption: Permissions;
     production: Permissions;
+    ipqc: Permissions;
     fg_qr_generation: Permissions;
     fg_storage: Permissions;
   };
@@ -504,7 +510,98 @@ export interface ProductionDetail {
   total_fg_pallets: number;
   rejection_classification: ProductionRejectionClassification;
   wastage_entries: ProductionWastageEntry[];
+  // Who actually filled in and saved the editable fields (migration 0014)
+  // -- distinct from `operator`, which is whoever's Material Consumption
+  // save auto-created this run.
+  completed_by: string | null;
+  completed_at: string | null;
   ipqc_id: string | null;
   ipqc_status: string | null;
   fg_qr_batches: { id: string; batch_display_id: string; status: string }[];
+}
+
+// ---------------------------------------------------------------------------
+// IPQC -- auto-created (never manually) the moment its Production Run's
+// first Material Consumption record is finalized. Shipment/product/pad
+// fields are autopopulated from that source and read-only; Shift Incharge
+// and the Check Time inspection blocks are the editable data, saved
+// atomically through FastAPI.
+// ---------------------------------------------------------------------------
+
+// The prototype's fixed IPQC_DEFECTS list -- static reference data (type,
+// classification, inspection method, sample size), never stored per
+// record. Only order/sr/label matter for rendering; sr values intentionally
+// skip 4 and 5 (RQC-only defects), matching the prototype exactly.
+export interface IpqcDefectDef {
+  sr: number;
+  type: string;
+  classification: string;
+  badgeClass: string;
+  method: string;
+  sampleSize: number;
+}
+
+export const IPQC_DEFECTS: IpqcDefectDef[] = [
+  { sr: 1, type: "Foreign Material (Insects , Hair and Dust)", classification: "Unacceptable", badgeClass: "unacceptable", method: "Visual inspection", sampleSize: 4 },
+  { sr: 2, type: "Metal Particles", classification: "Unacceptable", badgeClass: "unacceptable", method: "Visual inspection", sampleSize: 4 },
+  { sr: 3, type: "Lamination black spots (due to metal pieces)", classification: "Unacceptable", badgeClass: "unacceptable", method: "Visual inspection", sampleSize: 4 },
+  { sr: 6, type: "Stickiness of the Pad", classification: "Critical", badgeClass: "critical", method: "Visual inspection", sampleSize: 4 },
+  { sr: 7, type: "Placement Side of the Pad", classification: "Critical", badgeClass: "critical", method: "Visual inspection", sampleSize: 4 },
+  { sr: 8, type: "Direction of the Pad", classification: "Major", badgeClass: "major", method: "Visual inspection", sampleSize: 4 },
+  { sr: 9, type: "Air gap", classification: "Functional test", badgeClass: "functional", method: "As per SOP", sampleSize: 4 },
+  { sr: 10, type: "Gravity fall", classification: "Functional test", badgeClass: "functional", method: "As per SOP", sampleSize: 4 },
+];
+
+export interface IpqcListItem {
+  id: string;
+  shipment_number: string | null;
+  sku_code: string | null;
+  sku_version: string | null;
+  shift_incharge: string | null;
+  status: string;
+  date: string | null;
+  shift: string | null;
+}
+
+export interface IpqcBlockDefect {
+  defect_sr: number;
+  failure: number | null;
+  reason: string | null;
+}
+
+export interface IpqcCheckBlock {
+  id: string;
+  check_time: string | null;
+  overall_result: string | null;
+  sort_order: number;
+  defects: IpqcBlockDefect[];
+}
+
+export interface IpqcDetail {
+  id: string;
+  production_run_id: string;
+  production_run_number: string | null;
+  shipment_number: string | null;
+  batch_code: string | null;
+  manufacturer: string | null;
+  shift: string | null;
+  date: string | null;
+  pad_color: string | null;
+  weight: string | null;
+  dimensions: string | null;
+  absorption_rate: string | null;
+  sku_code: string | null;
+  sku_version: string | null;
+  shift_incharge: string | null;
+  status: string;
+  check_blocks: IpqcCheckBlock[];
+  material_consumptions: { id: string; status: string }[];
+}
+
+// Payload for api.saveIpqc -- the single atomic write for IPQC (backend/
+// app/api/ipqc.py's PUT route).
+export interface IpqcSavePayload {
+  shift_incharge: string | null;
+  save_mode: "draft" | "final";
+  blocks: { check_time: string | null; overall_result: string | null; defects: IpqcBlockDefect[] }[];
 }

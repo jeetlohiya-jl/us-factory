@@ -56,6 +56,13 @@ const NAV_ITEMS = [
     ),
   },
   {
+    href: "/ipqc",
+    label: "IPQC",
+    icon: (
+      <path d="M9 12l2 2 4-4M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9 9 4.03 9 9z" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    ),
+  },
+  {
     href: "/fg-qr-generation",
     label: "FG QR Generation",
     icon: (

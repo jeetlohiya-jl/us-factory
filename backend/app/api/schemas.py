@@ -1,6 +1,6 @@
 import uuid
 from decimal import Decimal
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict
 
@@ -409,6 +409,62 @@ class ProductionSaveOut(BaseModel):
     rejection_pad_placement_direction: Decimal
     rejection_adhesion_issue: Decimal
     wastage_entries: list[ProductionWastageEntryOut] = []
+
+
+# ---------------------------------------------------------------------------
+# IPQC -- editable fields (migration 0015). Shift Incharge and the Check
+# Time inspection blocks (each with its fixed 8-defect Failure/Reason
+# grid) are the only genuinely per-record editable data -- everything else
+# (Shipment Number, Batch Code, Manufacturer, Pad Color, Weight,
+# Dimensions, Absorption Rate, SKU/Version) is autopopulated at creation
+# from Material Consumption / the SKU Version and never re-entered here.
+# ---------------------------------------------------------------------------
+
+class IpqcBlockDefectIn(BaseModel):
+    defect_sr: int
+    failure: Optional[Decimal] = None
+    reason: Optional[str] = None
+
+
+class IpqcBlockDefectOut(BaseModel):
+    defect_sr: int
+    failure: Optional[Decimal] = None
+    reason: Optional[str] = None
+
+
+class IpqcCheckBlockIn(BaseModel):
+    # check_time is stamped client-side off the device clock the moment
+    # "+ Add Another Record" is clicked (same client_time pattern Material
+    # Consumption uses for start_time) and never edited afterward -- the
+    # backend just persists whatever arrives, it doesn't generate it.
+    check_time: Optional[str] = None
+    overall_result: Optional[str] = None
+    defects: list[IpqcBlockDefectIn] = []
+
+
+class IpqcCheckBlockOut(BaseModel):
+    id: uuid.UUID
+    check_time: Optional[str] = None
+    overall_result: Optional[str] = None
+    sort_order: int
+    defects: list[IpqcBlockDefectOut] = []
+
+
+class IpqcSaveIn(BaseModel):
+    shift_incharge: Optional[str] = None
+    # 'draft' always saves as Draft (Save Draft button); 'final' computes
+    # Approved/Hold from whether any defect's Failure is >= 1 across every
+    # block (Save button) -- matches ipqcSaveDraft/ipqcSave exactly, no
+    # other status model.
+    save_mode: Literal["draft", "final"] = "draft"
+    blocks: list[IpqcCheckBlockIn] = []
+
+
+class IpqcSaveOut(BaseModel):
+    id: uuid.UUID
+    status: str
+    shift_incharge: Optional[str] = None
+    blocks: list[IpqcCheckBlockOut] = []
 
 
 # ---------------------------------------------------------------------------

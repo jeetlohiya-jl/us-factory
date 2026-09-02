@@ -92,11 +92,6 @@ export default function QrGenerationPanel({
               ? `Auto-created from ${detail.source_inward_qc_id ? "Inward QC" : "Production Run"} ${detail.source_display_id || ""}. These fields are locked.`
               : ""}
           </div>
-          {detail.qr_type === "rm" && (
-            <div className="hint-text" style={{ marginBottom: 6 }}>
-              Pallet numbers for this batch start with &quot;{detail.country_code || "US"}-&quot; — the country of the vendor on the source Inward QC.
-            </div>
-          )}
           {!isGenerated && (
             <div className="hint-text" style={{ marginBottom: 6 }}>
               {detail.quantity > 0 ? `This will generate ${detail.quantity} unique pallet QR code(s).` : "Enter a quantity greater than 0 before generating QR codes."}
@@ -124,9 +119,6 @@ export default function QrGenerationPanel({
                   />
                   <span style={{ fontSize: 12.5, color: "var(--ink-50)" }}>of {detail.pallets.length}</span>
                 </div>
-              </div>
-              <div className="hint-text" style={{ marginBottom: 10 }}>
-                Each pallet prints as its own 2in × 2in label — set "Print quantity" to print the first N pallets, or use the checkboxes below to hand-pick specific ones.
               </div>
               <div className="scan-grid" style={{ gridTemplateColumns: "repeat(3,1fr)" }}>
                 {detail.pallets.map((p) => (

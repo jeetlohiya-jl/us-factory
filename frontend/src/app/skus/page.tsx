@@ -18,6 +18,11 @@ const PROD_DETAIL_FIELDS: { key: keyof SkuVersion; label: string; numeric?: bool
   { key: "prod_pad_type", label: "Pad Type" },
   { key: "prod_pad_color", label: "Pad Color" },
   { key: "prod_case_type", label: "Case Type" },
+  // Not used by Production's own table -- read only by IPQC's
+  // autopopulation (Dimensions of Pad, Absorption Rate), off this same
+  // per-SKU-Version reference data (migration 0015).
+  { key: "prod_dimensions", label: "Dimensions of Pad" },
+  { key: "prod_absorption_rate", label: "Absorption Rate" },
 ];
 
 type ProdDetailsForm = Partial<Record<string, string>>;
@@ -68,9 +73,6 @@ function SkuVersionDetailsModal({
           <button className="sp-close" onClick={onClose}>×</button>
         </div>
         <div className="sp-body">
-          <div className="hint-text" style={{ marginBottom: 12 }}>
-            Autopopulates every Production record using this SKU Version — entered once here, never re-entered per run.
-          </div>
           {PROD_DETAIL_FIELDS.map((f) => (
             <div className="field" key={f.key}>
               <label>{f.label}</label>
