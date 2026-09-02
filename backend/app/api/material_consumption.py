@@ -38,8 +38,11 @@ def _q(db: Session):
     return (
         db.query(models.MaterialConsumption)
         .options(
-            joinedload(models.MaterialConsumption.pallets).joinedload(models.MaterialConsumptionPallet.pallet),
-            joinedload(models.MaterialConsumption.machine),
+            joinedload(models.MaterialConsumption.machine_entries)
+            .joinedload(models.MaterialConsumptionMachineEntry.pallets)
+            .joinedload(models.MaterialConsumptionPallet.pallet),
+            joinedload(models.MaterialConsumption.machine_entries)
+            .joinedload(models.MaterialConsumptionMachineEntry.machine),
             joinedload(models.MaterialConsumption.production_run).joinedload(models.ProductionRun.ipqc_record),
         )
     )
@@ -50,6 +53,13 @@ def _get_or_404(db: Session, mc_id: uuid.UUID) -> models.MaterialConsumption:
     if not mc:
         raise HTTPException(status_code=404, detail="Material Consumption record not found")
     return mc
+
+
+def _get_entry_or_404(mc: models.MaterialConsumption, entry_id: uuid.UUID) -> models.MaterialConsumptionMachineEntry:
+    entry = next((e for e in mc.machine_entries if e.id == entry_id), None)
+    if not entry:
+        raise HTTPException(status_code=404, detail="Machine entry not found on this record")
+    return entry
 
 
 @router.get("/shifts", response_model=list[str])
@@ -65,7 +75,7 @@ def list_material_consumption(
     q = _q(db).order_by(models.MaterialConsumption.created_at.desc())
     recs = q.all()
     if category:
-        recs = [r for r in recs if r.category == category]
+        recs = [r for r in recs if any(e.category == category for e in r.machine_entries)]
     if date:
         recs = [r for r in recs if r.consumption_date == date]
     if status_:
@@ -73,10 +83,11 @@ def list_material_consumption(
     if search:
         s = search.lower()
         def matches(r: models.MaterialConsumption) -> bool:
-            haystack = [
-                r.sku_code_snapshot or "", r.sku_version_snapshot or "", r.category or "",
-                r.machine.code if r.machine else "",
-            ] + [p.pallet.display_id for p in r.pallets if p.role == "primary"]
+            haystack = []
+            for e in r.machine_entries:
+                haystack += [e.sku_code_snapshot or "", e.sku_version_snapshot or "", e.category or ""]
+                haystack += [e.machine.code if e.machine else ""]
+                haystack += [p.pallet.display_id for p in e.pallets if p.role == "primary"]
             return any(s in h.lower() for h in haystack)
         recs = [r for r in recs if matches(r)]
     return [serialize_mc_list_item(r) for r in recs]
@@ -93,6 +104,10 @@ def create_draft(
         consumption_date=_dt.date.today().isoformat(), status="draft", created_by=current_user.user_id,
     )
     db.add(mc)
+    db.flush()
+    # Every record starts with one (empty) machine slot -- Page 1 always has
+    # at least one machine to fill in; "+ Add Machine" adds more.
+    db.add(models.MaterialConsumptionMachineEntry(material_consumption_id=mc.id, sort_order=0))
     db.commit()
     return serialize_mc_detail(_get_or_404(db, mc.id))
 
@@ -111,30 +126,21 @@ def update_basic(
     mc = _get_or_404(db, mc_id)
     if mc.status != "draft":
         raise HTTPException(status_code=422, detail="This Material Consumption record has already been saved and cannot be changed.")
-    if payload.machine_id is not None:
-        machine = db.query(models.Machine).filter(models.Machine.id == payload.machine_id).first()
-        if not machine:
-            raise HTTPException(status_code=422, detail="Machine not found.")
-        mc.machine_id = payload.machine_id
     if payload.shift is not None:
         mc.shift = payload.shift or None
-    if payload.start_time is not None:
-        mc.start_time = payload.start_time or None
-    if payload.end_time is not None:
-        mc.end_time = payload.end_time or None
     mc.updated_by = current_user.user_id
     db.commit()
     return serialize_mc_detail(_get_or_404(db, mc_id))
 
 
-@router.post("/{mc_id}/scan-pallet", response_model=schemas.MaterialConsumptionDetailOut)
-def scan_pallet(
-    mc_id: uuid.UUID, body: schemas.MaterialConsumptionScanIn,
+@router.post("/{mc_id}/machine-entries", response_model=schemas.MaterialConsumptionDetailOut, status_code=201)
+def add_machine_entry(
+    mc_id: uuid.UUID, body: schemas.MaterialConsumptionMachineEntryIn,
     db: Session = Depends(get_db), _perm=Depends(require("create")),
 ):
     mc = _get_or_404(db, mc_id)
     try:
-        svc.add_primary_pallet(db, mc, body.payload, client_time=body.client_time)
+        svc.add_machine_entry(db, mc, machine_id=body.machine_id)
         db.commit()
     except svc.MaterialConsumptionError as e:
         db.rollback()
@@ -142,14 +148,78 @@ def scan_pallet(
     return serialize_mc_detail(_get_or_404(db, mc_id))
 
 
-@router.post("/{mc_id}/scan-secondary", response_model=schemas.MaterialConsumptionDetailOut)
-def scan_secondary(
-    mc_id: uuid.UUID, body: schemas.MaterialConsumptionSecondaryScanIn,
-    db: Session = Depends(get_db), _perm=Depends(require("create")),
+@router.delete("/{mc_id}/machine-entries/{entry_id}", response_model=schemas.MaterialConsumptionDetailOut)
+def remove_machine_entry(
+    mc_id: uuid.UUID, entry_id: uuid.UUID,
+    db: Session = Depends(get_db), _perm=Depends(require("edit")),
 ):
     mc = _get_or_404(db, mc_id)
     try:
-        svc.add_secondary_pallet(db, mc, body.payload, body.category)
+        svc.remove_machine_entry(db, mc, entry_id)
+        db.commit()
+    except svc.MaterialConsumptionError as e:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=e.message)
+    return serialize_mc_detail(_get_or_404(db, mc_id))
+
+
+@router.put("/{mc_id}/machine-entries/{entry_id}", response_model=schemas.MaterialConsumptionDetailOut)
+def update_machine_entry(
+    mc_id: uuid.UUID, entry_id: uuid.UUID, body: schemas.MaterialConsumptionMachineEntryIn,
+    db: Session = Depends(get_db), _perm=Depends(require("edit")),
+):
+    mc = _get_or_404(db, mc_id)
+    entry = _get_entry_or_404(mc, entry_id)
+    try:
+        svc.set_machine_entry_machine(db, mc, entry, body.machine_id)
+        db.commit()
+    except svc.MaterialConsumptionError as e:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=e.message)
+    return serialize_mc_detail(_get_or_404(db, mc_id))
+
+
+@router.post("/{mc_id}/machine-entries/{entry_id}/scan-pallet", response_model=schemas.MaterialConsumptionDetailOut)
+def scan_pallet(
+    mc_id: uuid.UUID, entry_id: uuid.UUID, body: schemas.MaterialConsumptionScanIn,
+    db: Session = Depends(get_db), _perm=Depends(require("create")),
+):
+    mc = _get_or_404(db, mc_id)
+    entry = _get_entry_or_404(mc, entry_id)
+    try:
+        svc.add_primary_pallet(db, mc, entry, body.payload, client_time=body.client_time)
+        db.commit()
+    except svc.MaterialConsumptionError as e:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=e.message)
+    return serialize_mc_detail(_get_or_404(db, mc_id))
+
+
+@router.post("/{mc_id}/machine-entries/{entry_id}/scan-secondary", response_model=schemas.MaterialConsumptionDetailOut)
+def scan_secondary(
+    mc_id: uuid.UUID, entry_id: uuid.UUID, body: schemas.MaterialConsumptionSecondaryScanIn,
+    db: Session = Depends(get_db), _perm=Depends(require("create")),
+):
+    mc = _get_or_404(db, mc_id)
+    entry = _get_entry_or_404(mc, entry_id)
+    try:
+        svc.add_secondary_pallet(db, mc, entry, body.payload, body.category)
+        db.commit()
+    except svc.MaterialConsumptionError as e:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=e.message)
+    return serialize_mc_detail(_get_or_404(db, mc_id))
+
+
+@router.put("/{mc_id}/machine-entries/{entry_id}/end-time", response_model=schemas.MaterialConsumptionDetailOut)
+def record_end_time(
+    mc_id: uuid.UUID, entry_id: uuid.UUID, body: schemas.MaterialConsumptionEndTimeIn,
+    db: Session = Depends(get_db), _perm=Depends(require("edit")),
+):
+    mc = _get_or_404(db, mc_id)
+    entry = _get_entry_or_404(mc, entry_id)
+    try:
+        svc.record_entry_end_time(db, mc, entry, body.end_time)
         db.commit()
     except svc.MaterialConsumptionError as e:
         db.rollback()
@@ -222,7 +292,14 @@ def finalize(
 
 @router.delete("/{mc_id}/if-blank", status_code=204)
 def discard_if_blank(mc_id: uuid.UUID, db: Session = Depends(get_db)):
-    mc = db.query(models.MaterialConsumption).options(joinedload(models.MaterialConsumption.pallets)).filter(models.MaterialConsumption.id == mc_id).first()
+    mc = (
+        db.query(models.MaterialConsumption)
+        .options(
+            joinedload(models.MaterialConsumption.machine_entries).joinedload(models.MaterialConsumptionMachineEntry.pallets)
+        )
+        .filter(models.MaterialConsumption.id == mc_id)
+        .first()
+    )
     if mc and mc.status == "draft" and svc.is_blank(mc):
         db.delete(mc)
         db.commit()

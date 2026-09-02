@@ -343,6 +343,12 @@ export interface MaterialConsumptionPalletRow {
   status: PalletLifecycleStatus;
 }
 
+export interface MaterialConsumptionEntrySummary {
+  machine: string | null;
+  start_time: string | null;
+  end_time: string | null;
+}
+
 export interface MaterialConsumptionListItem {
   id: string;
   consumption_date: string;
@@ -352,28 +358,21 @@ export interface MaterialConsumptionListItem {
   pallet_numbers: string;
   machine: string | null;
   shift: string | null;
-  start_time: string | null;
-  end_time: string | null;
+  entries: MaterialConsumptionEntrySummary[];
   status: "draft" | "saved";
 }
 
-export interface MaterialConsumptionDetail {
+export interface MaterialConsumptionMachineEntry {
   id: string;
-  consumption_date: string;
+  machine_id: string | null;
+  machine: string | null;
   category: string | null;
   sku_code_id: string | null;
   sku_version_id: string | null;
   sku_code: string | null;
   sku_version: string | null;
-  machine_id: string | null;
-  machine: string | null;
-  shift: string | null;
   start_time: string | null;
   end_time: string | null;
-  status: "draft" | "saved";
-  production_run_id: string | null;
-  production_run_number: string | null;
-  ipqc_id: string | null;
   pallets: MaterialConsumptionPalletRow[];
   secondary_materials: {
     cfb: MaterialConsumptionPalletRow[];
@@ -381,4 +380,15 @@ export interface MaterialConsumptionDetail {
     glue: MaterialConsumptionPalletRow[];
     polybag: MaterialConsumptionPalletRow[];
   };
+}
+
+export interface MaterialConsumptionDetail {
+  id: string;
+  consumption_date: string;
+  shift: string | null;
+  status: "draft" | "saved";
+  production_run_id: string | null;
+  production_run_number: string | null;
+  ipqc_id: string | null;
+  machine_entries: MaterialConsumptionMachineEntry[];
 }

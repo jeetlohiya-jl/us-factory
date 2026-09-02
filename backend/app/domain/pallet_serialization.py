@@ -60,33 +60,49 @@ def serialize_mc_pallet(row: models.MaterialConsumptionPallet) -> schemas.Materi
     )
 
 
+def serialize_mc_machine_entry(entry: models.MaterialConsumptionMachineEntry) -> schemas.MaterialConsumptionMachineEntryOut:
+    secondary = schemas.MaterialConsumptionSecondaryMaterialsOut()
+    for row in entry.pallets:
+        if row.role in ("cfb", "pad", "glue", "polybag"):
+            getattr(secondary, row.role).append(serialize_mc_pallet(row))
+    return schemas.MaterialConsumptionMachineEntryOut(
+        id=entry.id, machine_id=entry.machine_id, machine=entry.machine.code if entry.machine else None,
+        category=entry.category, sku_code_id=entry.sku_code_id, sku_version_id=entry.sku_version_id,
+        sku_code=entry.sku_code_snapshot, sku_version=entry.sku_version_snapshot,
+        start_time=entry.start_time, end_time=entry.end_time,
+        pallets=[serialize_mc_pallet(p) for p in entry.pallets if p.role == "primary"],
+        secondary_materials=secondary,
+    )
+
+
 def serialize_mc_list_item(mc: models.MaterialConsumption) -> schemas.MaterialConsumptionListItemOut:
-    primary = [p for p in mc.pallets if p.role == "primary"]
+    all_primary = [p for e in mc.machine_entries for p in e.pallets if p.role == "primary"]
+    first_with_sku = next((e for e in mc.machine_entries if e.category), None)
+    machines = [e.machine.code for e in mc.machine_entries if e.machine]
     return schemas.MaterialConsumptionListItemOut(
-        id=mc.id, consumption_date=mc.consumption_date, category=mc.category,
-        sku_code=mc.sku_code_snapshot, sku_version=mc.sku_version_snapshot,
-        pallet_numbers=", ".join(p.pallet.display_id for p in primary) or "(none scanned)",
-        machine=mc.machine.code if mc.machine else None, shift=mc.shift,
-        start_time=mc.start_time, end_time=mc.end_time, status=mc.status,
+        id=mc.id, consumption_date=mc.consumption_date,
+        category=first_with_sku.category if first_with_sku else None,
+        sku_code=first_with_sku.sku_code_snapshot if first_with_sku else None,
+        sku_version=first_with_sku.sku_version_snapshot if first_with_sku else None,
+        pallet_numbers=", ".join(p.pallet.display_id for p in all_primary) or "(none scanned)",
+        machine=", ".join(machines) or None, shift=mc.shift,
+        entries=[
+            schemas.MaterialConsumptionEntrySummaryOut(
+                machine=e.machine.code if e.machine else None, start_time=e.start_time, end_time=e.end_time,
+            )
+            for e in mc.machine_entries
+        ],
+        status=mc.status,
     )
 
 
 def serialize_mc_detail(mc: models.MaterialConsumption) -> schemas.MaterialConsumptionDetailOut:
-    secondary = schemas.MaterialConsumptionSecondaryMaterialsOut()
-    for row in mc.pallets:
-        if row.role in ("cfb", "pad", "glue", "polybag"):
-            getattr(secondary, row.role).append(serialize_mc_pallet(row))
     return schemas.MaterialConsumptionDetailOut(
-        id=mc.id, consumption_date=mc.consumption_date, category=mc.category,
-        sku_code_id=mc.sku_code_id, sku_version_id=mc.sku_version_id,
-        sku_code=mc.sku_code_snapshot, sku_version=mc.sku_version_snapshot,
-        machine_id=mc.machine_id, machine=mc.machine.code if mc.machine else None,
-        shift=mc.shift, start_time=mc.start_time, end_time=mc.end_time, status=mc.status,
+        id=mc.id, consumption_date=mc.consumption_date, shift=mc.shift, status=mc.status,
         production_run_id=mc.production_run_id,
         production_run_number=mc.production_run.run_number if mc.production_run else None,
         ipqc_id=mc.production_run.ipqc_record.id if mc.production_run and mc.production_run.ipqc_record else None,
-        pallets=[serialize_mc_pallet(p) for p in mc.pallets if p.role == "primary"],
-        secondary_materials=secondary,
+        machine_entries=[serialize_mc_machine_entry(e) for e in mc.machine_entries],
     )
 
 

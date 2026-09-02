@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { useMe } from "@/lib/useMe";
 import type { MaterialConsumptionListItem, MaterialConsumptionDetail, Machine } from "@/lib/types";
-import MaterialConsumptionWizard, { nowHHMM, formatTime12h } from "@/components/material-consumption/Wizard";
+import MaterialConsumptionWizard, { formatTime12h } from "@/components/material-consumption/Wizard";
 
 const CATEGORY_LABELS: Record<string, string> = { tray: "Base Tray", fgtray: "FG Non-Padded Tray" };
 
@@ -22,7 +22,6 @@ export default function MaterialConsumptionPage() {
   const [showFilters, setShowFilters] = useState(false);
 
   const [openMc, setOpenMc] = useState<MaterialConsumptionDetail | null>(null);
-  const [endingId, setEndingId] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -67,26 +66,6 @@ export default function MaterialConsumptionPage() {
     }
   }
 
-  /**
-   * "+ Add Machine" -- one record is always for exactly one Machine (see
-   * the Wizard's Production Information section), so pallets consumed on a
-   * second machine in the same shift need their own record. This is a
-   * shortcut for that: create a new draft and pre-fill its Shift from the
-   * record the link was clicked on, so the worker only has to pick the
-   * (different) Machine before scanning -- not re-enter the shift too.
-   */
-  async function handleAddMachine(shift: string, ev: React.MouseEvent) {
-    ev.stopPropagation();
-    setError(null);
-    try {
-      const mc = await api.createMaterialConsumptionDraft();
-      const updated = await api.updateMaterialConsumptionBasic(mc.id, { shift });
-      setOpenMc(updated);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to create record");
-    }
-  }
-
   async function handleDelete(id: string, ev: React.MouseEvent) {
     ev.stopPropagation();
     if (!confirm("Delete this Material Consumption record?")) return;
@@ -95,28 +74,6 @@ export default function MaterialConsumptionPage() {
       refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to delete record");
-    }
-  }
-
-  /**
-   * "Record End Time" -- captures this device's current time as end_time
-   * and saves (finalizes) the record in one click, directly from the list.
-   * Placed here (rather than inside the wizard) so the worker doesn't need
-   * to reopen a record just to close it out -- press this the moment the
-   * shift is actually done, from wherever the record is visible.
-   */
-  async function handleRecordEndTime(id: string, ev: React.MouseEvent) {
-    ev.stopPropagation();
-    setEndingId(id);
-    setError(null);
-    try {
-      await api.updateMaterialConsumptionBasic(id, { end_time: nowHHMM() });
-      await api.finalizeMaterialConsumption(id);
-      refresh();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to record end time");
-    } finally {
-      setEndingId(null);
     }
   }
 
@@ -173,60 +130,42 @@ export default function MaterialConsumptionPage() {
           <thead>
             <tr>
               <th>Category</th><th>SKU Code</th><th>SKU Version</th><th>Pallet Numbers</th>
-              <th>Machine</th><th>Date</th><th>Start – End Time</th><th>Status</th><th></th>
+              <th>Shift</th><th>Date</th><th>Machines · Start – End Time</th><th>Status</th><th></th>
             </tr>
           </thead>
           <tbody>
             {records.length === 0 ? (
               <tr className="empty-row"><td colSpan={9}>{loading ? "Loading…" : "No Material Consumption records yet."}</td></tr>
             ) : (
-              records.map((r) => {
-                const canRecordEnd = perms?.can_edit && r.status === "draft" && !!r.start_time && !r.end_time
-                  && r.pallet_numbers !== "(none scanned)";
-                return (
-                  <tr key={r.id} style={{ cursor: "pointer" }} onClick={() => openRecord(r.id)}>
-                    <td>{r.category ? (CATEGORY_LABELS[r.category] || r.category) : "—"}</td>
-                    <td className="mono">{r.sku_code || "—"}</td>
-                    <td>{r.sku_version || "—"}</td>
-                    <td className="mono">{r.pallet_numbers}</td>
-                    <td className="mono">{r.machine || "—"}</td>
-                    <td>{r.consumption_date}</td>
-                    <td className="mono">
-                      {r.start_time ? formatTime12h(r.start_time) : "—"}
-                      {r.start_time && (r.end_time ? ` – ${formatTime12h(r.end_time)}` : " – …")}
-                    </td>
-                    <td><span className={`badge ${r.status === "saved" ? "approved" : "draft"}`}>{r.status === "saved" ? "Saved" : "Draft"}</span></td>
-                    <td style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
-                      {canRecordEnd && (
-                        <button
-                          type="button" className="btn btn-primary"
-                          style={{ padding: "6px 12px", fontSize: 12, whiteSpace: "nowrap" }}
-                          disabled={endingId === r.id}
-                          onClick={(e) => handleRecordEndTime(r.id, e)}
-                        >
-                          {endingId === r.id ? "Recording…" : "Record End Time"}
-                        </button>
-                      )}
-                      {perms?.can_create && r.shift && (
-                        <a
-                          className="btn-tertiary" style={{ whiteSpace: "nowrap" }}
-                          onClick={(e) => handleAddMachine(r.shift as string, e)}
-                        >
-                          + Add Machine ({r.shift})
-                        </a>
-                      )}
-                      {/* View + Delete always stay paired on one line, same as every other
-                          list in the app -- only the optional buttons above get their own row. */}
-                      <div style={{ display: "flex", gap: 10, alignItems: "center", whiteSpace: "nowrap" }}>
-                        <a className="btn-tertiary">View →</a>
-                        {perms?.can_delete && (
-                          <a className="btn-tertiary" style={{ color: "var(--red)" }} onClick={(e) => handleDelete(r.id, e)}>Delete</a>
-                        )}
+              records.map((r) => (
+                <tr key={r.id} style={{ cursor: "pointer" }} onClick={() => openRecord(r.id)}>
+                  <td>{r.category ? (CATEGORY_LABELS[r.category] || r.category) : "—"}</td>
+                  <td className="mono">{r.sku_code || "—"}</td>
+                  <td>{r.sku_version || "—"}</td>
+                  <td className="mono">{r.pallet_numbers}</td>
+                  <td>{r.shift || "—"}</td>
+                  <td>{r.consumption_date}</td>
+                  <td className="mono">
+                    {r.entries.length === 0 ? "—" : (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                        {r.entries.map((e, i) => (
+                          <div key={i}>
+                            {e.machine || `Machine #${i + 1}`}: {e.start_time ? formatTime12h(e.start_time) : "—"}
+                            {e.start_time && (e.end_time ? ` – ${formatTime12h(e.end_time)}` : " – …")}
+                          </div>
+                        ))}
                       </div>
-                    </td>
-                  </tr>
-                );
-              })
+                    )}
+                  </td>
+                  <td><span className={`badge ${r.status === "saved" ? "approved" : "draft"}`}>{r.status === "saved" ? "Saved" : "Draft"}</span></td>
+                  <td style={{ display: "flex", gap: 10, alignItems: "center", justifyContent: "flex-end", whiteSpace: "nowrap" }}>
+                    <a className="btn-tertiary">View →</a>
+                    {perms?.can_delete && (
+                      <a className="btn-tertiary" style={{ color: "var(--red)" }} onClick={(e) => handleDelete(r.id, e)}>Delete</a>
+                    )}
+                  </td>
+                </tr>
+              ))
             )}
           </tbody>
         </table>

@@ -392,10 +392,11 @@ class MachineUpdateIn(BaseModel):
 class MaterialConsumptionScanIn(BaseModel):
     payload: str
     # Optional "HH:MM" from the scanning device's own clock, used to stamp
-    # start_time atomically with the very first primary-pallet scan (see
-    # add_primary_pallet). Sent by the frontend so the factory workstation's
-    # local time is what's recorded, not the backend server's -- the backend
-    # can run anywhere, the workstation is what's physically at the factory.
+    # this machine entry's start_time atomically with its very first
+    # primary-pallet scan (see add_primary_pallet). Sent by the frontend so
+    # the factory workstation's local time is what's recorded, not the
+    # backend server's -- the backend can run anywhere, the workstation is
+    # what's physically at the factory.
     client_time: Optional[str] = None
 
 
@@ -405,10 +406,15 @@ class MaterialConsumptionSecondaryScanIn(BaseModel):
 
 
 class MaterialConsumptionBasicUpdate(BaseModel):
-    machine_id: Optional[uuid.UUID] = None
     shift: Optional[str] = None
-    start_time: Optional[str] = None
-    end_time: Optional[str] = None
+
+
+class MaterialConsumptionMachineEntryIn(BaseModel):
+    machine_id: Optional[uuid.UUID] = None
+
+
+class MaterialConsumptionEndTimeIn(BaseModel):
+    end_time: str
 
 
 class MaterialConsumptionPalletOut(BaseModel):
@@ -430,36 +436,49 @@ class MaterialConsumptionSecondaryMaterialsOut(BaseModel):
     polybag: list[MaterialConsumptionPalletOut] = []
 
 
+class MaterialConsumptionMachineEntryOut(BaseModel):
+    id: uuid.UUID
+    machine_id: Optional[uuid.UUID] = None
+    machine: Optional[str] = None
+    category: Optional[str] = None
+    sku_code_id: Optional[uuid.UUID] = None
+    sku_version_id: Optional[uuid.UUID] = None
+    sku_code: Optional[str] = None
+    sku_version: Optional[str] = None
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    pallets: list[MaterialConsumptionPalletOut] = []
+    secondary_materials: MaterialConsumptionSecondaryMaterialsOut = MaterialConsumptionSecondaryMaterialsOut()
+
+
+class MaterialConsumptionEntrySummaryOut(BaseModel):
+    """Compact per-machine summary for the list page -- the full pallet/
+    secondary-material breakdown only appears in MaterialConsumptionDetailOut,
+    opened from the wizard."""
+    machine: Optional[str] = None
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+
+
 class MaterialConsumptionListItemOut(BaseModel):
     id: uuid.UUID
     consumption_date: str
     category: Optional[str]
     sku_code: Optional[str]
     sku_version: Optional[str]
-    pallet_numbers: str  # comma-joined display of primary pallets
-    machine: Optional[str]
+    pallet_numbers: str  # comma-joined display of primary pallets across every machine
+    machine: Optional[str]  # comma-joined machine codes, e.g. "MACH-001, MACH-002"
     shift: Optional[str]
-    start_time: Optional[str] = None
-    end_time: Optional[str] = None
+    entries: list[MaterialConsumptionEntrySummaryOut] = []
     status: str
 
 
 class MaterialConsumptionDetailOut(BaseModel):
     id: uuid.UUID
     consumption_date: str
-    category: Optional[str]
-    sku_code_id: Optional[uuid.UUID]
-    sku_version_id: Optional[uuid.UUID]
-    sku_code: Optional[str]
-    sku_version: Optional[str]
-    machine_id: Optional[uuid.UUID]
-    machine: Optional[str]
     shift: Optional[str]
-    start_time: Optional[str]
-    end_time: Optional[str]
     status: str
     production_run_id: Optional[uuid.UUID]
     production_run_number: Optional[str] = None
     ipqc_id: Optional[uuid.UUID] = None
-    pallets: list[MaterialConsumptionPalletOut] = []
-    secondary_materials: MaterialConsumptionSecondaryMaterialsOut = MaterialConsumptionSecondaryMaterialsOut()
+    machine_entries: list[MaterialConsumptionMachineEntryOut] = []

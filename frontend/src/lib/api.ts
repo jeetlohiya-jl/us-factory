@@ -261,12 +261,20 @@ export const api = {
   createMaterialConsumptionDraft: () =>
     request<MaterialConsumptionDetail>("/api/v1/material-consumption/draft", { method: "POST" }),
   getMaterialConsumption: (id: string) => request<MaterialConsumptionDetail>(`/api/v1/material-consumption/${id}`),
-  updateMaterialConsumptionBasic: (id: string, patch: { machine_id?: string; shift?: string; start_time?: string; end_time?: string }) =>
+  updateMaterialConsumptionBasic: (id: string, patch: { shift?: string }) =>
     request<MaterialConsumptionDetail>(`/api/v1/material-consumption/${id}/basic`, { method: "PUT", body: JSON.stringify(patch) }),
-  scanMaterialConsumptionPallet: (id: string, payload: string, clientTime?: string) =>
-    request<MaterialConsumptionDetail>(`/api/v1/material-consumption/${id}/scan-pallet`, { method: "POST", body: JSON.stringify({ payload, client_time: clientTime }) }),
-  scanMaterialConsumptionSecondary: (id: string, payload: string, category: SecondaryMaterialCategory) =>
-    request<MaterialConsumptionDetail>(`/api/v1/material-consumption/${id}/scan-secondary`, { method: "POST", body: JSON.stringify({ payload, category }) }),
+  addMaterialConsumptionMachineEntry: (id: string, machineId?: string | null) =>
+    request<MaterialConsumptionDetail>(`/api/v1/material-consumption/${id}/machine-entries`, { method: "POST", body: JSON.stringify({ machine_id: machineId ?? null }) }),
+  removeMaterialConsumptionMachineEntry: (id: string, entryId: string) =>
+    request<MaterialConsumptionDetail>(`/api/v1/material-consumption/${id}/machine-entries/${entryId}`, { method: "DELETE" }),
+  setMaterialConsumptionMachineEntryMachine: (id: string, entryId: string, machineId: string | null) =>
+    request<MaterialConsumptionDetail>(`/api/v1/material-consumption/${id}/machine-entries/${entryId}`, { method: "PUT", body: JSON.stringify({ machine_id: machineId }) }),
+  scanMaterialConsumptionPallet: (id: string, entryId: string, payload: string, clientTime?: string) =>
+    request<MaterialConsumptionDetail>(`/api/v1/material-consumption/${id}/machine-entries/${entryId}/scan-pallet`, { method: "POST", body: JSON.stringify({ payload, client_time: clientTime }) }),
+  scanMaterialConsumptionSecondary: (id: string, entryId: string, payload: string, category: SecondaryMaterialCategory) =>
+    request<MaterialConsumptionDetail>(`/api/v1/material-consumption/${id}/machine-entries/${entryId}/scan-secondary`, { method: "POST", body: JSON.stringify({ payload, category }) }),
+  recordMaterialConsumptionEntryEndTime: (id: string, entryId: string, endTime: string) =>
+    request<MaterialConsumptionDetail>(`/api/v1/material-consumption/${id}/machine-entries/${entryId}/end-time`, { method: "PUT", body: JSON.stringify({ end_time: endTime }) }),
   removeMaterialConsumptionPallet: (id: string, rowId: string) =>
     request<MaterialConsumptionDetail>(`/api/v1/material-consumption/${id}/pallets/${rowId}`, { method: "DELETE" }),
   setMaterialConsumptionPalletQuantity: (id: string, rowId: string, quantity: string) =>

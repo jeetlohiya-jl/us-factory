@@ -503,32 +503,29 @@ class StorageRecord(Base):
 
 class MaterialConsumption(Base):
     """
-    Records the actual RM pallets an operator physically picked from RM
-    Storage and consumed for production -- explicit scan-driven selection,
-    never FIFO/auto-assignment (per the task's explicit override). Category
-    + SKU Code + SKU Version are never entered here; they are established
-    by the first scanned primary pallet and snapshotted onto this row so
-    the record stays readable even if the SKU/pallet master data changes
-    later (same snapshot pattern as Pallet.sku_code_snapshot elsewhere).
-
-    category is restricted to the two primary-material categories that are
-    actually consumed into production ('tray' == Base Tray, 'fgtray' == FG
-    Non-Padded Tray) -- Pad/Polybag/CFB/Glue are the *secondary* materials
-    for this record (see MaterialConsumptionPallet.role) even though they
-    are RM pallets of their own, generated the same way.
+    One record = one Shift, spanning one or more MACHINES -- each machine
+    tracked as its own MaterialConsumptionMachineEntry (own pallet set, own
+    Category/SKU/SKU Version, own start_time/end_time). Before the
+    multi-machine redesign a record was pinned to exactly one machine with
+    these same fields living directly on this row; those columns are left
+    in place (see migration 0008) purely as a non-destructive backfill
+    target for pre-existing rows -- application code no longer reads or
+    writes them, machine_entries is the source of truth going forward.
     """
     __tablename__ = "material_consumptions"
     id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
     consumption_date = Column(Text, nullable=False)
-    category = Column(Text, nullable=True)  # 'tray' | 'fgtray' -- set by the first primary pallet scan
+    # --- Legacy pre-multi-machine columns (see class docstring) ---
+    category = Column(Text, nullable=True)
     sku_code_id = Column(UUID(as_uuid=True), ForeignKey("sku_codes.id"), nullable=True)
     sku_version_id = Column(UUID(as_uuid=True), ForeignKey("sku_versions.id"), nullable=True)
     sku_code_snapshot = Column(Text, nullable=True)
     sku_version_snapshot = Column(Text, nullable=True)
     machine_id = Column(UUID(as_uuid=True), ForeignKey("machines.id"), nullable=True)
-    shift = Column(Text, nullable=True)
     start_time = Column(Text, nullable=True)
     end_time = Column(Text, nullable=True)
+    # --- Still-active columns ---
+    shift = Column(Text, nullable=True)
     status = Column(Text, nullable=False, default="draft")  # 'draft' | 'saved'
     production_run_id = Column(UUID(as_uuid=True), ForeignKey("production_runs.id"), nullable=True)
     created_by = Column(UUID(as_uuid=True), ForeignKey("app_users.id"), nullable=True)
@@ -536,12 +533,43 @@ class MaterialConsumption(Base):
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    production_run = relationship("ProductionRun", back_populates="material_consumptions")
+    machine_entries = relationship(
+        "MaterialConsumptionMachineEntry", back_populates="material_consumption",
+        cascade="all, delete-orphan", order_by="MaterialConsumptionMachineEntry.sort_order",
+    )
+
+
+class MaterialConsumptionMachineEntry(Base):
+    """
+    One machine's slice of a Material Consumption record: its own pallet
+    set (primary + secondary materials, via MaterialConsumptionPallet.
+    machine_entry_id), its own Category/SKU/SKU Version (established by
+    this entry's first scanned primary pallet, same snapshot pattern as
+    Pallet.sku_code_snapshot elsewhere), and its own start_time/end_time.
+    A record with 2 machines has 2 of these rows; Shift lives one level up
+    on MaterialConsumption since it's shared across every machine entry.
+    """
+    __tablename__ = "material_consumption_machine_entries"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    material_consumption_id = Column(UUID(as_uuid=True), ForeignKey("material_consumptions.id", ondelete="CASCADE"), nullable=False)
+    machine_id = Column(UUID(as_uuid=True), ForeignKey("machines.id"), nullable=True)
+    category = Column(Text, nullable=True)  # 'tray' | 'fgtray' -- set by this entry's first primary pallet scan
+    sku_code_id = Column(UUID(as_uuid=True), ForeignKey("sku_codes.id"), nullable=True)
+    sku_version_id = Column(UUID(as_uuid=True), ForeignKey("sku_versions.id"), nullable=True)
+    sku_code_snapshot = Column(Text, nullable=True)
+    sku_version_snapshot = Column(Text, nullable=True)
+    start_time = Column(Text, nullable=True)
+    end_time = Column(Text, nullable=True)
+    sort_order = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+    material_consumption = relationship("MaterialConsumption", back_populates="machine_entries")
+    machine = relationship("Machine")
     sku_code = relationship("SkuCode")
     sku_version = relationship("SkuVersion")
-    machine = relationship("Machine")
-    production_run = relationship("ProductionRun", back_populates="material_consumptions")
     pallets = relationship(
-        "MaterialConsumptionPallet", back_populates="material_consumption",
+        "MaterialConsumptionPallet", back_populates="machine_entry",
         cascade="all, delete-orphan", order_by="MaterialConsumptionPallet.sort_order",
     )
 
@@ -554,9 +582,12 @@ class MaterialConsumptionPallet(Base):
     single unique constraint on pallet_id enforces, at the database level,
     that a pallet can never be attached to more than one *active*
     (draft-or-saved) Material Consumption record at a time, in any role.
-    Deleting the owning MaterialConsumption row (only ever allowed while
-    it's still a draft, see the delete-dependency check in the API) frees
-    the pallet immediately via cascade.
+    Scoped to one MACHINE ENTRY (machine_entry_id) within a record, since
+    each machine has its own pallet set; material_consumption_id is kept
+    alongside it (denormalized) purely so cross-record lookups don't need
+    an extra join. Deleting the owning machine entry (only ever allowed
+    while the record is still a draft, see the delete-dependency check in
+    the API) frees the pallet immediately via cascade.
 
     Structured, not a comma-separated string -- see MaterialConsumption's
     module docstring and the task's explicit "do not store the pallet
@@ -565,11 +596,12 @@ class MaterialConsumptionPallet(Base):
     __tablename__ = "material_consumption_pallets"
     id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
     material_consumption_id = Column(UUID(as_uuid=True), ForeignKey("material_consumptions.id", ondelete="CASCADE"), nullable=False)
+    machine_entry_id = Column(UUID(as_uuid=True), ForeignKey("material_consumption_machine_entries.id", ondelete="CASCADE"), nullable=True)
     role = Column(Text, nullable=False)  # 'primary' | 'cfb' | 'pad' | 'glue' | 'polybag'
     pallet_id = Column(UUID(as_uuid=True), ForeignKey("pallets.id"), nullable=False, unique=True)
     quantity = Column(Numeric, nullable=False, default=1)
     sort_order = Column(Integer, nullable=False, default=0)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
-    material_consumption = relationship("MaterialConsumption", back_populates="pallets")
+    machine_entry = relationship("MaterialConsumptionMachineEntry", back_populates="pallets")
     pallet = relationship("Pallet")

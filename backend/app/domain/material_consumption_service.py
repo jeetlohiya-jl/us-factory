@@ -6,14 +6,18 @@ are never manually entered here -- they come exclusively from the scanned
 pallet (the pallet record is the single source of truth), matching the
 RM/FG Storage scan-then-resolve-server-side pattern in storage_service.py.
 
+One record spans one or more MACHINES (MaterialConsumptionMachineEntry) --
+each machine has its own pallet set, its own Category/SKU/SKU Version, and
+its own start_time/end_time. Shift is shared across the whole record.
+
 Primary categories consumed into production: 'tray' (Base Tray) and
 'fgtray' (FG Non-Padded Tray) -- the same two RM categories the rest of the
 app already treats as tray variants (see pallet_service.CATEGORY_SUFFIX,
 where both map to the "PLT" suffix). Pad / Polybag / CFB / Glue are the
-*secondary* materials for a Material Consumption record even though they
-are ordinary RM pallets of their own, generated and stored exactly the same
-way -- so secondary materials are scanned and validated through this same
-service, never a free-text fallback.
+*secondary* materials for a machine entry even though they are ordinary RM
+pallets of their own, generated and stored exactly the same way -- so
+secondary materials are scanned and validated through this same service,
+never a free-text fallback.
 """
 from decimal import Decimal
 
@@ -63,8 +67,9 @@ def _assert_pallet_available(pallet: models.Pallet) -> None:
 
 
 def _assert_not_already_allocated(db: Session, pallet: models.Pallet, exclude_mc_id=None) -> None:
-    """Cross-record check only -- a duplicate scan within the SAME record is
-    checked separately (by the caller, before this) so it gets the more
+    """Cross-record check only -- a duplicate scan within the SAME record
+    (on this machine entry or any other machine entry of the same record)
+    is checked separately (by the caller, before this) so it gets the more
     specific 'already scanned into this record' message instead of this
     generic cross-record one."""
     q = db.query(models.MaterialConsumptionPallet).filter(models.MaterialConsumptionPallet.pallet_id == pallet.id)
@@ -77,8 +82,47 @@ def _assert_not_already_allocated(db: Session, pallet: models.Pallet, exclude_mc
         )
 
 
+def _all_pallets(mc: models.MaterialConsumption) -> list[models.MaterialConsumptionPallet]:
+    return [p for entry in mc.machine_entries for p in entry.pallets]
+
+
+def machine_label(entry: models.MaterialConsumptionMachineEntry, index: int) -> str:
+    return entry.machine.code if entry.machine else f"Machine #{index + 1}"
+
+
+def add_machine_entry(db: Session, mc: models.MaterialConsumption, machine_id=None) -> models.MaterialConsumptionMachineEntry:
+    if mc.status != "draft":
+        raise MaterialConsumptionError("This Material Consumption record has already been saved and cannot be changed.")
+    entry = models.MaterialConsumptionMachineEntry(
+        material_consumption_id=mc.id, machine_id=machine_id, sort_order=len(mc.machine_entries),
+    )
+    db.add(entry)
+    db.flush()
+    return entry
+
+
+def remove_machine_entry(db: Session, mc: models.MaterialConsumption, entry_id) -> None:
+    if mc.status != "draft":
+        raise MaterialConsumptionError("This Material Consumption record has already been saved and cannot be changed.")
+    entry = next((e for e in mc.machine_entries if e.id == entry_id), None)
+    if not entry:
+        raise MaterialConsumptionError("Machine entry not found on this record.")
+    if len(mc.machine_entries) <= 1:
+        raise MaterialConsumptionError("A record needs at least one machine -- remove the whole record instead if it's not needed.")
+    db.delete(entry)
+    db.flush()
+
+
+def set_machine_entry_machine(db: Session, mc: models.MaterialConsumption, entry: models.MaterialConsumptionMachineEntry, machine_id) -> None:
+    if mc.status != "draft":
+        raise MaterialConsumptionError("This Material Consumption record has already been saved and cannot be changed.")
+    entry.machine_id = machine_id
+    db.flush()
+
+
 def add_primary_pallet(
-    db: Session, mc: models.MaterialConsumption, raw_scan: str, client_time: str | None = None,
+    db: Session, mc: models.MaterialConsumption, entry: models.MaterialConsumptionMachineEntry,
+    raw_scan: str, client_time: str | None = None,
 ) -> models.MaterialConsumptionPallet:
     if mc.status != "draft":
         raise MaterialConsumptionError("This Material Consumption record has already been saved and cannot be changed.")
@@ -91,56 +135,57 @@ def add_primary_pallet(
             "Use the matching Secondary Material section instead."
         )
     _assert_pallet_available(pallet)
-    already_scanned = {p.pallet_id for p in mc.pallets if p.role == "primary"}
+    already_scanned = {p.pallet_id for p in _all_pallets(mc) if p.role == "primary"}
     if pallet.id in already_scanned:
         raise MaterialConsumptionError(f"Pallet {pallet.display_id} has already been scanned into this record.")
     _assert_not_already_allocated(db, pallet, exclude_mc_id=mc.id)
 
-    existing_primary = [p for p in mc.pallets if p.role == "primary"]
+    existing_primary = [p for p in entry.pallets if p.role == "primary"]
     if existing_primary:
-        first = existing_primary[0]
         if (
-            pallet.category != mc.category
-            or pallet.sku_code_id != mc.sku_code_id
-            or pallet.sku_version_id != mc.sku_version_id
+            pallet.category != entry.category
+            or pallet.sku_code_id != entry.sku_code_id
+            or pallet.sku_version_id != entry.sku_version_id
         ):
             raise MaterialConsumptionError(
-                "Pallet cannot be added. SKU Code / Version does not match the pallets already selected for this Material Consumption record."
+                "Pallet cannot be added. SKU Code / Version does not match the pallets already selected for this machine."
             )
     else:
-        # First pallet establishes Category + SKU Code + SKU Version for the
-        # whole record -- and, per the user's explicit direction, this first
-        # scan IS the start of work: stamp start_time right now, atomically
-        # with this same scan, using the scanning device's own clock
-        # (client_time, sent by the frontend) rather than the backend
-        # server's clock -- the workstation is what's physically on the US
-        # factory floor. Falls back to the server's own clock only if the
-        # frontend didn't send one, so a record is never left without a
-        # start_time at all.
-        mc.category = pallet.category
-        mc.sku_code_id = pallet.sku_code_id
-        mc.sku_version_id = pallet.sku_version_id
-        mc.sku_code_snapshot = pallet.sku_code_snapshot
-        mc.sku_version_snapshot = pallet.sku_version_snapshot
-        if not mc.start_time:
+        # First pallet on this machine entry establishes Category + SKU
+        # Code + SKU Version for it -- and, per the user's explicit
+        # direction, this first scan IS the start of work: stamp
+        # entry.start_time right now, atomically with this same scan,
+        # using the scanning device's own clock (client_time, sent by the
+        # frontend) rather than the backend server's clock -- the
+        # workstation is what's physically on the US factory floor. Falls
+        # back to the server's own clock only if the frontend didn't send
+        # one, so an entry is never left without a start_time at all.
+        entry.category = pallet.category
+        entry.sku_code_id = pallet.sku_code_id
+        entry.sku_version_id = pallet.sku_version_id
+        entry.sku_code_snapshot = pallet.sku_code_snapshot
+        entry.sku_version_snapshot = pallet.sku_version_snapshot
+        if not entry.start_time:
             if client_time:
-                mc.start_time = client_time
+                entry.start_time = client_time
             else:
                 import datetime as _dt
                 now = _dt.datetime.now()
-                mc.start_time = f"{now.hour:02d}:{now.minute:02d}"
+                entry.start_time = f"{now.hour:02d}:{now.minute:02d}"
 
-    sort_order = len(mc.pallets)
     row = models.MaterialConsumptionPallet(
-        material_consumption_id=mc.id, role="primary", pallet_id=pallet.id,
-        quantity=Decimal("1"), sort_order=sort_order,
+        material_consumption_id=mc.id, machine_entry_id=entry.id, role="primary", pallet_id=pallet.id,
+        quantity=Decimal("1"), sort_order=len(entry.pallets),
     )
     db.add(row)
     db.flush()
     return row
 
 
-def add_secondary_pallet(db: Session, mc: models.MaterialConsumption, raw_scan: str, category: str) -> models.MaterialConsumptionPallet:
+def add_secondary_pallet(
+    db: Session, mc: models.MaterialConsumption, entry: models.MaterialConsumptionMachineEntry,
+    raw_scan: str, category: str,
+) -> models.MaterialConsumptionPallet:
     if mc.status != "draft":
         raise MaterialConsumptionError("This Material Consumption record has already been saved and cannot be changed.")
     if category not in SECONDARY_ROLES:
@@ -153,15 +198,14 @@ def add_secondary_pallet(db: Session, mc: models.MaterialConsumption, raw_scan: 
             f"Pallet {pallet.display_id} is category '{pallet.category or 'unknown'}', not {category.upper()}."
         )
     _assert_pallet_available(pallet)
-    already_scanned = {p.pallet_id for p in mc.pallets if p.role == category}
+    already_scanned = {p.pallet_id for p in _all_pallets(mc) if p.role == category}
     if pallet.id in already_scanned:
         raise MaterialConsumptionError(f"Pallet {pallet.display_id} has already been scanned into this record.")
     _assert_not_already_allocated(db, pallet, exclude_mc_id=mc.id)
 
-    sort_order = len(mc.pallets)
     row = models.MaterialConsumptionPallet(
-        material_consumption_id=mc.id, role=category, pallet_id=pallet.id,
-        quantity=Decimal("1"), sort_order=sort_order,
+        material_consumption_id=mc.id, machine_entry_id=entry.id, role=category, pallet_id=pallet.id,
+        quantity=Decimal("1"), sort_order=len(entry.pallets),
     )
     db.add(row)
     db.flush()
@@ -171,26 +215,28 @@ def add_secondary_pallet(db: Session, mc: models.MaterialConsumption, raw_scan: 
 def remove_pallet(db: Session, mc: models.MaterialConsumption, row_id) -> None:
     if mc.status != "draft":
         raise MaterialConsumptionError("This Material Consumption record has already been saved and cannot be changed.")
-    row = next((p for p in mc.pallets if p.id == row_id), None)
+    row = next((p for p in _all_pallets(mc) if p.id == row_id), None)
     if not row:
         raise MaterialConsumptionError("Pallet not found on this record.")
+    entry = row.machine_entry
     was_primary = row.role == "primary"
     db.delete(row)
     db.flush()
-    # If the removed pallet was the last primary pallet, release the
-    # category/SKU lock established by it so a differently-SKU'd pallet can
-    # be scanned next -- the record hasn't consumed anything yet (draft).
-    remaining_primary = [p for p in mc.pallets if p.role == "primary" and p.id != row_id]
+    # If the removed pallet was the last primary pallet on this machine
+    # entry, release the category/SKU lock established by it so a
+    # differently-SKU'd pallet can be scanned next -- the entry hasn't
+    # consumed anything yet (draft).
+    remaining_primary = [p for p in entry.pallets if p.role == "primary" and p.id != row_id]
     if was_primary and not remaining_primary:
-        mc.category = None
-        mc.sku_code_id = None
-        mc.sku_version_id = None
-        mc.sku_code_snapshot = None
-        mc.sku_version_snapshot = None
+        entry.category = None
+        entry.sku_code_id = None
+        entry.sku_version_id = None
+        entry.sku_code_snapshot = None
+        entry.sku_version_snapshot = None
 
 
 def set_secondary_quantity(db: Session, mc: models.MaterialConsumption, row_id, quantity: Decimal) -> models.MaterialConsumptionPallet:
-    row = next((p for p in mc.pallets if p.id == row_id), None)
+    row = next((p for p in _all_pallets(mc) if p.id == row_id), None)
     if not row:
         raise MaterialConsumptionError("Pallet not found on this record.")
     if row.role == "primary":
@@ -200,13 +246,18 @@ def set_secondary_quantity(db: Session, mc: models.MaterialConsumption, row_id, 
     return row
 
 
+def record_entry_end_time(db: Session, mc: models.MaterialConsumption, entry: models.MaterialConsumptionMachineEntry, end_time: str) -> None:
+    if mc.status != "draft":
+        raise MaterialConsumptionError("This Material Consumption record has already been saved and cannot be changed.")
+    if not entry.start_time:
+        raise MaterialConsumptionError("Scan at least one pallet on this machine first -- Start Time is recorded automatically.")
+    entry.end_time = end_time
+    db.flush()
+
+
 def is_blank(mc: models.MaterialConsumption) -> bool:
-    return (
-        not mc.pallets
-        and not mc.machine_id
-        and not mc.shift
-        and not mc.start_time
-        and not mc.end_time
+    return not mc.shift and not any(
+        e.machine_id or e.start_time or e.end_time or e.pallets for e in mc.machine_entries
     )
 
 
@@ -231,34 +282,39 @@ def _next_run_number(db: Session) -> str:
 
 def find_or_create_production_run(db: Session, mc: models.MaterialConsumption) -> models.ProductionRun:
     """Idempotent find-or-create keyed by (date, shift) -- NOT machine --
-    so multiple Material Consumption records on different machines for the
-    same date+shift all attach to the same run."""
+    so multiple Material Consumption records (or multiple machine entries
+    within one record) on different machines for the same date+shift all
+    attach to the same run. category/SKU snapshot onto the run come from
+    the record's first machine entry that has them set."""
     run = (
         db.query(models.ProductionRun)
         .filter(models.ProductionRun.production_date == mc.consumption_date, models.ProductionRun.shift == mc.shift)
         .first()
     )
+    first_with_sku = next((e for e in mc.machine_entries if e.category), None)
     if not run:
         run = models.ProductionRun(
             run_number=_next_run_number(db),
             production_date=mc.consumption_date,
             shift=mc.shift,
-            category=mc.category or "fgtray",
-            sku_code_id=mc.sku_code_id,
-            sku_version_id=mc.sku_version_id,
+            category=(first_with_sku.category if first_with_sku else "fgtray"),
+            sku_code_id=first_with_sku.sku_code_id if first_with_sku else None,
+            sku_version_id=first_with_sku.sku_version_id if first_with_sku else None,
             total_fg_pallets=0,
             status="pending",
         )
         db.add(run)
         db.flush()
-    if mc.machine_id:
+    for entry in mc.machine_entries:
+        if not entry.machine_id:
+            continue
         has_machine = (
             db.query(models.ProductionRunMachine)
-            .filter(models.ProductionRunMachine.production_run_id == run.id, models.ProductionRunMachine.machine_id == mc.machine_id)
+            .filter(models.ProductionRunMachine.production_run_id == run.id, models.ProductionRunMachine.machine_id == entry.machine_id)
             .first()
         )
         if not has_machine:
-            db.add(models.ProductionRunMachine(production_run_id=run.id, machine_id=mc.machine_id))
+            db.add(models.ProductionRunMachine(production_run_id=run.id, machine_id=entry.machine_id))
             db.flush()
     return run
 
@@ -270,10 +326,13 @@ def find_or_create_ipqc(db: Session, run: models.ProductionRun, mc: models.Mater
     existing = db.query(models.IpqcRecord).filter(models.IpqcRecord.production_run_id == run.id).first()
     if existing:
         return existing
+    first_with_sku = next((e for e in mc.machine_entries if e.category), None)
     rec = models.IpqcRecord(
         production_run_id=run.id,
-        sku_code_id=mc.sku_code_id, sku_version_id=mc.sku_version_id,
-        sku_code_snapshot=mc.sku_code_snapshot, sku_version_snapshot=mc.sku_version_snapshot,
+        sku_code_id=first_with_sku.sku_code_id if first_with_sku else None,
+        sku_version_id=first_with_sku.sku_version_id if first_with_sku else None,
+        sku_code_snapshot=first_with_sku.sku_code_snapshot if first_with_sku else None,
+        sku_version_snapshot=first_with_sku.sku_version_snapshot if first_with_sku else None,
         shift=mc.shift, production_date=mc.consumption_date, status="pending",
     )
     db.add(rec)
@@ -283,27 +342,34 @@ def find_or_create_ipqc(db: Session, run: models.ProductionRun, mc: models.Mater
 
 def finalize(db: Session, mc: models.MaterialConsumption, actor_user_id=None) -> models.MaterialConsumption:
     """
-    Final Save: validate everything first (nothing is written if validation
-    fails), then atomically consume every attached pallet, find-or-create
-    the Production Run and IPQC record, and mark this record 'saved'.
-    Re-validates every pallet's live lifecycle_status inside this same
-    transaction (never trusting the scan-time snapshot), exactly like
-    storage_service.confirm_storage -- either everything commits, or (on
-    any validation failure) the caller rolls back and nothing is consumed.
+    Final Save: validate every machine entry first (nothing is written if
+    validation fails), then atomically consume every attached pallet across
+    every machine entry, find-or-create the Production Run and IPQC record,
+    and mark this record 'saved'. Re-validates every pallet's live
+    lifecycle_status inside this same transaction (never trusting the
+    scan-time snapshot), exactly like storage_service.confirm_storage --
+    either everything commits, or (on any validation failure) the caller
+    rolls back and nothing is consumed.
     """
-    primary_pallets = [p for p in mc.pallets if p.role == "primary"]
-    if not primary_pallets:
-        raise MaterialConsumptionError("Scan at least one RM pallet before saving.")
-    if not mc.machine_id:
-        raise MaterialConsumptionError("Select a Machine before saving.")
+    if not mc.machine_entries:
+        raise MaterialConsumptionError("Add at least one machine before saving.")
     if not mc.shift:
         raise MaterialConsumptionError("Select a Shift before saving.")
-    if not mc.start_time:
-        raise MaterialConsumptionError("Start Time is missing -- scan at least one pallet first, it's recorded automatically.")
-    if not mc.end_time:
-        raise MaterialConsumptionError("Press \"Record End Time\" on this record from the Material Consumption list before it can be saved.")
 
-    for row in mc.pallets:
+    for i, entry in enumerate(mc.machine_entries):
+        label = machine_label(entry, i)
+        if not entry.machine_id:
+            raise MaterialConsumptionError(f"Select a Machine for {label}.")
+        primary_pallets = [p for p in entry.pallets if p.role == "primary"]
+        if not primary_pallets:
+            raise MaterialConsumptionError(f"Scan at least one RM pallet for {label} before saving.")
+        if not entry.start_time:
+            raise MaterialConsumptionError(f"Start Time is missing for {label} -- scan at least one pallet first, it's recorded automatically.")
+        if not entry.end_time:
+            raise MaterialConsumptionError(f"Record the End Time for {label} before this record can be saved.")
+
+    all_pallets = _all_pallets(mc)
+    for row in all_pallets:
         db.refresh(row.pallet)
         if row.pallet.lifecycle_status != "stored":
             raise MaterialConsumptionError(
@@ -311,7 +377,7 @@ def finalize(db: Session, mc: models.MaterialConsumption, actor_user_id=None) ->
                 f"(status: {row.pallet.lifecycle_status}) and cannot be consumed. Remove it and re-scan."
             )
 
-    for row in mc.pallets:
+    for row in all_pallets:
         pallet_service.record_lifecycle_event(
             db, row.pallet, "consumed", actor_user_id=actor_user_id,
             consumed_by_module="material_consumption", consumed_by_record=str(mc.id),
