@@ -49,14 +49,15 @@ def _resolve_qc_sku(qc: models.InwardQcRecord) -> tuple[str | None, str | None, 
 def _resolve_qc_country(db: Session, qc: models.InwardQcRecord) -> str:
     """
     The country an RM pallet was packed in is the country of the vendor
-    named on the Inward QC (vendor_name is a plain text snapshot, not a
-    foreign key -- see Vendor's own docstring -- so this is a best-effort
-    lookup by category+name, same as every other vendor_name usage in this
-    app). Falls back to "US" when the vendor can't be matched (a vendor
-    deleted since, a legacy free-text name never in the managed list, or a
-    vendor that predates the country field) so a missing lookup can never
-    block QR generation -- it only means the pallet gets the same "US-"
-    prefix every pallet got before this feature existed.
+    named on the Inward QC. Since migration 0010, qc.vendor_id is a real
+    foreign key resolved at write time (see app.domain.vendor_lookup) and
+    is preferred here directly -- no lookup needed. Falls back to the
+    original best-effort category+name text match only for a row that
+    predates that column (never got a vendor_id backfilled, e.g. no
+    matching vendor existed at the time). Falls back further to "US" when
+    even that can't be matched, so a missing lookup can never block QR
+    generation -- it only means the pallet gets the same "US-" prefix
+    every pallet got before this feature existed.
 
     The vendor lookup category is NOT always qc.category: a Tray / FG
     Non-Padded Tray QC is auto-created with qc.category == "fgtray", but the
@@ -68,6 +69,8 @@ def _resolve_qc_country(db: Session, qc: models.InwardQcRecord) -> str:
     inspection's category instead, or the vendor set up for this vendor
     name would never be found.
     """
+    if qc.vendor_id and qc.vendor:
+        return qc.vendor.country or "US"
     if not qc.vendor_name:
         return "US"
     lookup_category = qc.vehicle_inspection.category if qc.vehicle_inspection else qc.category

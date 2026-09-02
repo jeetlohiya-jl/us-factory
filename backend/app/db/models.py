@@ -124,6 +124,12 @@ class InwardVehicleInspection(Base):
     truck_number = Column(Text, nullable=True)
     container_number = Column(Text, nullable=True)
     vendor_name = Column(Text, nullable=True)
+    # Nullable FK alongside vendor_name (see migration 0010): vendor_name
+    # stays the permanent display snapshot; vendor_id is the real
+    # relationship, resolved at write time from the same vendors dropdown
+    # the UI already sources vendor_name from, so downstream lookups (RM
+    # pallet country resolution) don't have to re-match text at read time.
+    vendor_id = Column(UUID(as_uuid=True), ForeignKey("vendors.id"), nullable=True)
     invoice_number = Column(Text, nullable=True)
     transporter_name = Column(Text, nullable=True)
     seal_number = Column(Text, nullable=True)
@@ -136,6 +142,7 @@ class InwardVehicleInspection(Base):
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    vendor = relationship("Vendor", foreign_keys=[vendor_id])
     line_items = relationship(
         "InwardVehicleInspectionLineItem", back_populates="inspection",
         cascade="all, delete-orphan", order_by="InwardVehicleInspectionLineItem.sort_order",
@@ -210,6 +217,7 @@ class InwardQcRecord(Base):
     status = Column(Text, nullable=False, default="pending")
     linked_vehicle_inspection_id = Column(UUID(as_uuid=True), ForeignKey("inward_vehicle_inspections.id"), nullable=True)
     vendor_name = Column(Text, nullable=True)
+    vendor_id = Column(UUID(as_uuid=True), ForeignKey("vendors.id"), nullable=True)
     quantity = Column(Numeric, nullable=True)
     quantity_label = Column(Text, nullable=True)
     sku_code_id = Column(UUID(as_uuid=True), ForeignKey("sku_codes.id"), nullable=True)
@@ -229,6 +237,7 @@ class InwardQcRecord(Base):
     submitted_at = Column(DateTime(timezone=True), nullable=True)
 
     vehicle_inspection = relationship("InwardVehicleInspection")
+    vendor = relationship("Vendor", foreign_keys=[vendor_id])
     sku_code = relationship("SkuCode")
     sku_version = relationship("SkuVersion")
     fgtray_answers = relationship(
@@ -606,7 +615,7 @@ class MaterialConsumptionPallet(Base):
     __tablename__ = "material_consumption_pallets"
     id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
     material_consumption_id = Column(UUID(as_uuid=True), ForeignKey("material_consumptions.id", ondelete="CASCADE"), nullable=False)
-    machine_entry_id = Column(UUID(as_uuid=True), ForeignKey("material_consumption_machine_entries.id", ondelete="CASCADE"), nullable=True)
+    machine_entry_id = Column(UUID(as_uuid=True), ForeignKey("material_consumption_machine_entries.id", ondelete="CASCADE"), nullable=False)
     role = Column(Text, nullable=False)  # 'primary' | 'cfb' | 'pad' | 'glue' | 'polybag'
     pallet_id = Column(UUID(as_uuid=True), ForeignKey("pallets.id"), nullable=False, unique=True)
     quantity = Column(Numeric, nullable=False, default=1)

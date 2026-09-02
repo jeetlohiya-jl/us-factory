@@ -86,6 +86,7 @@ def propagate_to_qc(db: Session, inspection: models.InwardVehicleInspection) -> 
         status="pending",
         linked_vehicle_inspection_id=inspection.id,
         vendor_name=inspection.vendor_name,
+        vendor_id=inspection.vendor_id,
         quantity=inspection.total_quantity,
         quantity_label="No. of Pallets",
     )

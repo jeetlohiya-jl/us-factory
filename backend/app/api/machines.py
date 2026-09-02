@@ -102,9 +102,26 @@ def delete_machine(
     machine = db.query(models.Machine).filter(models.Machine.id == machine_id).first()
     if not machine:
         raise HTTPException(status_code=404, detail="Machine not found.")
-    in_use = db.query(models.MaterialConsumption).filter(models.MaterialConsumption.machine_id == machine_id).first()
+    # Machine usage lives on MaterialConsumptionMachineEntry.machine_id
+    # since the multi-machine redesign (migration 0008) -- the legacy
+    # MaterialConsumption.machine_id column this used to check is no
+    # longer written to by current code, so that check could never find a
+    # currently-in-use machine. Also check ProductionRunMachine, the other
+    # table that references a machine.
+    in_use = (
+        db.query(models.MaterialConsumptionMachineEntry)
+        .filter(models.MaterialConsumptionMachineEntry.machine_id == machine_id)
+        .first()
+        or db.query(models.ProductionRunMachine)
+        .filter(models.ProductionRunMachine.machine_id == machine_id)
+        .first()
+    )
     if in_use:
-        raise HTTPException(status_code=409, detail="This machine is referenced by an existing Material Consumption record and cannot be deleted. Deactivate it instead.")
-    db.delete(machine)
-    db.commit()
+        raise HTTPException(status_code=409, detail="This machine is referenced by an existing Material Consumption or Production record and cannot be deleted. Deactivate it instead.")
+    try:
+        db.delete(machine)
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="This machine is referenced by existing records and can't be deleted — deactivate it instead.")
     return None
