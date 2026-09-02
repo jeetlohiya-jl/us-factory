@@ -13,6 +13,7 @@ from app.adapters.auth.base import AuthenticatedUser
 from app.adapters.storage.factory import get_storage_adapter
 from app.domain import inward_qc_service as svc
 from app.domain import coa_parsing_service
+from app.domain.vendor_lookup import resolve_vendor_id
 from app.api.inward_vehicle_inspections import _serialize_detail as _serialize_vehicle_inspection, _get_or_404 as _get_vehicle_inspection_or_404
 
 router = APIRouter(prefix="/api/v1/inward-qc", tags=["inward-qc"])
@@ -224,6 +225,11 @@ def update_qc_basic(
     for field in ["vendor_name", "quantity", "sku_code_id", "sku_version_id"]:
         if field in data:
             setattr(qc, field, data[field])
+    if "vendor_name" in data:
+        # qc.category here is always a manual category (fgtray is blocked
+        # above), matching the same category the Vendors dropdown was
+        # filtered to when this vendor_name was chosen.
+        qc.vendor_id = resolve_vendor_id(db, qc.category, qc.vendor_name)
     qc.updated_by = current_user.user_id
     db.commit()
     return _serialize_detail(db, _get_or_404(db, qc_id))
@@ -418,11 +424,24 @@ def discard_if_blank(qc_id: uuid.UUID, db: Session = Depends(get_db)):
 @router.delete("/{qc_id}")
 def delete_qc(qc_id: uuid.UUID, db: Session = Depends(get_db), _perm=Depends(require_qc_permission("delete"))):
     qc = _get_or_404(db, qc_id)
+    dependent = svc.find_dependent_qr(db, qc_id)
+    if dependent:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"This Inward QC record has already generated an RM QR batch ({dependent.batch_display_id}) and cannot be deleted.",
+        )
     if qc.coa_storage_path:
         try:
             get_storage_adapter().delete(qc.coa_storage_path)
         except Exception:
             pass
-    db.delete(qc)
-    db.commit()
+    try:
+        db.delete(qc)
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This Inward QC record is referenced by existing records and can't be deleted.",
+        )
     return {"deleted": True}

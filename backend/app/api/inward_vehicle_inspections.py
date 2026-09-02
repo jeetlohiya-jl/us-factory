@@ -13,6 +13,7 @@ from app.adapters.auth.base import AuthenticatedUser
 from app.adapters.ocr.factory import get_ocr_adapter
 from app.adapters.storage.factory import get_storage_adapter
 from app.domain import vehicle_inspection_service as svc
+from app.domain.vendor_lookup import resolve_vendor_id
 
 router = APIRouter(prefix="/api/v1/inward-vehicle-inspections", tags=["inward-vehicle-inspection"])
 
@@ -185,6 +186,9 @@ def update_inspection(
                   "transporter_name", "seal_number", "remarks", "inspection_passed_quantity"]:
         if field in data:
             setattr(inspection, field, data[field])
+
+    if "vendor_name" in data:
+        inspection.vendor_id = resolve_vendor_id(db, inspection.category, inspection.vendor_name)
 
     if line_items is not None:
         inspection.line_items.clear()

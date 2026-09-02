@@ -366,6 +366,52 @@ class ProductionRunOut(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Production -- editable fields (migration 0013). Rejection Classification,
+# Wastage entries and Total FG Pallets Generated are the only genuinely
+# per-run editable data (see migration 0013's design notes) -- everything
+# else on a Production record is autopopulated/read-only, sourced from
+# Material Consumption and the SKU Version, both direct-Supabase reads.
+# ---------------------------------------------------------------------------
+
+class ProductionWastageEntryIn(BaseModel):
+    machine_id: Optional[uuid.UUID] = None
+    trays: Optional[Decimal] = None
+    reason: Optional[str] = None
+
+
+class ProductionWastageEntryOut(BaseModel):
+    id: uuid.UUID
+    machine_id: Optional[uuid.UUID] = None
+    trays: Optional[Decimal] = None
+    reason: Optional[str] = None
+    sort_order: int
+
+
+class ProductionSaveIn(BaseModel):
+    rejection_damage: Decimal = Decimal("0")
+    rejection_misplaced_glue: Decimal = Decimal("0")
+    rejection_misplaced_pad: Decimal = Decimal("0")
+    rejection_glue_on_pad: Decimal = Decimal("0")
+    rejection_pad_placement_direction: Decimal = Decimal("0")
+    rejection_adhesion_issue: Decimal = Decimal("0")
+    total_fg_pallets: int = 0
+    wastage_entries: list[ProductionWastageEntryIn] = []
+
+
+class ProductionSaveOut(BaseModel):
+    id: uuid.UUID
+    status: str
+    total_fg_pallets: int
+    rejection_damage: Decimal
+    rejection_misplaced_glue: Decimal
+    rejection_misplaced_pad: Decimal
+    rejection_glue_on_pad: Decimal
+    rejection_pad_placement_direction: Decimal
+    rejection_adhesion_issue: Decimal
+    wastage_entries: list[ProductionWastageEntryOut] = []
+
+
+# ---------------------------------------------------------------------------
 # Machines (master data for Material Consumption / Production)
 # ---------------------------------------------------------------------------
 

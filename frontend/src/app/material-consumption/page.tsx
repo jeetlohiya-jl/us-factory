@@ -1,5 +1,6 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { useMe } from "@/lib/useMe";
 import type { MaterialConsumptionListItem, MaterialConsumptionDetail, Machine } from "@/lib/types";
@@ -8,6 +9,16 @@ import MaterialConsumptionWizard, { formatTime12h } from "@/components/material-
 const CATEGORY_LABELS: Record<string, string> = { tray: "Base Tray", fgtray: "FG Non-Padded Tray" };
 
 export default function MaterialConsumptionPage() {
+  return (
+    <Suspense fallback={null}>
+      <MaterialConsumptionPageContent />
+    </Suspense>
+  );
+}
+
+function MaterialConsumptionPageContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const me = useMe();
   const perms = me?.permissions.material_consumption;
   const [records, setRecords] = useState<MaterialConsumptionListItem[]>([]);
@@ -65,6 +76,17 @@ export default function MaterialConsumptionPage() {
       setError(e instanceof Error ? e.message : "Failed to load record");
     }
   }
+
+  // Deep-link support: Production's detail panel links to a machine
+  // entry's source record as /material-consumption?open=<id>.
+  useEffect(() => {
+    const openId = searchParams.get("open");
+    if (openId) {
+      openRecord(openId);
+      router.replace("/material-consumption");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   async function handleDelete(id: string, ev: React.MouseEvent) {
     ev.stopPropagation();

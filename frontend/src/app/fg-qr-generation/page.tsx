@@ -1,5 +1,6 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { useMe } from "@/lib/useMe";
 import type { QrGenerationDetail, QrGenerationListItem, ProductionRun } from "@/lib/types";
@@ -8,6 +9,16 @@ import ConfirmDialog from "@/components/inward-vehicle-inspection/ConfirmDialog"
 import MoreMenu from "@/components/inward-vehicle-inspection/MoreMenu";
 
 export default function FgQrGenerationPage() {
+  return (
+    <Suspense fallback={null}>
+      <FgQrGenerationPageContent />
+    </Suspense>
+  );
+}
+
+function FgQrGenerationPageContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const me = useMe();
   const [items, setItems] = useState<QrGenerationListItem[]>([]);
   const [runs, setRuns] = useState<ProductionRun[]>([]);
@@ -20,7 +31,11 @@ export default function FgQrGenerationPage() {
   const [deleteBlockedMsg, setDeleteBlockedMsg] = useState<string | null>(null);
 
   const perms = me?.permissions.fg_qr_generation;
-  const eligibleRuns = runs.filter((r) => r.status === "approved" && !r.has_fg_qr);
+  // Prototype semantics: prodPropagateToFgQr fires once a Production
+  // record's status becomes 'saved' (prodSaveRecord) -- 'approved' is kept
+  // too for backward compatibility with existing dev/test data created
+  // before the editable-Production feature existed.
+  const eligibleRuns = runs.filter((r) => (r.status === "saved" || r.status === "approved") && !r.has_fg_qr);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -49,6 +64,17 @@ export default function FgQrGenerationPage() {
       setLoadError(e instanceof Error ? e.message : "Failed to load record");
     }
   }
+
+  // Deep-link support: Production's detail panel links to a linked FG QR
+  // batch as /fg-qr-generation?open=<id>.
+  useEffect(() => {
+    const openId = searchParams.get("open");
+    if (openId) {
+      openRecord(openId);
+      router.replace("/fg-qr-generation");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   async function handleCreateFromRun(runId: string) {
     try {

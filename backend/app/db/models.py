@@ -43,6 +43,16 @@ class ModulePermission(Base):
     __table_args__ = (UniqueConstraint("user_id", "module"),)
 
 
+class DisplayIdCounter(Base):
+    """Backing store for app.domain.id_counters.next_seq -- one row per
+    distinct sequence this app hands out (see that module's docstring for
+    the counter_key convention). Not read directly anywhere else; every
+    caller goes through next_seq()'s atomic UPSERT."""
+    __tablename__ = "display_id_counters"
+    counter_key = Column(Text, primary_key=True)
+    next_value = Column(Integer, nullable=False, default=1)
+
+
 class SkuCode(Base):
     __tablename__ = "sku_codes"
     id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
@@ -67,6 +77,21 @@ class SkuVersion(Base):
     sku_code_id = Column(UUID(as_uuid=True), ForeignKey("sku_codes.id", ondelete="CASCADE"), nullable=False)
     version = Column(Text, nullable=False)
     is_active = Column(Boolean, nullable=False, default=True)
+    # Production Details reference attributes (migration 0013) -- entered
+    # once per SKU Version via the SKU Names admin screen, then read
+    # (never re-entered) by every Production record that uses this
+    # version, matching the prototype's SKU_PRODUCTION_DETAILS lookup.
+    # Written exclusively via direct Supabase (Phase 1), same as every
+    # other SkuVersion column -- not read or written anywhere in FastAPI.
+    prod_weight = Column(Text, nullable=True)
+    prod_pcs_per_sleeve = Column(Text, nullable=True)
+    prod_sleeve_per_case = Column(Text, nullable=True)
+    prod_total_pcs_per_pallet = Column(Integer, nullable=True)
+    prod_total_pallets = Column(Integer, nullable=True)
+    prod_target_shots = Column(Text, nullable=True)
+    prod_pad_type = Column(Text, nullable=True)
+    prod_pad_color = Column(Text, nullable=True)
+    prod_case_type = Column(Text, nullable=True)
 
     sku_code = relationship("SkuCode", back_populates="versions")
 
@@ -114,6 +139,12 @@ class InwardVehicleInspection(Base):
     truck_number = Column(Text, nullable=True)
     container_number = Column(Text, nullable=True)
     vendor_name = Column(Text, nullable=True)
+    # Nullable FK alongside vendor_name (see migration 0010): vendor_name
+    # stays the permanent display snapshot; vendor_id is the real
+    # relationship, resolved at write time from the same vendors dropdown
+    # the UI already sources vendor_name from, so downstream lookups (RM
+    # pallet country resolution) don't have to re-match text at read time.
+    vendor_id = Column(UUID(as_uuid=True), ForeignKey("vendors.id"), nullable=True)
     invoice_number = Column(Text, nullable=True)
     transporter_name = Column(Text, nullable=True)
     seal_number = Column(Text, nullable=True)
@@ -126,6 +157,7 @@ class InwardVehicleInspection(Base):
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    vendor = relationship("Vendor", foreign_keys=[vendor_id])
     line_items = relationship(
         "InwardVehicleInspectionLineItem", back_populates="inspection",
         cascade="all, delete-orphan", order_by="InwardVehicleInspectionLineItem.sort_order",
@@ -200,6 +232,7 @@ class InwardQcRecord(Base):
     status = Column(Text, nullable=False, default="pending")
     linked_vehicle_inspection_id = Column(UUID(as_uuid=True), ForeignKey("inward_vehicle_inspections.id"), nullable=True)
     vendor_name = Column(Text, nullable=True)
+    vendor_id = Column(UUID(as_uuid=True), ForeignKey("vendors.id"), nullable=True)
     quantity = Column(Numeric, nullable=True)
     quantity_label = Column(Text, nullable=True)
     sku_code_id = Column(UUID(as_uuid=True), ForeignKey("sku_codes.id"), nullable=True)
@@ -219,6 +252,7 @@ class InwardQcRecord(Base):
     submitted_at = Column(DateTime(timezone=True), nullable=True)
 
     vehicle_inspection = relationship("InwardVehicleInspection")
+    vendor = relationship("Vendor", foreign_keys=[vendor_id])
     sku_code = relationship("SkuCode")
     sku_version = relationship("SkuVersion")
     fgtray_answers = relationship(
@@ -333,12 +367,26 @@ class ProductionRun(Base):
     status = Column(Text, nullable=False, default="approved")
     created_by = Column(UUID(as_uuid=True), ForeignKey("app_users.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    # Rejection Classification (migration 0013) -- editable Production-
+    # specific data, matches prodCollectRecord's rc.* / PROD_RECORDS'
+    # rejectionClassification exactly. Saved atomically together with
+    # total_fg_pallets and the wastage list by production.py's save route.
+    rejection_damage = Column(Numeric, nullable=False, default=0)
+    rejection_misplaced_glue = Column(Numeric, nullable=False, default=0)
+    rejection_misplaced_pad = Column(Numeric, nullable=False, default=0)
+    rejection_glue_on_pad = Column(Numeric, nullable=False, default=0)
+    rejection_pad_placement_direction = Column(Numeric, nullable=False, default=0)
+    rejection_adhesion_issue = Column(Numeric, nullable=False, default=0)
 
     sku_code = relationship("SkuCode")
     sku_version = relationship("SkuVersion")
     machines = relationship("ProductionRunMachine", back_populates="production_run", cascade="all, delete-orphan")
     material_consumptions = relationship("MaterialConsumption", back_populates="production_run")
     ipqc_record = relationship("IpqcRecord", back_populates="production_run", uselist=False)
+    wastage_entries = relationship(
+        "ProductionWastageEntry", back_populates="production_run",
+        cascade="all, delete-orphan", order_by="ProductionWastageEntry.sort_order",
+    )
 
 
 class ProductionRunMachine(Base):
@@ -354,6 +402,24 @@ class ProductionRunMachine(Base):
     machine = relationship("Machine")
 
     __table_args__ = (UniqueConstraint("production_run_id", "machine_id"),)
+
+
+class ProductionWastageEntry(Base):
+    """Repeatable Wastage entry (Trays, Machine, Reason) tied to one
+    Production Run, matching the prototype's prodWastageEntries list.
+    Writes go exclusively through FastAPI's production save endpoint;
+    reads go direct-to-Supabase (migration 0013)."""
+    __tablename__ = "production_wastage_entries"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    production_run_id = Column(UUID(as_uuid=True), ForeignKey("production_runs.id", ondelete="CASCADE"), nullable=False)
+    machine_id = Column(UUID(as_uuid=True), ForeignKey("machines.id"), nullable=True)
+    trays = Column(Numeric, nullable=True)
+    reason = Column(Text, nullable=True)
+    sort_order = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+    production_run = relationship("ProductionRun", back_populates="wastage_entries")
+    machine = relationship("Machine")
 
 
 class IpqcRecord(Base):
@@ -596,7 +662,7 @@ class MaterialConsumptionPallet(Base):
     __tablename__ = "material_consumption_pallets"
     id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
     material_consumption_id = Column(UUID(as_uuid=True), ForeignKey("material_consumptions.id", ondelete="CASCADE"), nullable=False)
-    machine_entry_id = Column(UUID(as_uuid=True), ForeignKey("material_consumption_machine_entries.id", ondelete="CASCADE"), nullable=True)
+    machine_entry_id = Column(UUID(as_uuid=True), ForeignKey("material_consumption_machine_entries.id", ondelete="CASCADE"), nullable=False)
     role = Column(Text, nullable=False)  # 'primary' | 'cfb' | 'pad' | 'glue' | 'polybag'
     pallet_id = Column(UUID(as_uuid=True), ForeignKey("pallets.id"), nullable=False, unique=True)
     quantity = Column(Numeric, nullable=False, default=1)

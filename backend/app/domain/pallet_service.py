@@ -34,6 +34,7 @@ from sqlalchemy.orm import Session
 
 from app.db import models
 from app.adapters.storage.factory import get_storage_adapter
+from app.domain.id_counters import next_seq
 
 
 # Category -> the part of the pallet-number prefix that identifies WHAT is
@@ -66,26 +67,20 @@ def prefix_for_category(category: str | None, country_code: str | None = None) -
 
 def next_batch_display_id(db: Session, qr_type: str) -> str:
     prefix = "RMQR" if qr_type == "rm" else "FGQR"
-    count = db.query(models.QrGenerationRecord).filter(models.QrGenerationRecord.qr_type == qr_type).count()
-    return f"{prefix}-{str(count + 1).zfill(4)}"
+    seq = next_seq(db, f"qr_batch:{qr_type}")
+    return f"{prefix}-{str(seq).zfill(4)}"
 
 
 def next_pallet_display_id(db: Session, category: str | None, country_code: str | None = None) -> str:
     """
     RM and FG pallets intentionally share one namespace per prefix (see
-    module docstring) — the count is over ALL pallets with that exact
-    country+category prefix, regardless of pallet_type. A different country
-    naturally starts its own sequence from 0001, since it's a different
-    prefix string.
+    module docstring) — the counter is keyed on that exact country+category
+    prefix, regardless of pallet_type. A different country naturally starts
+    its own sequence from 0001, since it's a different prefix string.
     """
     prefix = prefix_for_category(category, country_code)
     yymm = datetime.now(timezone.utc).strftime("%y%m")
-    count = (
-        db.query(models.Pallet)
-        .filter(models.Pallet.display_id.like(f"{prefix}-%"))
-        .count()
-    )
-    seq = count + 1
+    seq = next_seq(db, f"pallet:{prefix}")
     return f"{prefix}-{yymm}-{str(seq).zfill(4)}"
 
 

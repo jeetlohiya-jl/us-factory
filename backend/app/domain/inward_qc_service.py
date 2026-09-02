@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from app.db import models
+from app.domain.id_counters import next_seq
 
 MANUAL_CATEGORIES = {"pad", "polybag", "cfb", "glue"}
 ALL_CATEGORIES = MANUAL_CATEGORIES | {"fgtray"}
@@ -36,13 +37,7 @@ def next_shipment_number(db: Session, category: str) -> tuple[str, bool]:
         return "", False  # fgtray shipment number always mirrors the source Vehicle Inspection
     prefix = QC_ID_PREFIX[category]
     yymm = datetime.now(timezone.utc).strftime("%y%m")
-    count = (
-        db.query(models.InwardQcRecord)
-        .filter(models.InwardQcRecord.category == category)
-        .filter(models.InwardQcRecord.is_auto_shipment_number.is_(True))
-        .count()
-    )
-    seq = count + 1
+    seq = next_seq(db, f"qc_shipment:{category}")
     return f"{prefix}-{yymm}-{str(seq).zfill(4)}", True
 
 
@@ -139,6 +134,21 @@ def compute_status(db: Session, qc: models.InwardQcRecord) -> str:
     if qc.category == "fgtray":
         return compute_fgtray_status(db, qc)
     return compute_manual_status(db, qc)
+
+
+def find_dependent_qr(db: Session, qc_id: uuid.UUID) -> models.QrGenerationRecord | None:
+    """Delete-safety check mirroring vehicle_inspection_service.find_dependent_qc:
+    QrGenerationRecord.source_inward_qc_id, Pallet.source_inward_qc_id, and
+    StorageRecord.source_inward_qc_id all reference this table with no ON
+    DELETE clause, so deleting a QC record that's already generated RM QR
+    pallets would otherwise hit a raw, unhandled IntegrityError instead of
+    a clean message -- this is the one delete route that was missing this
+    check (see the database audit)."""
+    return (
+        db.query(models.QrGenerationRecord)
+        .filter(models.QrGenerationRecord.source_inward_qc_id == qc_id)
+        .first()
+    )
 
 
 def is_qc_blank(qc: models.InwardQcRecord) -> bool:

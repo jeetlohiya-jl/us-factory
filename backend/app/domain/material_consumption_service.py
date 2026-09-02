@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 
 from app.db import models
 from app.domain import pallet_service
+from app.domain.id_counters import next_seq
 
 PRIMARY_CATEGORIES = ("tray", "fgtray")
 SECONDARY_ROLES = ("cfb", "pad", "glue", "polybag")
@@ -276,16 +277,20 @@ def find_dependent_summary(mc: models.MaterialConsumption) -> str | None:
 
 
 def _next_run_number(db: Session) -> str:
-    count = db.query(models.ProductionRun).count()
-    return f"PR-{str(count + 1).zfill(4)}"
+    seq = next_seq(db, "production_run")
+    return f"PR-{str(seq).zfill(4)}"
 
 
-def find_or_create_production_run(db: Session, mc: models.MaterialConsumption) -> models.ProductionRun:
+def find_or_create_production_run(db: Session, mc: models.MaterialConsumption, actor_user_id=None) -> models.ProductionRun:
     """Idempotent find-or-create keyed by (date, shift) -- NOT machine --
     so multiple Material Consumption records (or multiple machine entries
     within one record) on different machines for the same date+shift all
     attach to the same run. category/SKU snapshot onto the run come from
-    the record's first machine entry that has them set."""
+    the record's first machine entry that has them set. `created_by` is
+    only set the first time the run is created (by whichever Material
+    Consumption finalize first spawns it) -- this is what the Production
+    module surfaces as "Operator", since there is no separate manual
+    Production entry step to collect one."""
     run = (
         db.query(models.ProductionRun)
         .filter(models.ProductionRun.production_date == mc.consumption_date, models.ProductionRun.shift == mc.shift)
@@ -302,6 +307,7 @@ def find_or_create_production_run(db: Session, mc: models.MaterialConsumption) -
             sku_version_id=first_with_sku.sku_version_id if first_with_sku else None,
             total_fg_pallets=0,
             status="pending",
+            created_by=actor_user_id,
         )
         db.add(run)
         db.flush()
@@ -383,7 +389,7 @@ def finalize(db: Session, mc: models.MaterialConsumption, actor_user_id=None) ->
             consumed_by_module="material_consumption", consumed_by_record=str(mc.id),
         )
 
-    run = find_or_create_production_run(db, mc)
+    run = find_or_create_production_run(db, mc, actor_user_id=actor_user_id)
     find_or_create_ipqc(db, run, mc)
     mc.production_run_id = run.id
     mc.status = "saved"

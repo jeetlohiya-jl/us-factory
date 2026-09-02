@@ -2,7 +2,95 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { useMe } from "@/lib/useMe";
-import type { Category, SkuCode } from "@/lib/types";
+import type { Category, SkuCode, SkuVersion } from "@/lib/types";
+
+// Production Details reference attributes (migration 0013) -- entered once
+// here per SKU Version, then autopopulated (never re-entered) on every
+// Production record that uses that version. Field order/labels match the
+// prototype's per-machine "Production Details" table exactly.
+const PROD_DETAIL_FIELDS: { key: keyof SkuVersion; label: string; numeric?: boolean }[] = [
+  { key: "prod_weight", label: "Weight" },
+  { key: "prod_pcs_per_sleeve", label: "Pcs/Sleeve" },
+  { key: "prod_sleeve_per_case", label: "Sleeve/Case" },
+  { key: "prod_total_pcs_per_pallet", label: "Total No. of Pcs/Pallet", numeric: true },
+  { key: "prod_total_pallets", label: "Total No. of Pallets", numeric: true },
+  { key: "prod_target_shots", label: "Target Shots" },
+  { key: "prod_pad_type", label: "Pad Type" },
+  { key: "prod_pad_color", label: "Pad Color" },
+  { key: "prod_case_type", label: "Case Type" },
+];
+
+type ProdDetailsForm = Partial<Record<string, string>>;
+
+function SkuVersionDetailsModal({
+  skuCode, version, onClose, onSave,
+}: {
+  skuCode: string;
+  version: SkuVersion;
+  onClose: () => void;
+  onSave: (patch: Record<string, string | number | null>) => Promise<void>;
+}) {
+  const [form, setForm] = useState<ProdDetailsForm>(() => {
+    const init: ProdDetailsForm = {};
+    for (const f of PROD_DETAIL_FIELDS) init[f.key] = version[f.key] != null ? String(version[f.key]) : "";
+    return init;
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSave() {
+    setSaving(true);
+    setError(null);
+    try {
+      const patch: Record<string, string | number | null> = {};
+      for (const f of PROD_DETAIL_FIELDS) {
+        const raw = (form[f.key] || "").trim();
+        patch[f.key] = raw === "" ? null : (f.numeric ? Number(raw) : raw);
+      }
+      await onSave(patch);
+      onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to save Production Details");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <>
+      <div className="panel-overlay open" onClick={onClose} />
+      <div className="side-panel open">
+        <div className="sp-head">
+          <div>
+            <h2>Production Details</h2>
+            <div className="sub mono">{skuCode} · {version.version}</div>
+          </div>
+          <button className="sp-close" onClick={onClose}>×</button>
+        </div>
+        <div className="sp-body">
+          <div className="hint-text" style={{ marginBottom: 12 }}>
+            Autopopulates every Production record using this SKU Version — entered once here, never re-entered per run.
+          </div>
+          {PROD_DETAIL_FIELDS.map((f) => (
+            <div className="field" key={f.key}>
+              <label>{f.label}</label>
+              <input
+                type={f.numeric ? "number" : "text"}
+                value={form[f.key] || ""}
+                onChange={(e) => setForm((prev) => ({ ...prev, [f.key]: e.target.value }))}
+              />
+            </div>
+          ))}
+          {error && <div className="error-banner">{error}</div>}
+        </div>
+        <div className="sp-foot">
+          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" disabled={saving} onClick={handleSave}>{saving ? "Saving…" : "Save"}</button>
+        </div>
+      </div>
+    </>
+  );
+}
 
 const CATEGORY_LABELS: Record<Category, string> = {
   tray: "Tray", pad: "Soaker Pad", polybag: "Polybag", cfb: "CFB", glue: "Glue",
@@ -27,6 +115,7 @@ export default function SkusPage() {
   const [newCode, setNewCode] = useState("");
   const [showInactive, setShowInactive] = useState(false);
   const [newVersionBySkuId, setNewVersionBySkuId] = useState<Record<string, string>>({});
+  const [detailsTarget, setDetailsTarget] = useState<{ skuCode: string; version: SkuVersion } | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -168,6 +257,9 @@ export default function SkusPage() {
                           {v.version}
                           {canEdit && (
                             <>
+                              <a style={{ cursor: "pointer", opacity: 0.7 }} onClick={() => setDetailsTarget({ skuCode: s.code, version: v })}>
+                                Details
+                              </a>
                               <a style={{ cursor: "pointer", opacity: 0.7 }} onClick={() => toggleVersionActive(v.id, v.is_active)}>
                                 {v.is_active ? "⏸" : "▶"}
                               </a>
@@ -209,6 +301,18 @@ export default function SkusPage() {
           </tbody>
         </table>
       </div>
+
+      {detailsTarget && (
+        <SkuVersionDetailsModal
+          skuCode={detailsTarget.skuCode}
+          version={detailsTarget.version}
+          onClose={() => setDetailsTarget(null)}
+          onSave={async (patch) => {
+            await api.updateSkuVersion(detailsTarget.version.id, patch);
+            refresh();
+          }}
+        />
+      )}
     </>
   );
 }
