@@ -5,6 +5,19 @@ export interface SkuVersion {
   id: string;
   version: string;
   is_active: boolean;
+  // Production Details reference attributes (migration 0013) -- entered
+  // once via the SKU Names admin screen, then autopopulated (never
+  // re-entered) on every Production record that uses this version,
+  // matching the prototype's SKU_PRODUCTION_DETAILS lookup.
+  prod_weight?: string | null;
+  prod_pcs_per_sleeve?: string | null;
+  prod_sleeve_per_case?: string | null;
+  prod_total_pcs_per_pallet?: number | null;
+  prod_total_pallets?: number | null;
+  prod_target_shots?: string | null;
+  prod_pad_type?: string | null;
+  prod_pad_color?: string | null;
+  prod_case_type?: string | null;
 }
 
 export interface SkuCode {
@@ -411,9 +424,23 @@ export interface ProductionMachineEntry {
   category: string | null;
   sku_code: string | null;
   sku_version: string | null;
+  sku_version_id: string | null;
   start_time: string | null;
   end_time: string | null;
   pallets: MaterialConsumptionPalletRow[];
+  // SKU-derived Production Details, autopopulated from the machine entry's
+  // own SKU Version -- read-only, never re-entered per run (migration 0013).
+  production_details: {
+    prod_weight: string | null;
+    prod_pcs_per_sleeve: string | null;
+    prod_sleeve_per_case: string | null;
+    prod_total_pcs_per_pallet: number | null;
+    prod_total_pallets: number | null;
+    prod_target_shots: string | null;
+    prod_pad_type: string | null;
+    prod_pad_color: string | null;
+    prod_case_type: string | null;
+  } | null;
 }
 
 export interface ProductionListItem {
@@ -426,6 +453,42 @@ export interface ProductionListItem {
   operator: string | null;
   status: string;
   date: string | null;
+  total_pcs_per_pallet: number | null; // sum across machine entries' SKU-derived Production Details
+  total_rejections: number; // sum of the run's Rejection Classification fields
+}
+
+// Rejection Classification, matching the prototype's rejectionClassification
+// shape exactly (Damage, Misplaced Glue, Misplaced Pad, Glue on Pad, Pad
+// Placement Direction, Adhesion Issue).
+export interface ProductionRejectionClassification {
+  damage: number;
+  misplaced_glue: number;
+  misplaced_pad: number;
+  glue_on_pad: number;
+  pad_placement_direction: number;
+  adhesion_issue: number;
+}
+
+export interface ProductionWastageEntry {
+  id: string;
+  machine_id: string | null;
+  machine: string | null;
+  trays: number | null;
+  reason: string | null;
+  sort_order: number;
+}
+
+// Payload for api.saveProduction -- the single atomic write for the
+// editable Production feature (backend/app/api/production.py's PUT route).
+export interface ProductionSavePayload {
+  rejection_damage: number;
+  rejection_misplaced_glue: number;
+  rejection_misplaced_pad: number;
+  rejection_glue_on_pad: number;
+  rejection_pad_placement_direction: number;
+  rejection_adhesion_issue: number;
+  total_fg_pallets: number;
+  wastage_entries: { machine_id: string | null; trays: number | null; reason: string | null }[];
 }
 
 export interface ProductionDetail {
@@ -438,6 +501,9 @@ export interface ProductionDetail {
   operator: string | null;
   sku_codes: string; // distinct SKU codes across every machine entry, comma-joined
   machine_entries: ProductionMachineEntry[];
+  total_fg_pallets: number;
+  rejection_classification: ProductionRejectionClassification;
+  wastage_entries: ProductionWastageEntry[];
   ipqc_id: string | null;
   ipqc_status: string | null;
   fg_qr_batches: { id: string; batch_display_id: string; status: string }[];

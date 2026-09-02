@@ -77,6 +77,21 @@ class SkuVersion(Base):
     sku_code_id = Column(UUID(as_uuid=True), ForeignKey("sku_codes.id", ondelete="CASCADE"), nullable=False)
     version = Column(Text, nullable=False)
     is_active = Column(Boolean, nullable=False, default=True)
+    # Production Details reference attributes (migration 0013) -- entered
+    # once per SKU Version via the SKU Names admin screen, then read
+    # (never re-entered) by every Production record that uses this
+    # version, matching the prototype's SKU_PRODUCTION_DETAILS lookup.
+    # Written exclusively via direct Supabase (Phase 1), same as every
+    # other SkuVersion column -- not read or written anywhere in FastAPI.
+    prod_weight = Column(Text, nullable=True)
+    prod_pcs_per_sleeve = Column(Text, nullable=True)
+    prod_sleeve_per_case = Column(Text, nullable=True)
+    prod_total_pcs_per_pallet = Column(Integer, nullable=True)
+    prod_total_pallets = Column(Integer, nullable=True)
+    prod_target_shots = Column(Text, nullable=True)
+    prod_pad_type = Column(Text, nullable=True)
+    prod_pad_color = Column(Text, nullable=True)
+    prod_case_type = Column(Text, nullable=True)
 
     sku_code = relationship("SkuCode", back_populates="versions")
 
@@ -352,12 +367,26 @@ class ProductionRun(Base):
     status = Column(Text, nullable=False, default="approved")
     created_by = Column(UUID(as_uuid=True), ForeignKey("app_users.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    # Rejection Classification (migration 0013) -- editable Production-
+    # specific data, matches prodCollectRecord's rc.* / PROD_RECORDS'
+    # rejectionClassification exactly. Saved atomically together with
+    # total_fg_pallets and the wastage list by production.py's save route.
+    rejection_damage = Column(Numeric, nullable=False, default=0)
+    rejection_misplaced_glue = Column(Numeric, nullable=False, default=0)
+    rejection_misplaced_pad = Column(Numeric, nullable=False, default=0)
+    rejection_glue_on_pad = Column(Numeric, nullable=False, default=0)
+    rejection_pad_placement_direction = Column(Numeric, nullable=False, default=0)
+    rejection_adhesion_issue = Column(Numeric, nullable=False, default=0)
 
     sku_code = relationship("SkuCode")
     sku_version = relationship("SkuVersion")
     machines = relationship("ProductionRunMachine", back_populates="production_run", cascade="all, delete-orphan")
     material_consumptions = relationship("MaterialConsumption", back_populates="production_run")
     ipqc_record = relationship("IpqcRecord", back_populates="production_run", uselist=False)
+    wastage_entries = relationship(
+        "ProductionWastageEntry", back_populates="production_run",
+        cascade="all, delete-orphan", order_by="ProductionWastageEntry.sort_order",
+    )
 
 
 class ProductionRunMachine(Base):
@@ -373,6 +402,24 @@ class ProductionRunMachine(Base):
     machine = relationship("Machine")
 
     __table_args__ = (UniqueConstraint("production_run_id", "machine_id"),)
+
+
+class ProductionWastageEntry(Base):
+    """Repeatable Wastage entry (Trays, Machine, Reason) tied to one
+    Production Run, matching the prototype's prodWastageEntries list.
+    Writes go exclusively through FastAPI's production save endpoint;
+    reads go direct-to-Supabase (migration 0013)."""
+    __tablename__ = "production_wastage_entries"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    production_run_id = Column(UUID(as_uuid=True), ForeignKey("production_runs.id", ondelete="CASCADE"), nullable=False)
+    machine_id = Column(UUID(as_uuid=True), ForeignKey("machines.id"), nullable=True)
+    trays = Column(Numeric, nullable=True)
+    reason = Column(Text, nullable=True)
+    sort_order = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+    production_run = relationship("ProductionRun", back_populates="wastage_entries")
+    machine = relationship("Machine")
 
 
 class IpqcRecord(Base):

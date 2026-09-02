@@ -31,7 +31,11 @@ function FgQrGenerationPageContent() {
   const [deleteBlockedMsg, setDeleteBlockedMsg] = useState<string | null>(null);
 
   const perms = me?.permissions.fg_qr_generation;
-  const eligibleRuns = runs.filter((r) => r.status === "approved" && !r.has_fg_qr);
+  // Prototype semantics: prodPropagateToFgQr fires once a Production
+  // record's status becomes 'saved' (prodSaveRecord) -- 'approved' is kept
+  // too for backward compatibility with existing dev/test data created
+  // before the editable-Production feature existed.
+  const eligibleRuns = runs.filter((r) => (r.status === "saved" || r.status === "approved") && !r.has_fg_qr);
 
   const refresh = useCallback(async () => {
     setLoading(true);

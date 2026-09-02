@@ -149,8 +149,8 @@ function ProductionPageContent() {
                   <td>{r.machines || "—"}</td>
                   <td>{r.shift || "—"}</td>
                   <td className="mono">{r.sku_code || "—"}</td>
-                  <td>—</td>
-                  <td>—</td>
+                  <td>{r.total_pcs_per_pallet ?? "—"}</td>
+                  <td>{r.total_rejections || "—"}</td>
                   <td>{r.operator || "—"}</td>
                   <td>{r.date || "—"}</td>
                   <td><a className="btn-tertiary">View →</a></td>
@@ -162,7 +162,13 @@ function ProductionPageContent() {
       </div>
 
       {openRecord && (
-        <ProductionDetailPanel record={openRecord} onClose={() => setOpenRecord(null)} />
+        <ProductionDetailPanel
+          record={openRecord}
+          onClose={() => setOpenRecord(null)}
+          canEdit={!!perms?.can_edit}
+          machines={machines}
+          onSaved={refresh}
+        />
       )}
 
       {perms && !perms.can_view && (

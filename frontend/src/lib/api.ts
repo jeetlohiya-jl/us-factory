@@ -5,7 +5,7 @@ import type {
   QcMeta, QcListItem, QcDetail, QcManualCategory,
   Pallet, QrGenerationListItem, QrGenerationDetail, StorageRecordDetail, LocationRef, ProductionRun,
   Vendor, Machine, MaterialConsumptionListItem, MaterialConsumptionDetail, SecondaryMaterialCategory,
-  MaterialConsumptionPalletRow, ProductionListItem, ProductionDetail, ProductionMachineEntry,
+  MaterialConsumptionPalletRow, ProductionListItem, ProductionDetail, ProductionMachineEntry, ProductionSavePayload,
 } from "./types";
 
 const BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
@@ -435,7 +435,11 @@ async function getMaterialConsumptionSb(id: string): Promise<MaterialConsumption
 // empty if the viewer can't see Material Consumption data).
 
 type RawProdMcPalletShallow = { role: string; pallet: { shipment_number: string | null } | null };
-type RawProdMcShallow = { machine_entries: { pallets: RawProdMcPalletShallow[] }[] };
+type RawProdMcShallowEntry = {
+  pallets: RawProdMcPalletShallow[];
+  sku_version_ref: { prod_total_pcs_per_pallet: number | null } | null;
+};
+type RawProdMcShallow = { machine_entries: RawProdMcShallowEntry[] };
 
 type RawProductionRunList = {
   id: string; run_number: string; shipment_number: string | null; shift: string | null;
@@ -444,14 +448,43 @@ type RawProductionRunList = {
   machines: { machine: { code: string } | null }[];
   created_by_user: { full_name: string } | null;
   material_consumptions: RawProdMcShallow[];
+  rejection_damage: number | string; rejection_misplaced_glue: number | string;
+  rejection_misplaced_pad: number | string; rejection_glue_on_pad: number | string;
+  rejection_pad_placement_direction: number | string; rejection_adhesion_issue: number | string;
 };
 
 const PRODUCTION_LIST_SELECT =
   "id,run_number,shipment_number,shift,production_date,status," +
+  "rejection_damage,rejection_misplaced_glue,rejection_misplaced_pad,rejection_glue_on_pad,rejection_pad_placement_direction,rejection_adhesion_issue," +
   "sku_code:sku_codes(code)," +
   "machines:production_run_machines(machine:machines(code))," +
   "created_by_user:app_users(full_name)," +
-  "material_consumptions(machine_entries:material_consumption_machine_entries(pallets:material_consumption_pallets(role,pallet:pallets(shipment_number))))";
+  "material_consumptions(machine_entries:material_consumption_machine_entries(pallets:material_consumption_pallets(role,pallet:pallets(shipment_number)),sku_version_ref:sku_versions(prod_total_pcs_per_pallet)))";
+
+function sumRejections(raw: {
+  rejection_damage: number | string; rejection_misplaced_glue: number | string; rejection_misplaced_pad: number | string;
+  rejection_glue_on_pad: number | string; rejection_pad_placement_direction: number | string; rejection_adhesion_issue: number | string;
+}): number {
+  return [
+    raw.rejection_damage, raw.rejection_misplaced_glue, raw.rejection_misplaced_pad,
+    raw.rejection_glue_on_pad, raw.rejection_pad_placement_direction, raw.rejection_adhesion_issue,
+  ].reduce((sum: number, v) => sum + (Number(v) || 0), 0);
+}
+
+/** Total PCS/Pallet for a run's list row: sum of each distinct machine
+ * entry's SKU-derived Production Details value -- one machine, one SKU
+ * Version's worth of pcs/pallet, summed across every machine on the run. */
+function sumTotalPcsPerPallet(mcs: RawProdMcShallow[]): number | null {
+  let total = 0;
+  let any = false;
+  for (const mc of mcs || []) {
+    for (const e of mc.machine_entries || []) {
+      const v = e.sku_version_ref?.prod_total_pcs_per_pallet;
+      if (v != null) { total += Number(v) || 0; any = true; }
+    }
+  }
+  return any ? total : null;
+}
 
 /** Production Runs never store their own shipment number (nothing in the
  * current workflow enters one) -- but every primary pallet a linked
@@ -477,6 +510,8 @@ function flattenProductionListItem(raw: RawProductionRunList): ProductionListIte
     shift: raw.shift, sku_code: raw.sku_code?.code ?? null,
     operator: raw.created_by_user?.full_name ?? null,
     status: raw.status, date: raw.production_date,
+    total_pcs_per_pallet: sumTotalPcsPerPallet(raw.material_consumptions),
+    total_rejections: sumRejections(raw),
   };
 }
 
@@ -513,30 +548,55 @@ function prodFlattenPallet(row: RawProdPallet): MaterialConsumptionPalletRow {
   };
 }
 
+type RawProdSkuVersionDetails = {
+  prod_weight: string | null; prod_pcs_per_sleeve: string | null; prod_sleeve_per_case: string | null;
+  prod_total_pcs_per_pallet: number | null; prod_total_pallets: number | null; prod_target_shots: string | null;
+  prod_pad_type: string | null; prod_pad_color: string | null; prod_case_type: string | null;
+} | null;
+
 type RawProdMachineEntry = {
   id: string; machine: { code: string } | null; category: string | null;
-  sku_code: string | null; sku_version: string | null; start_time: string | null; end_time: string | null;
+  sku_code: string | null; sku_version: string | null; sku_version_id: string | null;
+  start_time: string | null; end_time: string | null;
   sort_order: number; pallets: RawProdPallet[];
+  sku_version_ref: RawProdSkuVersionDetails;
 };
 
+// sku_version_ref is the SKU-derived Production Details lookup (migration
+// 0013) -- joined via the entry's own sku_version_id FK, autopopulated and
+// read-only per run, exactly matching the prototype's SKU_PRODUCTION_DETAILS.
 const PRODUCTION_MACHINE_ENTRY_SELECT =
-  "id,machine:machines(code),category,sku_code:sku_code_snapshot,sku_version:sku_version_snapshot,start_time,end_time,sort_order," +
-  `pallets:material_consumption_pallets(${PRODUCTION_PALLET_SELECT})`;
+  "id,machine:machines(code),category,sku_code:sku_code_snapshot,sku_version:sku_version_snapshot,sku_version_id,start_time,end_time,sort_order," +
+  `pallets:material_consumption_pallets(${PRODUCTION_PALLET_SELECT}),` +
+  "sku_version_ref:sku_versions(prod_weight,prod_pcs_per_sleeve,prod_sleeve_per_case,prod_total_pcs_per_pallet,prod_total_pallets,prod_target_shots,prod_pad_type,prod_pad_color,prod_case_type)";
 
 type RawProdMc = { id: string; status: string; machine_entries: RawProdMachineEntry[] };
 
+const PRODUCTION_WASTAGE_SELECT = "id,machine_id,machine:machines(code),trays,reason,sort_order";
+
 const PRODUCTION_DETAIL_SELECT =
-  "id,run_number,shipment_number,shift,production_date,status," +
+  "id,run_number,shipment_number,shift,production_date,status,total_fg_pallets," +
+  "rejection_damage,rejection_misplaced_glue,rejection_misplaced_pad,rejection_glue_on_pad,rejection_pad_placement_direction,rejection_adhesion_issue," +
   "created_by_user:app_users(full_name)," +
   "ipqc_record:ipqc_records(id,status)," +
   "fg_qr_batches:qr_generation_records(id,batch_display_id,status,qr_type)," +
+  `wastage_entries:production_wastage_entries(${PRODUCTION_WASTAGE_SELECT}),` +
   `material_consumptions(id,status,machine_entries:material_consumption_machine_entries(${PRODUCTION_MACHINE_ENTRY_SELECT}))`;
+
+type RawProdWastageEntry = {
+  id: string; machine_id: string | null; machine: { code: string } | null; trays: number | string | null; reason: string | null; sort_order: number;
+};
 
 type RawProductionRunDetail = {
   id: string; run_number: string; shipment_number: string | null; shift: string | null; production_date: string | null; status: string;
+  total_fg_pallets: number;
+  rejection_damage: number | string; rejection_misplaced_glue: number | string;
+  rejection_misplaced_pad: number | string; rejection_glue_on_pad: number | string;
+  rejection_pad_placement_direction: number | string; rejection_adhesion_issue: number | string;
   created_by_user: { full_name: string } | null;
   ipqc_record: { id: string; status: string } | { id: string; status: string }[] | null;
   fg_qr_batches: { id: string; batch_display_id: string; status: string; qr_type: string }[];
+  wastage_entries: RawProdWastageEntry[];
   material_consumptions: RawProdMc[];
 };
 
@@ -566,9 +626,10 @@ function flattenProductionDetail(raw: RawProductionRunDetail): ProductionDetail 
       machineEntries.push({
         machine_consumption_id: e.id, material_consumption_id: mc.id,
         machine: e.machine?.code ?? null, category: e.category,
-        sku_code: e.sku_code, sku_version: e.sku_version,
+        sku_code: e.sku_code, sku_version: e.sku_version, sku_version_id: e.sku_version_id,
         start_time: e.start_time, end_time: e.end_time,
         pallets: sortedBySortOrder(e.pallets || []).filter((p) => p.role === "primary").map(prodFlattenPallet),
+        production_details: e.sku_version_ref ? { ...e.sku_version_ref } : null,
       });
     }
   }
@@ -580,6 +641,19 @@ function flattenProductionDetail(raw: RawProductionRunDetail): ProductionDetail 
     operator: raw.created_by_user?.full_name ?? null,
     sku_codes: skuCodes.join(", "),
     machine_entries: machineEntries,
+    total_fg_pallets: raw.total_fg_pallets ?? 0,
+    rejection_classification: {
+      damage: Number(raw.rejection_damage) || 0,
+      misplaced_glue: Number(raw.rejection_misplaced_glue) || 0,
+      misplaced_pad: Number(raw.rejection_misplaced_pad) || 0,
+      glue_on_pad: Number(raw.rejection_glue_on_pad) || 0,
+      pad_placement_direction: Number(raw.rejection_pad_placement_direction) || 0,
+      adhesion_issue: Number(raw.rejection_adhesion_issue) || 0,
+    },
+    wastage_entries: sortedBySortOrder(raw.wastage_entries || []).map((w) => ({
+      id: w.id, machine_id: w.machine_id, machine: w.machine?.code ?? null,
+      trays: w.trays == null ? null : Number(w.trays), reason: w.reason, sort_order: w.sort_order,
+    })),
     ipqc_id: ipqcObj?.id ?? null, ipqc_status: ipqcObj?.status ?? null,
     fg_qr_batches: (raw.fg_qr_batches || []).filter((b) => b.qr_type === "fg").map((b) => ({ id: b.id, batch_display_id: b.batch_display_id, status: b.status })),
   };
@@ -596,7 +670,10 @@ async function getProductionSb(id: string): Promise<ProductionDetail> {
 // every FastAPI /skus and /reference/sku-codes route already did, with the
 // exact same "all versions, not just active ones" shape (see LineItemsEditor,
 // which itself does no active-filtering on the versions it's handed).
-const SKU_SELECT = "id, code, category, is_active, versions:sku_versions(id, version, is_active)";
+const SKU_SELECT =
+  "id, code, category, is_active, " +
+  "versions:sku_versions(id, version, is_active, prod_weight, prod_pcs_per_sleeve, prod_sleeve_per_case, " +
+  "prod_total_pcs_per_pallet, prod_total_pallets, prod_target_shots, prod_pad_type, prod_pad_color, prod_case_type)";
 
 export const api = {
   me: () => request<MeResponse>("/api/v1/me"),
@@ -648,12 +725,19 @@ export const api = {
       () => supabase.from("sku_codes").delete().eq("id", id),
       { fk: "This SKU is referenced by existing records and can't be deleted — deactivate it instead." }
     ),
-  addSkuVersion: (skuId: string, version: string) =>
+  addSkuVersion: (
+    skuId: string,
+    version: string,
+    productionDetails?: Partial<Omit<SkuVersion, "id" | "version" | "is_active">>
+  ) =>
     sbVoid(
-      () => supabase.from("sku_versions").insert({ sku_code_id: skuId, version, is_active: true }),
+      () => supabase.from("sku_versions").insert({ sku_code_id: skuId, version, is_active: true, ...productionDetails }),
       { conflict: `Version "${version}" already exists for this SKU.` }
     ),
-  updateSkuVersion: (versionId: string, patch: { version?: string; is_active?: boolean }) =>
+  updateSkuVersion: (
+    versionId: string,
+    patch: Partial<Omit<SkuVersion, "id">> & { version?: string; is_active?: boolean }
+  ) =>
     sbVoid(
       () => supabase.from("sku_versions").update(patch).eq("id", versionId),
       { conflict: `Version "${patch.version}" already exists for this SKU.` }
@@ -971,9 +1055,16 @@ export const api = {
     request<{ ok: boolean }>(`/api/v1/material-consumption/${id}`, { method: "DELETE" }),
 
   // -- Production -------------------------------------------------------
-  // Read-only: every record is auto-created by Material Consumption's
-  // finalize() -- there is no create/update/delete function here.
+  // List/detail reads are Supabase-direct (every record is auto-created by
+  // Material Consumption's finalize()); the one editable-fields save goes
+  // through FastAPI, matching the hybrid split -- reads direct, transactional
+  // writes through the backend.
   listProduction: (params: { search?: string; date?: string; shift?: string; machine?: string } = {}) =>
     listProductionSb(params),
   getProduction: (id: string) => getProductionSb(id),
+  saveProduction: (id: string, payload: ProductionSavePayload) =>
+    request<{ id: string; status: string }>(`/api/v1/production-runs/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
 };
