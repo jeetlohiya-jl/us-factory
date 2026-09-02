@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session, joinedload
 
 from app.db import models
+from app.domain.id_counters import next_seq
 
 CATEGORY_PREFIX = {
     "tray": None,  # manual shipment number for tray
@@ -27,13 +28,7 @@ def next_shipment_number(db: Session, category: str) -> tuple[str, bool]:
     if prefix is None:
         return "", False
     yymm = datetime.now(timezone.utc).strftime("%y%m")
-    count = (
-        db.query(models.InwardVehicleInspection)
-        .filter(models.InwardVehicleInspection.category == category)
-        .filter(models.InwardVehicleInspection.is_auto_shipment_number.is_(True))
-        .count()
-    )
-    seq = count + 1
+    seq = next_seq(db, f"ivi_shipment:{category}")
     return f"{prefix}-{yymm}-{str(seq).zfill(4)}", True
 
 

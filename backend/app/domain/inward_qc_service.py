@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from app.db import models
+from app.domain.id_counters import next_seq
 
 MANUAL_CATEGORIES = {"pad", "polybag", "cfb", "glue"}
 ALL_CATEGORIES = MANUAL_CATEGORIES | {"fgtray"}
@@ -36,13 +37,7 @@ def next_shipment_number(db: Session, category: str) -> tuple[str, bool]:
         return "", False  # fgtray shipment number always mirrors the source Vehicle Inspection
     prefix = QC_ID_PREFIX[category]
     yymm = datetime.now(timezone.utc).strftime("%y%m")
-    count = (
-        db.query(models.InwardQcRecord)
-        .filter(models.InwardQcRecord.category == category)
-        .filter(models.InwardQcRecord.is_auto_shipment_number.is_(True))
-        .count()
-    )
-    seq = count + 1
+    seq = next_seq(db, f"qc_shipment:{category}")
     return f"{prefix}-{yymm}-{str(seq).zfill(4)}", True
 
 

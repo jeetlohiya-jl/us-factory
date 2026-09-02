@@ -43,6 +43,16 @@ class ModulePermission(Base):
     __table_args__ = (UniqueConstraint("user_id", "module"),)
 
 
+class DisplayIdCounter(Base):
+    """Backing store for app.domain.id_counters.next_seq -- one row per
+    distinct sequence this app hands out (see that module's docstring for
+    the counter_key convention). Not read directly anywhere else; every
+    caller goes through next_seq()'s atomic UPSERT."""
+    __tablename__ = "display_id_counters"
+    counter_key = Column(Text, primary_key=True)
+    next_value = Column(Integer, nullable=False, default=1)
+
+
 class SkuCode(Base):
     __tablename__ = "sku_codes"
     id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)

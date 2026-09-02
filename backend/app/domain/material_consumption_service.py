@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 
 from app.db import models
 from app.domain import pallet_service
+from app.domain.id_counters import next_seq
 
 PRIMARY_CATEGORIES = ("tray", "fgtray")
 SECONDARY_ROLES = ("cfb", "pad", "glue", "polybag")
@@ -276,8 +277,8 @@ def find_dependent_summary(mc: models.MaterialConsumption) -> str | None:
 
 
 def _next_run_number(db: Session) -> str:
-    count = db.query(models.ProductionRun).count()
-    return f"PR-{str(count + 1).zfill(4)}"
+    seq = next_seq(db, "production_run")
+    return f"PR-{str(seq).zfill(4)}"
 
 
 def find_or_create_production_run(db: Session, mc: models.MaterialConsumption) -> models.ProductionRun:

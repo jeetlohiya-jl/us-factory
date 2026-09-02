@@ -24,8 +24,10 @@ import time
 import urllib.error
 import urllib.request
 import json
+import uuid as uuid_lib
 
 from jose import jwt, JWTError
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -98,4 +100,33 @@ class SupabaseAuthAdapter(AuthPort):
         if not user:
             logger.warning("Supabase auth: token valid but no active app_users row for email=%s", email)
             return None
+        # Self-healing auth_user_id backfill: this app's permission model
+        # keys everything off app_users.id (matched here by email), but
+        # Phase 1's Row-Level Security policies need auth_user_id populated
+        # with Supabase's own auth.users.id (the value auth.uid() returns)
+        # to resolve a request back to that same app_users row -- see
+        # app_user_id() in migration 0009. Nothing ever wrote this column
+        # before; the first successful login after this change writes it
+        # for every existing user, so no manual SQL backfill is needed.
+        try:
+            parsed_auth_user_id = uuid_lib.UUID(str(auth_user_id))
+        except ValueError:
+            logger.warning("Supabase auth: token 'sub' is not a valid UUID (%s)", auth_user_id)
+            return None
+        if user.auth_user_id != parsed_auth_user_id:
+            user.auth_user_id = parsed_auth_user_id
+            try:
+                self.db.commit()
+            except IntegrityError:
+                # Some other app_users row already claims this Supabase
+                # auth user id (the unique index from migration 0009) --
+                # e.g. an email change on the Supabase side. Don't fail the
+                # request over it; email-based resolution above already
+                # succeeded, so auth still works. Just leave the RLS
+                # linkage stale and let an operator sort out the duplicate.
+                self.db.rollback()
+                logger.warning(
+                    "Supabase auth: auth_user_id=%s is already linked to a different app_users row; "
+                    "not updating email=%s's linkage.", parsed_auth_user_id, email,
+                )
         return AuthenticatedUser(user_id=str(user.id), email=user.email, full_name=user.full_name)
