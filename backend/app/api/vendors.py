@@ -94,13 +94,24 @@ def delete_vendor(
     db: Session = Depends(get_db),
     _perm=Depends(require_permission("edit")),
 ):
-    """Vendor Name is stored as a plain text snapshot on each inspection
-    (see InwardVehicleInspection.vendor_name), never a foreign key, so a
-    hard delete here never breaks or orphans an existing inspection record
-    -- it only removes the option from future dropdowns."""
+    """Vendor Name is still kept as a plain text snapshot on every inspection
+    (see InwardVehicleInspection.vendor_name) so a delete here never erases
+    what a past record displayed. But since migration 0010, vendor_id is a
+    real FK from inward_vehicle_inspections/inward_qc_records back to this
+    table -- a vendor a real record still points to can no longer be
+    silently deleted; Postgres blocks it and we surface that as a clean
+    409, exactly like every other reference-data delete route in this app
+    (see skus.py, machines.py)."""
     vendor = db.query(models.Vendor).filter(models.Vendor.id == vendor_id).first()
     if not vendor:
         raise HTTPException(status_code=404, detail="Vendor not found.")
-    db.delete(vendor)
-    db.commit()
+    try:
+        db.delete(vendor)
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="This vendor is referenced by existing records and can't be deleted — deactivate it instead.",
+        )
     return None
