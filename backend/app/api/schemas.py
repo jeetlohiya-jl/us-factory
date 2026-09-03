@@ -396,6 +396,11 @@ class ProductionSaveIn(BaseModel):
     rejection_adhesion_issue: Decimal = Decimal("0")
     total_fg_pallets: int = 0
     wastage_entries: list[ProductionWastageEntryIn] = []
+    # This device's own clock, same convention as Material Consumption's
+    # start_time -- saving this record is now what stamps end_time on every
+    # machine entry that fed it (see stamp_end_times_for_production_run).
+    # Optional: falls back to the server's clock if not sent.
+    client_time: Optional[str] = None
 
 
 class ProductionSaveOut(BaseModel):
@@ -513,10 +518,6 @@ class MaterialConsumptionBasicUpdate(BaseModel):
 
 class MaterialConsumptionMachineEntryIn(BaseModel):
     machine_id: Optional[uuid.UUID] = None
-
-
-class MaterialConsumptionEndTimeIn(BaseModel):
-    end_time: str
 
 
 class MaterialConsumptionPalletOut(BaseModel):

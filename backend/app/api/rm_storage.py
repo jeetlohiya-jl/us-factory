@@ -2,6 +2,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, joinedload
 
 from app.db.session import get_db
@@ -37,34 +38,44 @@ def require(action: str):
 @router.get("/pending", response_model=list[schemas.PalletOut])
 def list_pending(
     search: str = Query(""), sku: str = Query(""),
+    page: int = Query(default=1, ge=1), page_size: int = Query(default=50, ge=1, le=500),
     db: Session = Depends(get_db), _perm=Depends(require("view")),
 ):
     q = db.query(models.Pallet).filter(models.Pallet.pallet_type == PALLET_TYPE, models.Pallet.lifecycle_status == "pending_storage")
-    pallets = q.order_by(models.Pallet.created_at).all()
-    if search:
-        s = search.lower()
-        pallets = [p for p in pallets if s in p.display_id.lower() or s in (p.sku_code_snapshot or "").lower()]
     if sku:
-        pallets = [p for p in pallets if p.sku_code_snapshot == sku]
+        q = q.filter(models.Pallet.sku_code_snapshot == sku)
+    if search:
+        like = f"%{search.lower()}%"
+        q = q.filter(or_(func.lower(models.Pallet.display_id).like(like), func.lower(models.Pallet.sku_code_snapshot).like(like)))
+    pallets = q.order_by(models.Pallet.created_at).offset((page - 1) * page_size).limit(page_size).all()
     return [serialize_pallet(p) for p in pallets]
 
 
-@router.get("/records", response_model=list[schemas.StorageRecordOut])
+@router.get("/records")
 def list_storage_records(
     search: str = Query(""),
+    page: int = Query(default=1, ge=1), page_size: int = Query(default=50, ge=1, le=200),
     db: Session = Depends(get_db), _perm=Depends(require("view")),
 ):
-    q = (
-        db.query(models.StorageRecord)
-        .options(joinedload(models.StorageRecord.pallet), joinedload(models.StorageRecord.location), joinedload(models.StorageRecord.source_qr_generation), joinedload(models.StorageRecord.stored_by_user))
-        .filter(models.StorageRecord.storage_type == STORAGE_TYPE)
-        .order_by(models.StorageRecord.stored_at.desc())
-    )
-    recs = q.all()
+    q = db.query(models.StorageRecord).filter(models.StorageRecord.storage_type == STORAGE_TYPE)
     if search:
-        s = search.lower()
-        recs = [r for r in recs if s in r.pallet.display_id.lower() or s in (r.pallet.sku_code_snapshot or "").lower()]
-    return [serialize_storage_record(r) for r in recs]
+        like = f"%{search.lower()}%"
+        q = q.filter(
+            models.StorageRecord.pallet.has(
+                or_(func.lower(models.Pallet.display_id).like(like), func.lower(models.Pallet.sku_code_snapshot).like(like))
+            )
+        )
+    total_all = db.query(func.count(models.StorageRecord.id)).filter(models.StorageRecord.storage_type == STORAGE_TYPE).scalar()
+    matched = q.count()
+    recs = (
+        q.options(joinedload(models.StorageRecord.pallet), joinedload(models.StorageRecord.location), joinedload(models.StorageRecord.source_qr_generation), joinedload(models.StorageRecord.stored_by_user))
+        .order_by(models.StorageRecord.stored_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    items = [serialize_storage_record(r) for r in recs]
+    return {"items": items, "matched_count": matched, "total_count": total_all}
 
 
 @router.get("/records/{record_id}", response_model=schemas.StorageRecordOut)

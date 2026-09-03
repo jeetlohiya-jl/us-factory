@@ -2,7 +2,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import type { ProductionDetail, Machine } from "@/lib/types";
-import { formatTime12h } from "@/components/material-consumption/Wizard";
+import { formatTime12h, nowHHMM } from "@/components/material-consumption/Wizard";
 import { api } from "@/lib/api";
 
 const CATEGORY_LABELS: Record<string, string> = { tray: "Base Tray", fgtray: "FG Non-Padded Tray" };
@@ -133,6 +133,10 @@ export default function ProductionDetailPanel({
         rejection_adhesion_issue: rc.adhesion_issue,
         total_fg_pallets: totalFgPallets === "" ? 0 : Number(totalFgPallets),
         wastage_entries: wastage.map((w) => ({ machine_id: w.machine_id, trays: w.trays, reason: w.reason })),
+        // This save is now what stamps End Time on every Material
+        // Consumption machine entry it feeds -- send this device's own
+        // clock, same convention as Material Consumption's Start Time.
+        client_time: nowHHMM(),
       });
       onSaved();
       onClose();

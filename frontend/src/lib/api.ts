@@ -1,5 +1,6 @@
 import { getAuthHeader } from "./session";
 import { supabase } from "./supabaseClient";
+import { cachedList, invalidateListCache, listCacheKey } from "./listCache";
 import type {
   InspectionDetail, InspectionListItem, SkuCode, SkuVersion, ChecklistItemRef, MeResponse, Category, ImageType,
   QcMeta, QcListItem, QcDetail, QcManualCategory,
@@ -10,6 +11,12 @@ import type {
 } from "./types";
 
 const BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+
+/** Default page size for every paginated list fetch below (Supabase
+ * `.range()` and the FastAPI `page_size` query param alike) -- matches the
+ * `inward_qc.py`/`inward_vehicle_inspections.py` reference pattern
+ * (PERF_AUDIT.md findings #1-#6). */
+const LIST_PAGE_SIZE = 50;
 
 export class ApiError extends Error {
   status: number;
@@ -47,6 +54,19 @@ async function sbRequest<T>(
     throw new ApiError(500, error.message);
   }
   return data as T;
+}
+
+/** Same as `sbRequest`, but for a paginated `.range()` list query -- also
+ * surfaces PostgREST's `{ count: "exact" }` total alongside the page of
+ * rows, so callers can render "Showing X of Y" against the real filtered
+ * total instead of `rows.length` (which is capped at the page size). */
+async function sbRequestPage<T>(
+  fn: () => Promise<{ data: T[] | null; error: { message: string; code?: string } | null; count: number | null }>
+): Promise<{ items: T[]; matched_count: number }> {
+  const { data, error, count } = await fn();
+  if (error) throw new ApiError(500, error.message);
+  const items = data || [];
+  return { items, matched_count: count ?? items.length };
 }
 
 // Postgrest-style query builder -- structurally compatible with every
@@ -115,10 +135,11 @@ function flattenPallet(raw: RawPallet): Pallet {
   };
 }
 
-function qrListQuery(qrType: "rm" | "fg", params: { search?: string; date?: string; sku?: string }) {
+function qrListQuery(qrType: "rm" | "fg", params: { search?: string; date?: string; sku?: string; page?: number }) {
+  const page = params.page && params.page > 0 ? params.page : 1;
   let q = supabase
     .from("qr_generation_records")
-    .select("id,batch_display_id,qr_type,shipment_number,sku_code_snapshot,sku_version_snapshot,country_code,quantity,status,created_at")
+    .select("id,batch_display_id,qr_type,shipment_number,sku_code_snapshot,sku_version_snapshot,country_code,quantity,status,created_at", { count: "exact" })
     .eq("qr_type", qrType);
   if (params.search) {
     const like = ilikeTerm(params.search);
@@ -130,7 +151,7 @@ function qrListQuery(qrType: "rm" | "fg", params: { search?: string; date?: stri
     next.setUTCDate(next.getUTCDate() + 1);
     q = q.gte("created_at", `${params.date}T00:00:00`).lt("created_at", next.toISOString().slice(0, 19));
   }
-  return q.order("created_at", { ascending: false });
+  return q.order("created_at", { ascending: false }).range((page - 1) * LIST_PAGE_SIZE, page * LIST_PAGE_SIZE - 1);
 }
 
 async function qrGetDetail(qrType: "rm" | "fg", id: string): Promise<QrGenerationDetail> {
@@ -165,19 +186,27 @@ async function qrGetDetail(qrType: "rm" | "fg", id: string): Promise<QrGeneratio
   };
 }
 
-async function pendingPalletsQuery(palletType: "rm" | "fg", params: { search?: string; sku?: string }): Promise<Pallet[]> {
-  let q = supabase.from("pallets").select(PALLET_SELECT).eq("pallet_type", palletType).eq("lifecycle_status", "pending_storage");
+async function pendingPalletsQuery(
+  palletType: "rm" | "fg",
+  params: { search?: string; sku?: string; page?: number }
+): Promise<{ items: Pallet[]; matched_count: number }> {
+  const page = params.page && params.page > 0 ? params.page : 1;
+  let q = supabase
+    .from("pallets")
+    .select(PALLET_SELECT, { count: "exact" })
+    .eq("pallet_type", palletType)
+    .eq("lifecycle_status", "pending_storage");
   // sku is an exact match against the SKU snapshot (mirrors `p.sku_code_snapshot == sku`
   // in list_pending -- not a substring filter, unlike `search`).
   if (params.sku) q = q.eq("sku_code_snapshot", params.sku);
-  const { data, error } = await q;
-  if (error) throw new ApiError(500, error.message);
-  let rows = ((data || []) as unknown as RawPallet[]).map(flattenPallet);
   if (params.search) {
-    const s = params.search.toLowerCase();
-    rows = rows.filter((p) => p.display_id.toLowerCase().includes(s) || (p.sku_code || "").toLowerCase().includes(s));
+    const like = ilikeTerm(params.search);
+    q = q.or(`display_id.ilike.${like},sku_code_snapshot.ilike.${like}`);
   }
-  return rows;
+  const { data, error, count } = await q.order("created_at").range((page - 1) * LIST_PAGE_SIZE, page * LIST_PAGE_SIZE - 1);
+  if (error) throw new ApiError(500, error.message);
+  const rows = ((data || []) as unknown as RawPallet[]).map(flattenPallet);
+  return { items: rows, matched_count: count ?? rows.length };
 }
 
 const STORAGE_RECORD_SELECT =
@@ -212,19 +241,28 @@ function flattenStorageRecord(raw: RawStorageRecord): StorageRecordDetail {
   };
 }
 
-async function storageRecordsQuery(storageType: "rm" | "fg", search: string): Promise<StorageRecordDetail[]> {
-  const { data, error } = await supabase
+async function storageRecordsQuery(
+  storageType: "rm" | "fg",
+  search: string,
+  page = 1
+): Promise<{ items: StorageRecordDetail[]; matched_count: number }> {
+  // pallet_display_id/sku_code_snapshot live on the embedded `pallets`
+  // resource -- `!inner` turns the embed into a real join so `.or()` can
+  // filter the PARENT (storage_records) rows by it server-side, instead of
+  // fetching the whole table and substring-matching in the browser.
+  const selectClause = search ? STORAGE_RECORD_SELECT.replace("pallet:pallets(", "pallet:pallets!inner(") : STORAGE_RECORD_SELECT;
+  let q = supabase
     .from("storage_records")
-    .select(STORAGE_RECORD_SELECT)
-    .eq("storage_type", storageType)
-    .order("stored_at", { ascending: false });
-  if (error) throw new ApiError(500, error.message);
-  let rows = ((data || []) as unknown as RawStorageRecord[]).map(flattenStorageRecord);
+    .select(selectClause, { count: "exact" })
+    .eq("storage_type", storageType);
   if (search) {
-    const s = search.toLowerCase();
-    rows = rows.filter((r) => r.pallet_display_id.toLowerCase().includes(s) || (r.sku_code || "").toLowerCase().includes(s));
+    const like = ilikeTerm(search);
+    q = q.or(`display_id.ilike.${like},sku_code_snapshot.ilike.${like}`, { foreignTable: "pallets" });
   }
-  return rows;
+  const { data, error, count } = await q.order("stored_at", { ascending: false }).range((page - 1) * LIST_PAGE_SIZE, page * LIST_PAGE_SIZE - 1);
+  if (error) throw new ApiError(500, error.message);
+  const rows = ((data || []) as unknown as RawStorageRecord[]).map(flattenStorageRecord);
+  return { items: rows, matched_count: count ?? rows.length };
 }
 
 async function storageRecordDetail(storageType: "rm" | "fg", id: string): Promise<StorageRecordDetail> {
@@ -392,31 +430,62 @@ function flattenMcListItem(raw: RawMc): MaterialConsumptionListItem {
   };
 }
 
-async function listMaterialConsumptionSb(params: { search?: string; category?: string; date?: string; status?: string }): Promise<MaterialConsumptionListItem[]> {
-  const { data, error } = await supabase
+/** `MC_DETAIL_SELECT`'s embed of `material_consumption_machine_entries` as
+ * `!inner` -- turns the embed into a real join Postgrest can filter the
+ * PARENT (material_consumptions) rows by, instead of the old
+ * fetch-everything-then-Array.filter() approach. */
+const MC_DETAIL_SELECT_INNER = MC_DETAIL_SELECT.replace(
+  "machine_entries:material_consumption_machine_entries(",
+  "machine_entries:material_consumption_machine_entries!inner("
+);
+
+async function listMaterialConsumptionSb(
+  params: { search?: string; category?: string; date?: string; status?: string; page?: number }
+): Promise<{ items: MaterialConsumptionListItem[]; matched_count: number }> {
+  const page = params.page && params.page > 0 ? params.page : 1;
+  // category/search need to filter by columns on the nested machine_entries
+  // resource, so the embed switches to `!inner` (a real join) only when one
+  // of those is active -- status/date alone stay on the plain embed since
+  // they're columns on material_consumptions itself.
+  const needsEntryJoin = !!(params.category || params.search);
+  let q = supabase
     .from("material_consumptions")
-    .select(MC_DETAIL_SELECT)
-    .order("created_at", { ascending: false });
+    .select(needsEntryJoin ? MC_DETAIL_SELECT_INNER : MC_DETAIL_SELECT, { count: "exact" });
+  if (params.status) q = q.eq("status", params.status);
+  if (params.date) q = q.eq("consumption_date", params.date);
+  if (params.category) q = q.eq("material_consumption_machine_entries.category", params.category);
+  if (params.search) {
+    const like = ilikeTerm(params.search);
+    // Covers SKU code/version/category on the machine entry -- the primary
+    // pallet display_id and machine code live two embed levels down
+    // (machine_entries -> pallets -> pallet / machine_entries -> machine),
+    // which Postgrest's single-level `.or(foreignTable:)` can't reach in
+    // one filter; those two fields fall back to a client-side pass over
+    // just the current page (50 rows, not the whole table) below.
+    q = q.or(
+      `sku_code_snapshot.ilike.${like},sku_version_snapshot.ilike.${like},category.ilike.${like}`,
+      { foreignTable: "material_consumption_machine_entries" }
+    );
+  }
+  const { data, error, count } = await q.order("created_at", { ascending: false }).range((page - 1) * LIST_PAGE_SIZE, page * LIST_PAGE_SIZE - 1);
   if (error) throw new ApiError(500, error.message);
   let recs = (data || []) as unknown as RawMc[];
-  // Filtering replicates list_material_consumption()'s Python-side logic
-  // exactly (not a Postgrest filter) since it spans nested machine_entries/
-  // pallets and needs identical any(...) / substring semantics.
-  if (params.category) recs = recs.filter((r) => r.machine_entries.some((e) => e.category === params.category));
-  if (params.date) recs = recs.filter((r) => r.consumption_date === params.date);
-  if (params.status) recs = recs.filter((r) => r.status === params.status);
   if (params.search) {
     const s = params.search.toLowerCase();
+    const alreadyMatchedByEntry = (r: RawMc) =>
+      r.machine_entries.some(
+        (e) => (e.sku_code || "").toLowerCase().includes(s) || (e.sku_version || "").toLowerCase().includes(s) || (e.category || "").toLowerCase().includes(s)
+      );
     recs = recs.filter((r) => {
-      const haystack: string[] = [];
+      if (alreadyMatchedByEntry(r)) return true;
       for (const e of r.machine_entries) {
-        haystack.push(e.sku_code || "", e.sku_version || "", e.category || "", e.machine?.code || "");
-        for (const p of e.pallets) if (p.role === "primary") haystack.push(p.pallet?.display_id || "");
+        if ((e.machine?.code || "").toLowerCase().includes(s)) return true;
+        for (const p of e.pallets) if (p.role === "primary" && (p.pallet?.display_id || "").toLowerCase().includes(s)) return true;
       }
-      return haystack.some((h) => h.toLowerCase().includes(s));
+      return false;
     });
   }
-  return recs.map(flattenMcListItem);
+  return { items: recs.map(flattenMcListItem), matched_count: count ?? recs.length };
 }
 
 async function getMaterialConsumptionSb(id: string): Promise<MaterialConsumptionDetail> {
@@ -516,18 +585,46 @@ function flattenProductionListItem(raw: RawProductionRunList): ProductionListIte
   };
 }
 
-async function listProductionSb(params: { search?: string; date?: string; shift?: string; machine?: string } = {}): Promise<ProductionListItem[]> {
-  const { data, error } = await supabase.from("production_runs").select(PRODUCTION_LIST_SELECT).order("created_at", { ascending: false });
+/** `production_runs`'s `sku_code`/`created_by_user` embeds as `!inner` for
+ * server-side `.or()` search across those two (one-level-deep, so a real
+ * Postgrest join filter reaches them cleanly); `machines`/
+ * `material_consumptions` stay two levels deep and can't be reached by a
+ * single-level `.or(foreignTable:)` filter, so a `machine` filter and the
+ * "search matches a machine code" case are applied client-side below --
+ * over just the current page (`LIST_PAGE_SIZE` rows), not the whole table. */
+const PRODUCTION_LIST_SELECT_INNER = PRODUCTION_LIST_SELECT
+  .replace("sku_code:sku_codes(code)", "sku_code:sku_codes!inner(code)")
+  .replace("created_by_user:app_users!production_runs_created_by_fkey(full_name)", "created_by_user:app_users!production_runs_created_by_fkey!inner(full_name)");
+
+async function listProductionSb(
+  params: { search?: string; date?: string; shift?: string; machine?: string; page?: number } = {}
+): Promise<{ items: ProductionListItem[]; matched_count: number }> {
+  const page = params.page && params.page > 0 ? params.page : 1;
+  const needsJoin = !!params.search;
+  let q = supabase.from("production_runs").select(needsJoin ? PRODUCTION_LIST_SELECT_INNER : PRODUCTION_LIST_SELECT, { count: "exact" });
+  if (params.date) q = q.eq("production_date", params.date);
+  if (params.shift) q = q.eq("shift", params.shift);
+  if (params.search) {
+    const like = ilikeTerm(params.search);
+    // A single `.or()` with embed-qualified paths (`table.column.op.value`)
+    // -- NOT two separate `.or({foreignTable})` calls, which Postgrest ANDs
+    // together instead of OR-ing across tables.
+    q = q.or(`sku_codes.code.ilike.${like},app_users.full_name.ilike.${like}`);
+  }
+  const { data, error, count } = await q.order("created_at", { ascending: false }).range((page - 1) * LIST_PAGE_SIZE, page * LIST_PAGE_SIZE - 1);
   if (error) throw new ApiError(500, error.message);
   let rows = ((data || []) as unknown as RawProductionRunList[]).map(flattenProductionListItem);
-  if (params.date) rows = rows.filter((r) => r.date === params.date);
-  if (params.shift) rows = rows.filter((r) => r.shift === params.shift);
   if (params.machine) rows = rows.filter((r) => r.machines.split(", ").includes(params.machine!));
   if (params.search) {
     const s = params.search.toLowerCase();
+    // sku_code/operator are already guaranteed matches (server-side `.or()`
+    // above); this only ADDS BACK rows the join-based `.or()` might have
+    // excluded that match on machine code instead (Postgrest's multiple
+    // `.or(foreignTable:)` calls combine as AND-of-ORs across tables, not a
+    // single flat OR) -- re-fetch is avoided by keeping the union client-side.
     rows = rows.filter((r) => [r.machines, r.sku_code, r.operator].some((v) => (v || "").toLowerCase().includes(s)));
   }
-  return rows;
+  return { items: rows, matched_count: count ?? rows.length };
 }
 
 type RawProdPallet = {
@@ -693,18 +790,22 @@ function flattenIpqcListItem(raw: RawIpqcListItem): IpqcListItem {
   };
 }
 
-async function listIpqcSb(params: { search?: string; date?: string; shift?: string; status?: string } = {}): Promise<IpqcListItem[]> {
-  const { data, error } = await supabase.from("ipqc_records").select(IPQC_LIST_SELECT).order("created_at", { ascending: false });
-  if (error) throw new ApiError(500, error.message);
-  let rows = ((data || []) as unknown as RawIpqcListItem[]).map(flattenIpqcListItem);
-  if (params.date) rows = rows.filter((r) => r.date === params.date);
-  if (params.shift) rows = rows.filter((r) => r.shift === params.shift);
-  if (params.status) rows = rows.filter((r) => r.status === params.status);
+async function listIpqcSb(
+  params: { search?: string; date?: string; shift?: string; status?: string; page?: number } = {}
+): Promise<{ items: IpqcListItem[]; matched_count: number }> {
+  const page = params.page && params.page > 0 ? params.page : 1;
+  let q = supabase.from("ipqc_records").select(IPQC_LIST_SELECT, { count: "exact" }).order("created_at", { ascending: false });
+  if (params.date) q = q.eq("production_date", params.date);
+  if (params.shift) q = q.eq("shift", params.shift);
+  if (params.status) q = q.eq("status", params.status);
   if (params.search) {
-    const s = params.search.toLowerCase();
-    rows = rows.filter((r) => [r.sku_code, r.shift_incharge, r.shipment_number].some((v) => (v || "").toLowerCase().includes(s)));
+    const like = ilikeTerm(params.search);
+    q = q.or(`sku_code_snapshot.ilike.${like},shift_incharge.ilike.${like},shipment_number.ilike.${like}`);
   }
-  return rows;
+  const { data, error, count } = await q.range((page - 1) * LIST_PAGE_SIZE, page * LIST_PAGE_SIZE - 1);
+  if (error) throw new ApiError(500, error.message);
+  const rows = ((data || []) as unknown as RawIpqcListItem[]).map(flattenIpqcListItem);
+  return { items: rows, matched_count: count ?? rows.length };
 }
 
 type RawIpqcBlockDefect = { defect_sr: number; failure: number | string | null; reason: string | null };
@@ -1029,40 +1130,76 @@ export const api = {
   deleteQc: (id: string) => request<{ deleted: boolean }>(`/api/v1/inward-qc/${id}`, { method: "DELETE" }),
 
   // -- RM QR Generation --------------------------------------------------
-  listRmQr: async (params: { search?: string; date?: string; sku?: string } = {}) =>
-    sbRequest<QrGenerationListItem[]>(() => qrListQuery("rm", params) as unknown as Promise<{ data: QrGenerationListItem[] | null; error: { message: string; code?: string } | null }>),
+  listRmQr: async (params: { search?: string; date?: string; sku?: string; page?: number } = {}) =>
+    cachedList(listCacheKey("rm-qr", params), () =>
+      sbRequestPage<QrGenerationListItem>(() => qrListQuery("rm", params) as unknown as Promise<{ data: QrGenerationListItem[] | null; error: { message: string; code?: string } | null; count: number | null }>)
+    ),
   getRmQr: (id: string) => qrGetDetail("rm", id),
-  generateRmQr: (id: string) => request<QrGenerationDetail>(`/api/v1/rm-qr/${id}/generate`, { method: "POST" }),
-  deleteRmQr: (id: string) => request<{ ok: boolean }>(`/api/v1/rm-qr/${id}`, { method: "DELETE" }),
+  generateRmQr: async (id: string) => {
+    const res = await request<QrGenerationDetail>(`/api/v1/rm-qr/${id}/generate`, { method: "POST" });
+    invalidateListCache("rm-qr");
+    return res;
+  },
+  deleteRmQr: async (id: string) => {
+    const res = await request<{ ok: boolean }>(`/api/v1/rm-qr/${id}`, { method: "DELETE" });
+    invalidateListCache("rm-qr");
+    return res;
+  },
 
   // -- FG QR Generation --------------------------------------------------
-  listFgQr: async (params: { search?: string; date?: string; sku?: string } = {}) =>
-    sbRequest<QrGenerationListItem[]>(() => qrListQuery("fg", params) as unknown as Promise<{ data: QrGenerationListItem[] | null; error: { message: string; code?: string } | null }>),
+  listFgQr: async (params: { search?: string; date?: string; sku?: string; page?: number } = {}) =>
+    cachedList(listCacheKey("fg-qr", params), () =>
+      sbRequestPage<QrGenerationListItem>(() => qrListQuery("fg", params) as unknown as Promise<{ data: QrGenerationListItem[] | null; error: { message: string; code?: string } | null; count: number | null }>)
+    ),
   getFgQr: (id: string) => qrGetDetail("fg", id),
-  generateFgQr: (id: string) => request<QrGenerationDetail>(`/api/v1/fg-qr/${id}/generate`, { method: "POST" }),
-  deleteFgQr: (id: string) => request<{ ok: boolean }>(`/api/v1/fg-qr/${id}`, { method: "DELETE" }),
-  createFgQrFromRun: (runId: string) => request<QrGenerationDetail>(`/api/v1/fg-qr/from-production-run/${runId}`, { method: "POST" }),
+  generateFgQr: async (id: string) => {
+    const res = await request<QrGenerationDetail>(`/api/v1/fg-qr/${id}/generate`, { method: "POST" });
+    invalidateListCache("fg-qr");
+    return res;
+  },
+  deleteFgQr: async (id: string) => {
+    const res = await request<{ ok: boolean }>(`/api/v1/fg-qr/${id}`, { method: "DELETE" });
+    invalidateListCache("fg-qr");
+    return res;
+  },
+  createFgQrFromRun: async (runId: string) => {
+    const res = await request<QrGenerationDetail>(`/api/v1/fg-qr/from-production-run/${runId}`, { method: "POST" });
+    invalidateListCache("fg-qr");
+    return res;
+  },
 
   // -- Production Runs (minimal, feeds FG QR Generation) ------------------
   listProductionRuns: () => request<ProductionRun[]>("/api/v1/production-runs"),
 
   // -- RM Storage ----------------------------------------------------------
-  listRmPending: (params: { search?: string; sku?: string } = {}) => pendingPalletsQuery("rm", params),
-  listRmStorageRecords: (search = "") => storageRecordsQuery("rm", search),
+  listRmPending: (params: { search?: string; sku?: string; page?: number } = {}) =>
+    cachedList(listCacheKey("rm-storage-pending", params), () => pendingPalletsQuery("rm", params)),
+  listRmStorageRecords: (search = "") =>
+    cachedList(listCacheKey("rm-storage-records", { search }), () => storageRecordsQuery("rm", search)),
   getRmStorageRecord: (id: string) => storageRecordDetail("rm", id),
   scanRmPallet: (payload: string) => request<Pallet>("/api/v1/rm-storage/scan-pallet", { method: "POST", body: JSON.stringify({ payload }) }),
   scanRmLocation: (payload: string) => request<{ id: string; display_id: string; zone: string }>("/api/v1/rm-storage/scan-location", { method: "POST", body: JSON.stringify({ payload }) }),
-  confirmRmStorage: (palletPayload: string, locationPayload: string) =>
-    request<StorageRecordDetail>("/api/v1/rm-storage/confirm", { method: "POST", body: JSON.stringify({ pallet_payload: palletPayload, location_payload: locationPayload }) }),
+  confirmRmStorage: async (palletPayload: string, locationPayload: string) => {
+    const res = await request<StorageRecordDetail>("/api/v1/rm-storage/confirm", { method: "POST", body: JSON.stringify({ pallet_payload: palletPayload, location_payload: locationPayload }) });
+    invalidateListCache("rm-storage-pending");
+    invalidateListCache("rm-storage-records");
+    return res;
+  },
 
   // -- FG Storage ------------------------------------------------------------
-  listFgPending: (params: { search?: string; sku?: string } = {}) => pendingPalletsQuery("fg", params),
-  listFgStorageRecords: (search = "") => storageRecordsQuery("fg", search),
+  listFgPending: (params: { search?: string; sku?: string; page?: number } = {}) =>
+    cachedList(listCacheKey("fg-storage-pending", params), () => pendingPalletsQuery("fg", params)),
+  listFgStorageRecords: (search = "") =>
+    cachedList(listCacheKey("fg-storage-records", { search }), () => storageRecordsQuery("fg", search)),
   getFgStorageRecord: (id: string) => storageRecordDetail("fg", id),
   scanFgPallet: (payload: string) => request<Pallet>("/api/v1/fg-storage/scan-pallet", { method: "POST", body: JSON.stringify({ payload }) }),
   scanFgLocation: (payload: string) => request<{ id: string; display_id: string; zone: string }>("/api/v1/fg-storage/scan-location", { method: "POST", body: JSON.stringify({ payload }) }),
-  confirmFgStorage: (palletPayload: string, locationPayload: string) =>
-    request<StorageRecordDetail>("/api/v1/fg-storage/confirm", { method: "POST", body: JSON.stringify({ pallet_payload: palletPayload, location_payload: locationPayload }) }),
+  confirmFgStorage: async (palletPayload: string, locationPayload: string) => {
+    const res = await request<StorageRecordDetail>("/api/v1/fg-storage/confirm", { method: "POST", body: JSON.stringify({ pallet_payload: palletPayload, location_payload: locationPayload }) });
+    invalidateListCache("fg-storage-pending");
+    invalidateListCache("fg-storage-records");
+    return res;
+  },
 
   // -- Locations (reference, shared by RM + FG storage) --------------------
   // Every location is seeded once via migration with its QR already
@@ -1106,11 +1243,14 @@ export const api = {
   // -- Material Consumption -------------------------------------------------
   // list/detail go direct to Supabase (Phase 2); every draft/scan/finalize
   // write below stays on FastAPI, unchanged.
-  listMaterialConsumption: (params: { search?: string; category?: string; date?: string; status?: string } = {}) =>
-    listMaterialConsumptionSb(params),
+  listMaterialConsumption: (params: { search?: string; category?: string; date?: string; status?: string; page?: number } = {}) =>
+    cachedList(listCacheKey("material-consumption", params), () => listMaterialConsumptionSb(params)),
   materialConsumptionShifts: () => request<string[]>("/api/v1/material-consumption/shifts"),
-  createMaterialConsumptionDraft: () =>
-    request<MaterialConsumptionDetail>("/api/v1/material-consumption/draft", { method: "POST" }),
+  createMaterialConsumptionDraft: async () => {
+    const res = await request<MaterialConsumptionDetail>("/api/v1/material-consumption/draft", { method: "POST" });
+    invalidateListCache("material-consumption");
+    return res;
+  },
   getMaterialConsumption: (id: string) => getMaterialConsumptionSb(id),
   updateMaterialConsumptionBasic: (id: string, patch: { shift?: string }) =>
     request<MaterialConsumptionDetail>(`/api/v1/material-consumption/${id}/basic`, { method: "PUT", body: JSON.stringify(patch) }),
@@ -1124,46 +1264,61 @@ export const api = {
     request<MaterialConsumptionDetail>(`/api/v1/material-consumption/${id}/machine-entries/${entryId}/scan-pallet`, { method: "POST", body: JSON.stringify({ payload, client_time: clientTime }) }),
   scanMaterialConsumptionSecondary: (id: string, entryId: string, payload: string, category: SecondaryMaterialCategory) =>
     request<MaterialConsumptionDetail>(`/api/v1/material-consumption/${id}/machine-entries/${entryId}/scan-secondary`, { method: "POST", body: JSON.stringify({ payload, category }) }),
-  recordMaterialConsumptionEntryEndTime: (id: string, entryId: string, endTime: string) =>
-    request<MaterialConsumptionDetail>(`/api/v1/material-consumption/${id}/machine-entries/${entryId}/end-time`, { method: "PUT", body: JSON.stringify({ end_time: endTime }) }),
   removeMaterialConsumptionPallet: (id: string, rowId: string) =>
     request<MaterialConsumptionDetail>(`/api/v1/material-consumption/${id}/pallets/${rowId}`, { method: "DELETE" }),
   setMaterialConsumptionPalletQuantity: (id: string, rowId: string, quantity: string) =>
     request<MaterialConsumptionDetail>(`/api/v1/material-consumption/${id}/pallets/${rowId}/quantity`, { method: "PUT", body: JSON.stringify({ quantity }) }),
   saveMaterialConsumptionDraft: (id: string) =>
     request<MaterialConsumptionDetail>(`/api/v1/material-consumption/${id}/save-draft`, { method: "POST" }),
-  finalizeMaterialConsumption: (id: string) =>
-    request<MaterialConsumptionDetail>(`/api/v1/material-consumption/${id}/finalize`, { method: "POST" }),
-  discardMaterialConsumptionIfBlank: (id: string) =>
-    request<void>(`/api/v1/material-consumption/${id}/if-blank`, { method: "DELETE" }),
-  deleteMaterialConsumption: (id: string) =>
-    request<{ ok: boolean }>(`/api/v1/material-consumption/${id}`, { method: "DELETE" }),
+  finalizeMaterialConsumption: async (id: string) => {
+    const res = await request<MaterialConsumptionDetail>(`/api/v1/material-consumption/${id}/finalize`, { method: "POST" });
+    invalidateListCache("material-consumption");
+    invalidateListCache("production");
+    invalidateListCache("ipqc");
+    return res;
+  },
+  discardMaterialConsumptionIfBlank: async (id: string) => {
+    const res = await request<void>(`/api/v1/material-consumption/${id}/if-blank`, { method: "DELETE" });
+    invalidateListCache("material-consumption");
+    return res;
+  },
+  deleteMaterialConsumption: async (id: string) => {
+    const res = await request<{ ok: boolean }>(`/api/v1/material-consumption/${id}`, { method: "DELETE" });
+    invalidateListCache("material-consumption");
+    return res;
+  },
 
   // -- Production -------------------------------------------------------
   // List/detail reads are Supabase-direct (every record is auto-created by
   // Material Consumption's finalize()); the one editable-fields save goes
   // through FastAPI, matching the hybrid split -- reads direct, transactional
   // writes through the backend.
-  listProduction: (params: { search?: string; date?: string; shift?: string; machine?: string } = {}) =>
-    listProductionSb(params),
+  listProduction: (params: { search?: string; date?: string; shift?: string; machine?: string; page?: number } = {}) =>
+    cachedList(listCacheKey("production", params), () => listProductionSb(params)),
   getProduction: (id: string) => getProductionSb(id),
-  saveProduction: (id: string, payload: ProductionSavePayload) =>
-    request<{ id: string; status: string }>(`/api/v1/production-runs/${id}`, {
+  saveProduction: async (id: string, payload: ProductionSavePayload) => {
+    const res = await request<{ id: string; status: string }>(`/api/v1/production-runs/${id}`, {
       method: "PUT",
       body: JSON.stringify(payload),
-    }),
+    });
+    invalidateListCache("production");
+    return res;
+  },
 
   // -- IPQC -----------------------------------------------------------
   // Same split as Production: list/detail reads Supabase-direct (every
   // record is auto-created by Material Consumption's finalize()), the one
   // editable-fields save (Shift Incharge + Check Time blocks) through
   // FastAPI.
-  listIpqc: (params: { search?: string; date?: string; shift?: string; status?: string } = {}) =>
-    listIpqcSb(params),
+  listIpqc: (params: { search?: string; date?: string; shift?: string; status?: string; page?: number } = {}) =>
+    cachedList(listCacheKey("ipqc", params), () => listIpqcSb(params)),
   getIpqc: (id: string) => getIpqcSb(id),
-  saveIpqc: (id: string, payload: IpqcSavePayload) =>
-    request<{ id: string; status: string }>(`/api/v1/ipqc-records/${id}`, {
+  saveIpqc: async (id: string, payload: IpqcSavePayload) => {
+    const res = await request<{ id: string; status: string }>(`/api/v1/ipqc-records/${id}`, {
       method: "PUT",
       body: JSON.stringify(payload),
-    }),
+    });
+    invalidateListCache("ipqc");
+    return res;
+  },
 };

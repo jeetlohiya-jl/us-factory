@@ -28,8 +28,8 @@ export default function RmStoragePage() {
         api.listRmPending({ search }),
         api.listRmStorageRecords(recordsSearch),
       ]);
-      setPending(pendingRes);
-      setRecords(recordsRes);
+      setPending(pendingRes.items);
+      setRecords(recordsRes.items);
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : "Failed to load records");
     } finally {

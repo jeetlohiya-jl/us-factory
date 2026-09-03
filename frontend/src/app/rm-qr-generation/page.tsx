@@ -30,7 +30,7 @@ export default function RmQrGenerationPage() {
     setLoadError(null);
     try {
       const res = await api.listRmQr({ search, date: fDate, sku: fSku });
-      setItems(res);
+      setItems(res.items);
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : "Failed to load records");
     } finally {

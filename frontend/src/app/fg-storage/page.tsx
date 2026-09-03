@@ -28,8 +28,8 @@ export default function FgStoragePage() {
         api.listFgPending({ search }),
         api.listFgStorageRecords(recordsSearch),
       ]);
-      setPending(pendingRes);
-      setRecords(recordsRes);
+      setPending(pendingRes.items);
+      setRecords(recordsRes.items);
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : "Failed to load records");
     } finally {

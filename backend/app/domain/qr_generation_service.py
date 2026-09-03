@@ -135,24 +135,66 @@ def get_or_create_rm_qr_for_qc(db: Session, qc: models.InwardQcRecord) -> models
     return rec
 
 
+def _derive_run_shipment_number(run: models.ProductionRun) -> str | None:
+    """A Production Run's own shipment_number column is only ever populated
+    by the dev/test-only direct-create endpoint -- a run spawned from
+    Material Consumption (the normal path) never has one set directly, so
+    fall back to the same derivation the frontend already uses for display
+    (deriveShipmentNumberFromEntries): the first primary pallet's own
+    shipment_number snapshot, walked in machine/pallet sort order across
+    every Material Consumption record that feeds this run."""
+    if run.shipment_number:
+        return run.shipment_number
+    for mc in sorted(run.material_consumptions, key=lambda m: m.created_at):
+        for entry in sorted(mc.machine_entries, key=lambda e: e.sort_order):
+            for row in sorted(entry.pallets, key=lambda p: p.sort_order):
+                if row.role == "primary" and row.pallet and row.pallet.shipment_number:
+                    return row.pallet.shipment_number
+    return None
+
+
 def get_or_create_fg_qr_for_production_run(db: Session, run: models.ProductionRun) -> models.QrGenerationRecord:
+    """
+    Called the moment a Production Run has FG Pallets Generated recorded on
+    it (see app/api/production.py's save_production_run) -- the FG mirror
+    of get_or_create_rm_qr_for_qc, called the moment an Inward QC is
+    Accepted. Idempotent -- the partial unique index on
+    source_production_run_id is the hard backstop against a duplicate
+    batch; this find-first is what makes repeat calls (every time
+    Production is re-saved) a no-op rather than raising.
+    """
+    sku_code = run.sku_code.code if run.sku_code else None
+    sku_version = run.sku_version.version if run.sku_version else None
+    shipment_number = _derive_run_shipment_number(run)
+
     existing = (
         db.query(models.QrGenerationRecord)
         .filter(models.QrGenerationRecord.source_production_run_id == run.id)
         .first()
     )
     if existing:
+        # Only a still-pending (not yet generated) batch may be refreshed --
+        # once pallets/QR codes exist the batch's data must never drift,
+        # same rule RM QR Generation already follows. This lets a later
+        # correction to Total FG Pallets Generated (before Generate QR is
+        # clicked) actually reach the batch instead of leaving it stuck at
+        # whatever was true the first time Production was saved.
+        if existing.status == "pending":
+            existing.shipment_number = shipment_number
+            existing.sku_code_id = run.sku_code_id
+            existing.sku_version_id = run.sku_version_id
+            existing.sku_code_snapshot = sku_code
+            existing.sku_version_snapshot = sku_version
+            existing.quantity = int(run.total_fg_pallets or 0)
+            db.flush()
         return existing
-
-    sku_code = run.sku_code.code if run.sku_code else None
-    sku_version = run.sku_version.version if run.sku_version else None
 
     rec = models.QrGenerationRecord(
         batch_display_id=pallet_service.next_batch_display_id(db, "fg"),
         qr_type="fg",
         category=run.category,
         source_production_run_id=run.id,
-        shipment_number=run.shipment_number,
+        shipment_number=shipment_number,
         sku_code_id=run.sku_code_id,
         sku_version_id=run.sku_version_id,
         sku_code_snapshot=sku_code,

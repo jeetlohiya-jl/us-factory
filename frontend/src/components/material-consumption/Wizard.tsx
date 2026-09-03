@@ -83,7 +83,7 @@ function ScanBox({ placeholder, busy, onScan }: { placeholder: string; busy: boo
  * scoped to this one entry's own pallet set instead of the whole record's.
  */
 function MachineEntryPanel({
-  entry, index, canEdit, canRemove, busy, onScanPrimary, onScanSecondary, onRemovePallet, onQuantityChange, onRecordEndTime, onRemoveEntry,
+  entry, index, canEdit, canRemove, busy, onScanPrimary, onScanSecondary, onRemovePallet, onQuantityChange, onRemoveEntry,
 }: {
   entry: MaterialConsumptionMachineEntry;
   index: number;
@@ -94,7 +94,6 @@ function MachineEntryPanel({
   onScanSecondary: (category: SecondaryMaterialCategory, payload: string) => void;
   onRemovePallet: (rowId: string) => void;
   onQuantityChange: (rowId: string, value: string) => void;
-  onRecordEndTime: () => void;
   onRemoveEntry: () => void;
 }) {
   const [secondaryCategory, setSecondaryCategory] = useState<SecondaryMaterialCategory | "">("");
@@ -195,14 +194,15 @@ function MachineEntryPanel({
         </div>
       )}
 
-      {/* End Time: a small, low-emphasis control tucked at the bottom of the
-          machine's box -- Start Time isn't shown at all here since it's
-          stamped automatically the moment the first pallet is scanned. */}
+      {/* End Time: read-only here -- it's no longer recorded by hand. It's
+          stamped automatically (this same device-clock convention as Start
+          Time) the moment Production saves the run this machine feeds, so
+          this is just a status line, not a control. */}
       <div style={{ marginTop: 16, paddingTop: 12, borderTop: "1px solid var(--rule)", display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10 }}>
         {entry.end_time ? (
           <span className="mono" style={{ fontSize: 12.5, opacity: 0.7 }}>Ended {formatTime12h(entry.end_time)}</span>
-        ) : canEdit && hasPrimary && entry.start_time ? (
-          <button type="button" className="btn-tertiary" style={{ cursor: "pointer" }} disabled={busy} onClick={onRecordEndTime}>Record End Time</button>
+        ) : hasPrimary && entry.start_time ? (
+          <span className="hint-text" style={{ fontSize: 12.5 }}>Ends automatically once Production saves this run</span>
         ) : null}
       </div>
     </div>
@@ -280,19 +280,6 @@ export default function MaterialConsumptionWizard({
       setDetail(updated);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to update quantity");
-    }
-  }
-
-  async function handleRecordEndTime(entryId: string) {
-    setBusy(true);
-    setError(null);
-    try {
-      const updated = await api.recordMaterialConsumptionEntryEndTime(mcId, entryId, nowHHMM());
-      setDetail(updated);
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Failed to record end time");
-    } finally {
-      setBusy(false);
     }
   }
 
@@ -448,7 +435,6 @@ export default function MaterialConsumptionWizard({
                   onScanSecondary={(cat, payload) => handleSecondaryScan(entry.id, cat, payload)}
                   onRemovePallet={handleRemovePallet}
                   onQuantityChange={handleQuantityChange}
-                  onRecordEndTime={() => handleRecordEndTime(entry.id)}
                   onRemoveEntry={() => handleRemoveMachineEntry(entry.id)}
                 />
               ))}
@@ -467,9 +453,16 @@ export default function MaterialConsumptionWizard({
                 {canEdit && <button className="btn btn-ghost" onClick={() => setPage(1)}>← Back</button>}
                 {canEdit && <button className="btn btn-secondary" disabled={busy} onClick={handleSaveDraft}>Save Draft</button>}
                 {canEdit && (
-                  <button className="btn btn-primary" disabled={busy || !allEntriesReady} onClick={handleFinalize}>
-                    Finalize Record
-                  </button>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+                    <button className="btn btn-primary" disabled={busy || !allEntriesReady} onClick={handleFinalize}>
+                      Finalize Record
+                    </button>
+                    {!allEntriesReady && detail.machine_entries.some((e) => e.start_time) && (
+                      <span className="hint-text" style={{ fontSize: 12 }}>
+                        Waiting on Production to save this shift&apos;s run (sets each machine&apos;s End Time).
+                      </span>
+                    )}
+                  </div>
                 )}
               </>
             )}

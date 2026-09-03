@@ -10,7 +10,7 @@ Generation.
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session, joinedload
 
 from app.db.session import get_db
@@ -18,6 +18,8 @@ from app.db import models
 from app.api import schemas
 from app.api.deps import get_current_user
 from app.adapters.auth.base import AuthenticatedUser
+from app.domain import material_consumption_service as mc_svc
+from app.domain import qr_generation_service
 
 router = APIRouter(prefix="/api/v1/production-runs", tags=["production-runs"])
 
@@ -50,25 +52,37 @@ def _serialize(run: models.ProductionRun) -> schemas.ProductionRunOut:
 
 @router.get("", response_model=list[schemas.ProductionRunOut])
 def list_production_runs(
+    # `page`/`page_size` are optional and default to unbounded (None) --
+    # this endpoint doubles as the full dropdown source for FG QR
+    # Generation's "Production feeds FG QR Generation" picker
+    # (frontend/src/app/fg-qr-generation/page.tsx), which needs every run,
+    # not a page of them. Callers that DO want a bounded page (matching the
+    # pagination pattern used elsewhere) can pass page=1 to opt in.
+    page: int | None = Query(default=None, ge=1),
+    page_size: int = Query(default=50, ge=1, le=500),
     db: Session = Depends(get_db),
     _current_user: AuthenticatedUser = Depends(get_current_user),
 ):
-    runs = (
-        db.query(models.ProductionRun)
+    # `has_fg_qr` folded into the main query as a correlated EXISTS
+    # subquery instead of a second full-table query over
+    # qr_generation_records (finding #3 in PERF_AUDIT.md) -- one round trip
+    # instead of two.
+    has_fg_qr_expr = (
+        db.query(models.QrGenerationRecord.id)
+        .filter(models.QrGenerationRecord.source_production_run_id == models.ProductionRun.id)
+        .exists()
+    )
+    q = (
+        db.query(models.ProductionRun, has_fg_qr_expr.label("has_fg_qr"))
         .options(joinedload(models.ProductionRun.sku_code), joinedload(models.ProductionRun.sku_version))
         .order_by(models.ProductionRun.created_at.desc())
-        .all()
     )
-    fg_qr_run_ids = {
-        r.source_production_run_id
-        for r in db.query(models.QrGenerationRecord.source_production_run_id)
-        .filter(models.QrGenerationRecord.source_production_run_id.isnot(None))
-        .all()
-    }
+    if page is not None:
+        q = q.offset((page - 1) * page_size).limit(page_size)
     out = []
-    for run in runs:
+    for run, has_fg_qr in q.all():
         item = _serialize(run)
-        item.has_fg_qr = run.id in fg_qr_run_ids
+        item.has_fg_qr = bool(has_fg_qr)
         out.append(item)
     return out
 
@@ -137,7 +151,15 @@ def save_production_run(
     """
     run = (
         db.query(models.ProductionRun)
-        .options(joinedload(models.ProductionRun.wastage_entries))
+        .options(
+            joinedload(models.ProductionRun.wastage_entries),
+            joinedload(models.ProductionRun.sku_code),
+            joinedload(models.ProductionRun.sku_version),
+            joinedload(models.ProductionRun.material_consumptions)
+            .joinedload(models.MaterialConsumption.machine_entries)
+            .joinedload(models.MaterialConsumptionMachineEntry.pallets)
+            .joinedload(models.MaterialConsumptionPallet.pallet),
+        )
         .filter(models.ProductionRun.id == run_id)
         .first()
     )
@@ -166,6 +188,23 @@ def save_production_run(
 
     if run.status == "pending":
         run.status = "saved"
+
+    # Per explicit direction: saving this record IS the end of work for
+    # every machine that fed it -- stamp end_time on every not-yet-ended
+    # Material Consumption machine entry linked to this run instead of
+    # requiring a separate manual "Record End Time" step there. Runs every
+    # save (not just the pending->saved transition) so a machine that
+    # started after the run was first saved still gets its end_time.
+    mc_svc.stamp_end_times_for_production_run(db, run, client_time=payload.client_time)
+
+    # Per explicit direction: FG Pallets Generated, once recorded here, IS
+    # what populates FG QR Generation (and, once that batch is generated,
+    # FG Storage's pending list) -- the operator no longer has to separately
+    # trigger it. Idempotent find-or-create/refresh, mirroring exactly how
+    # an Accepted Inward QC auto-populates RM QR Generation. Only bother
+    # once there's actually a positive pallet count to generate QR codes for.
+    if run.total_fg_pallets and run.total_fg_pallets > 0:
+        qr_generation_service.get_or_create_fg_qr_for_production_run(db, run)
 
     # Records who actually filled in and saved this record's editable
     # fields -- every save re-stamps this, not just the first, so the

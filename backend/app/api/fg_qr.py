@@ -1,6 +1,7 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import Date, func
 from sqlalchemy.orm import Session, joinedload
 
 from app.db.session import get_db
@@ -45,22 +46,25 @@ def _get_or_404(db: Session, rec_id: uuid.UUID) -> models.QrGenerationRecord:
     return rec
 
 
-@router.get("", response_model=list[schemas.QrGenerationListItemOut])
+@router.get("")
 def list_fg_qr(
     search: str = Query(""), date: str = Query(""), sku: str = Query(""),
+    page: int = Query(default=1, ge=1), page_size: int = Query(default=50, ge=1, le=200),
     db: Session = Depends(get_db), _perm=Depends(require("view")),
 ):
     q = db.query(models.QrGenerationRecord).filter(models.QrGenerationRecord.qr_type == "fg")
     if search:
         like = f"%{search.lower()}%"
         q = q.filter((models.QrGenerationRecord.shipment_number.ilike(like)) | (models.QrGenerationRecord.sku_code_snapshot.ilike(like)))
-    q = q.order_by(models.QrGenerationRecord.created_at.desc())
-    recs = q.all()
     if date:
-        recs = [r for r in recs if r.created_at.date().isoformat() == date]
+        q = q.filter(func.cast(models.QrGenerationRecord.created_at, Date) == date)
     if sku:
-        recs = [r for r in recs if sku.lower() in (r.sku_code_snapshot or "").lower()]
-    return [serialize_qr_list_item(r) for r in recs]
+        q = q.filter(models.QrGenerationRecord.sku_code_snapshot.ilike(f"%{sku}%"))
+    total_all = db.query(func.count(models.QrGenerationRecord.id)).filter(models.QrGenerationRecord.qr_type == "fg").scalar()
+    matched = q.count()
+    recs = q.order_by(models.QrGenerationRecord.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    items = [serialize_qr_list_item(r) for r in recs]
+    return {"items": items, "matched_count": matched, "total_count": total_all}
 
 
 @router.get("/{rec_id}", response_model=schemas.QrGenerationDetailOut)

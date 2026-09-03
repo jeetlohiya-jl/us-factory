@@ -22,6 +22,7 @@ function MaterialConsumptionPageContent() {
   const me = useMe();
   const perms = me?.permissions.material_consumption;
   const [records, setRecords] = useState<MaterialConsumptionListItem[]>([]);
+  const [matchedCount, setMatchedCount] = useState(0);
   const [machines, setMachines] = useState<Machine[]>([]);
   const [shifts, setShifts] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -43,7 +44,8 @@ function MaterialConsumptionPageContent() {
         api.machines(),
         api.materialConsumptionShifts(),
       ]);
-      setRecords(recs);
+      setRecords(recs.items);
+      setMatchedCount(recs.matched_count);
       setMachines(machineList);
       setShifts(shiftList);
     } catch (e) {
@@ -142,7 +144,7 @@ function MaterialConsumptionPageContent() {
             )}
           </div>
         </div>
-        <div className="showing-count">{loading ? "Loading…" : `Showing ${records.length} of ${records.length} records`}</div>
+        <div className="showing-count">{loading ? "Loading…" : `Showing ${records.length} of ${matchedCount} records`}</div>
       </div>
 
       {error && <div className="error-banner">{error}</div>}

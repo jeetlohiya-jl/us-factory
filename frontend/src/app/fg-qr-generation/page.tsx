@@ -42,7 +42,7 @@ function FgQrGenerationPageContent() {
     setLoadError(null);
     try {
       const [qrRes, runsRes] = await Promise.all([api.listFgQr({ search }), api.listProductionRuns()]);
-      setItems(qrRes);
+      setItems(qrRes.items);
       setRuns(runsRes);
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : "Failed to load records");

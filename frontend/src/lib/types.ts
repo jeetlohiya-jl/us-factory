@@ -495,6 +495,10 @@ export interface ProductionSavePayload {
   rejection_adhesion_issue: number;
   total_fg_pallets: number;
   wastage_entries: { machine_id: string | null; trays: number | null; reason: string | null }[];
+  // This device's own clock ("HH:MM") -- saving this record now stamps
+  // end_time on every Material Consumption machine entry it feeds, same
+  // convention as start_time (see Wizard.tsx's nowHHMM()).
+  client_time?: string;
 }
 
 export interface ProductionDetail {

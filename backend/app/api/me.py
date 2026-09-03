@@ -25,14 +25,13 @@ def _perm_dict(perm: models.ModulePermission | None) -> dict:
 
 @router.get("/me")
 def me(current_user: AuthenticatedUser = Depends(get_current_user), db: Session = Depends(get_db)):
-    perms = {}
-    for module in MODULES:
-        row = (
-            db.query(models.ModulePermission)
-            .filter(models.ModulePermission.user_id == current_user.user_id, models.ModulePermission.module == module)
-            .first()
-        )
-        perms[module] = _perm_dict(row)
+    rows = (
+        db.query(models.ModulePermission)
+        .filter(models.ModulePermission.user_id == current_user.user_id, models.ModulePermission.module.in_(MODULES))
+        .all()
+    )
+    rows_by_module = {row.module: row for row in rows}
+    perms = {module: _perm_dict(rows_by_module.get(module)) for module in MODULES}
     return {
         "user_id": current_user.user_id,
         "email": current_user.email,

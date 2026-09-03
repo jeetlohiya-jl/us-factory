@@ -123,7 +123,7 @@ def set_machine_entry_machine(db: Session, mc: models.MaterialConsumption, entry
 
 def add_primary_pallet(
     db: Session, mc: models.MaterialConsumption, entry: models.MaterialConsumptionMachineEntry,
-    raw_scan: str, client_time: str | None = None,
+    raw_scan: str, client_time: str | None = None, actor_user_id=None,
 ) -> models.MaterialConsumptionPallet:
     if mc.status != "draft":
         raise MaterialConsumptionError("This Material Consumption record has already been saved and cannot be changed.")
@@ -173,6 +173,19 @@ def add_primary_pallet(
                 import datetime as _dt
                 now = _dt.datetime.now()
                 entry.start_time = f"{now.hour:02d}:{now.minute:02d}"
+
+        # Per explicit direction: a draft record's data should be visible on
+        # Production and IPQC as soon as it exists, not only once the whole
+        # record is finalized. The very first primary-pallet scan is the
+        # earliest point a Production Run has anything real to show (a
+        # Category/SKU + a machine), so find-or-create it (and its IPQC
+        # record) right here, exactly like finalize() already does -- this
+        # call is idempotent (found by date+shift), so finalize()'s own
+        # find-or-create later is just a no-op safety net, not a duplicate.
+        if not mc.production_run_id:
+            run = find_or_create_production_run(db, mc, actor_user_id=actor_user_id)
+            find_or_create_ipqc(db, run, mc)
+            mc.production_run_id = run.id
 
     row = models.MaterialConsumptionPallet(
         material_consumption_id=mc.id, machine_entry_id=entry.id, role="primary", pallet_id=pallet.id,
@@ -247,13 +260,35 @@ def set_secondary_quantity(db: Session, mc: models.MaterialConsumption, row_id, 
     return row
 
 
-def record_entry_end_time(db: Session, mc: models.MaterialConsumption, entry: models.MaterialConsumptionMachineEntry, end_time: str) -> None:
-    if mc.status != "draft":
-        raise MaterialConsumptionError("This Material Consumption record has already been saved and cannot be changed.")
-    if not entry.start_time:
-        raise MaterialConsumptionError("Scan at least one pallet on this machine first -- Start Time is recorded automatically.")
-    entry.end_time = end_time
-    db.flush()
+def stamp_end_times_for_production_run(db: Session, run: models.ProductionRun, client_time: str | None = None) -> int:
+    """
+    Per explicit direction: saving the Production Run (Rejection
+    Classification / Wastage / FG Pallets Generated -- see
+    app/api/production.py's save_production_run) IS the end of work for
+    every machine that fed it -- there is no separate manual "Record End
+    Time" step in Material Consumption any more. Stamps end_time (this same
+    HH:MM convention as start_time -- the saving device's own clock,
+    falling back to the server's if none was sent) onto every machine entry,
+    across every Material Consumption record linked to this run, that has a
+    start_time but no end_time yet. Idempotent and safe to call on every
+    save -- entries that already have an end_time (or never started) are
+    left untouched. Returns how many entries were stamped.
+    """
+    if client_time:
+        stamp = client_time
+    else:
+        import datetime as _dt
+        now = _dt.datetime.now()
+        stamp = f"{now.hour:02d}:{now.minute:02d}"
+    count = 0
+    for mc in run.material_consumptions:
+        for entry in mc.machine_entries:
+            if entry.start_time and not entry.end_time:
+                entry.end_time = stamp
+                count += 1
+    if count:
+        db.flush()
+    return count
 
 
 def is_blank(mc: models.MaterialConsumption) -> bool:
@@ -288,7 +323,9 @@ def find_or_create_production_run(db: Session, mc: models.MaterialConsumption, a
     attach to the same run. category/SKU snapshot onto the run come from
     the record's first machine entry that has them set. `created_by` is
     only set the first time the run is created (by whichever Material
-    Consumption finalize first spawns it) -- this is what the Production
+    Consumption record's first primary-pallet scan spawns it -- see
+    add_primary_pallet, which calls this as soon as the record has enough
+    to show, well before it's finalized) -- this is what the Production
     module surfaces as "Operator", since there is no separate manual
     Production entry step to collect one."""
     run = (
@@ -406,7 +443,10 @@ def finalize(db: Session, mc: models.MaterialConsumption, actor_user_id=None) ->
         if not entry.start_time:
             raise MaterialConsumptionError(f"Start Time is missing for {label} -- scan at least one pallet first, it's recorded automatically.")
         if not entry.end_time:
-            raise MaterialConsumptionError(f"Record the End Time for {label} before this record can be saved.")
+            raise MaterialConsumptionError(
+                f"{label}'s End Time is set automatically once its Production Run is saved -- "
+                "save the Production Run for this shift before finalizing this record."
+            )
 
     all_pallets = _all_pallets(mc)
     for row in all_pallets:

@@ -29,6 +29,7 @@ function IpqcPageContent() {
   const perms = me?.permissions.ipqc;
 
   const [records, setRecords] = useState<IpqcListItem[]>([]);
+  const [matchedCount, setMatchedCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -50,8 +51,9 @@ function IpqcPageContent() {
     setLoading(true);
     setError(null);
     try {
-      const recs = await api.listIpqc({ search, date, shift, status });
-      setRecords(recs);
+      const { items, matched_count } = await api.listIpqc({ search, date, shift, status });
+      setRecords(items);
+      setMatchedCount(matched_count);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load records");
     } finally {
@@ -139,7 +141,7 @@ function IpqcPageContent() {
             )}
           </div>
         </div>
-        <div className="showing-count">{loading ? "Loading…" : `Showing ${records.length} of ${records.length} records`}</div>
+        <div className="showing-count">{loading ? "Loading…" : `Showing ${records.length} of ${matchedCount} records`}</div>
       </div>
 
       {error && <div className="error-banner">{error}</div>}
@@ -156,30 +158,44 @@ function IpqcPageContent() {
             {records.length === 0 ? (
               <tr className="empty-row"><td colSpan={7}>{loading ? "Loading…" : "No records match your search/filters."}</td></tr>
             ) : (
-              records.map((r) => (
-                <tr key={r.id} className={r.status === "pending" ? "row-pending" : ""}>
-                  <td className="mono">{r.shipment_number || "—"}</td>
-                  <td className="mono">{r.sku_code || "—"}</td>
-                  <td>{r.sku_version || "—"}</td>
-                  <td>{r.shift_incharge || "—"}</td>
-                  <td><span className={`badge ${r.status === "approved" ? "approved" : r.status === "hold" ? "hold" : r.status === "pending" ? "pending" : "draft"}`}>{r.status.charAt(0).toUpperCase() + r.status.slice(1)}</span></td>
-                  <td>{r.date || "—"}</td>
-                  <td>
-                    <span className="icon-actions">
-                      {canView(r.status) && (
-                        <a className="btn-tertiary" style={{ cursor: "pointer", marginRight: 10 }} onClick={() => openDetail(r.id, "view")}>View →</a>
-                      )}
-                      {perms?.can_edit && (
-                        <button className="icon-btn" title="Fill in" onClick={() => openDetail(r.id, "edit")}>
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4z" />
-                          </svg>
-                        </button>
-                      )}
-                    </span>
-                  </td>
-                </tr>
-              ))
+              records.map((r) => {
+                // Same row-tap convention as Production: while a record is
+                // still Draft/Pending (nothing finished to review yet),
+                // tapping the row jumps straight into the fill-in form.
+                // Once it's Hold/Approved, tapping opens the read-only view
+                // instead -- editing from there on only happens via the
+                // explicit pencil action.
+                const rowMode: "view" | "edit" = canView(r.status) ? "view" : (perms?.can_edit ? "edit" : "view");
+                return (
+                  <tr
+                    key={r.id}
+                    className={r.status === "pending" ? "row-pending" : ""}
+                    style={{ cursor: "pointer" }}
+                    onClick={() => openDetail(r.id, rowMode)}
+                  >
+                    <td className="mono">{r.shipment_number || "—"}</td>
+                    <td className="mono">{r.sku_code || "—"}</td>
+                    <td>{r.sku_version || "—"}</td>
+                    <td>{r.shift_incharge || "—"}</td>
+                    <td><span className={`badge ${r.status === "approved" ? "approved" : r.status === "hold" ? "hold" : r.status === "pending" ? "pending" : "draft"}`}>{r.status.charAt(0).toUpperCase() + r.status.slice(1)}</span></td>
+                    <td>{r.date || "—"}</td>
+                    <td>
+                      <span className="icon-actions">
+                        {canView(r.status) && (
+                          <a className="btn-tertiary" style={{ cursor: "pointer", marginRight: 10 }} onClick={(e) => { e.stopPropagation(); openDetail(r.id, "view"); }}>View →</a>
+                        )}
+                        {perms?.can_edit && (
+                          <button className="icon-btn" title="Fill in" onClick={(e) => { e.stopPropagation(); openDetail(r.id, "edit"); }}>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4z" />
+                            </svg>
+                          </button>
+                        )}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
