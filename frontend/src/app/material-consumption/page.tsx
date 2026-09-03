@@ -5,6 +5,8 @@ import { api } from "@/lib/api";
 import { useMe } from "@/lib/useMe";
 import type { MaterialConsumptionListItem, MaterialConsumptionDetail, Machine } from "@/lib/types";
 import MaterialConsumptionWizard, { formatTime12h } from "@/components/material-consumption/Wizard";
+import MoreMenu from "@/components/inward-vehicle-inspection/MoreMenu";
+import ConfirmDialog from "@/components/inward-vehicle-inspection/ConfirmDialog";
 
 const CATEGORY_LABELS: Record<string, string> = { tray: "Base Tray", fgtray: "FG Non-Padded Tray" };
 
@@ -34,6 +36,8 @@ function MaterialConsumptionPageContent() {
   const [showFilters, setShowFilters] = useState(false);
 
   const [openMc, setOpenMc] = useState<MaterialConsumptionDetail | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<MaterialConsumptionListItem | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -90,14 +94,14 @@ function MaterialConsumptionPageContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
-  async function handleDelete(id: string, ev: React.MouseEvent) {
-    ev.stopPropagation();
-    if (!confirm("Delete this Material Consumption record?")) return;
+  async function confirmDelete() {
+    if (!deleteTarget) return;
     try {
-      await api.deleteMaterialConsumption(id);
+      await api.deleteMaterialConsumption(deleteTarget.id);
+      setDeleteTarget(null);
       refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to delete record");
+      setDeleteError(e instanceof Error ? e.message : "Failed to delete record");
     }
   }
 
@@ -182,11 +186,11 @@ function MaterialConsumptionPageContent() {
                     )}
                   </td>
                   <td><span className={`badge ${r.status === "saved" ? "approved" : "draft"}`}>{r.status === "saved" ? "Saved" : "Draft"}</span></td>
-                  <td style={{ display: "flex", gap: 10, alignItems: "center", justifyContent: "flex-end", whiteSpace: "nowrap" }}>
-                    <a className="btn-tertiary">View →</a>
-                    {perms?.can_delete && (
-                      <a className="btn-tertiary" style={{ color: "var(--red)" }} onClick={(e) => handleDelete(r.id, e)}>Delete</a>
-                    )}
+                  <td onClick={(e) => e.stopPropagation()}>
+                    <MoreMenu
+                      canDelete={!!perms?.can_delete}
+                      onDelete={() => setDeleteTarget(r)}
+                    />
                   </td>
                 </tr>
               ))
@@ -204,6 +208,25 @@ function MaterialConsumptionPageContent() {
           permissions={perms || { can_view: true, can_create: false, can_edit: false, can_delete: false, can_approve: false, can_fill_section: false }}
           onClose={() => setOpenMc(null)}
           onSaved={refresh}
+        />
+      )}
+
+      {deleteTarget && !deleteError && (
+        <ConfirmDialog
+          title="Delete this record?"
+          message="This will permanently delete this Material Consumption record. This cannot be undone."
+          confirmLabel="Delete"
+          danger
+          onConfirm={confirmDelete}
+          onCancel={() => setDeleteTarget(null)}
+        />
+      )}
+      {deleteError && (
+        <ConfirmDialog
+          title="Can't delete this record"
+          message=""
+          blockedNote={deleteError}
+          onCancel={() => { setDeleteError(null); setDeleteTarget(null); }}
         />
       )}
     </>

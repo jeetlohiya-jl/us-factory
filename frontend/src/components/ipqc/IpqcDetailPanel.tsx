@@ -65,13 +65,17 @@ function blocksToEditable(blocks: IpqcDetail["check_blocks"]): EditableBlock[] {
  * (backend/app/api/ipqc.py's PUT route).
  */
 export default function IpqcDetailPanel({
-  record, onClose, canEdit, onSaved, mode,
+  record, onClose, canEdit, onSaved, mode, onEdit,
 }: {
   record: IpqcDetail;
   onClose: () => void;
   canEdit: boolean;
   onSaved: () => void;
   mode: "view" | "edit";
+  // Same convention as Inward QC's RecordDetail: view mode gets its own
+  // "Edit" action in the footer instead of forcing a close-and-reopen from
+  // the list's More menu.
+  onEdit?: () => void;
 }) {
   const [shiftIncharge, setShiftIncharge] = useState(record.shift_incharge || "");
   const [blocks, setBlocks] = useState<EditableBlock[]>(blocksToEditable(record.check_blocks));
@@ -285,6 +289,9 @@ export default function IpqcDetailPanel({
                 {saving === "final" ? "Saving…" : "Save"}
               </button>
             </div>
+          )}
+          {mode === "view" && canEdit && onEdit && (
+            <button className="btn btn-primary" onClick={onEdit}>Edit</button>
           )}
         </div>
       </div>

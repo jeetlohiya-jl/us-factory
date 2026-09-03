@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import { useMe } from "@/lib/useMe";
 import type { IpqcListItem, IpqcDetail } from "@/lib/types";
 import IpqcDetailPanel from "@/components/ipqc/IpqcDetailPanel";
+import MoreMenu from "@/components/inward-vehicle-inspection/MoreMenu";
 
 const SHIFTS = ["Shift A", "Shift B", "Shift C"];
 const STATUSES = [
@@ -85,7 +86,7 @@ function IpqcPageContent() {
     if (openId) {
       api.getIpqc(openId).then((rec) => {
         setOpenRecord(rec);
-        setPanelMode(canView(rec.status) ? "view" : "edit");
+        setPanelMode(canView(rec.status) || !perms?.can_fill_section ? "view" : "edit");
       }).catch((e) => setError(e instanceof Error ? e.message : "Failed to load record"));
       router.replace("/ipqc");
     }
@@ -159,13 +160,13 @@ function IpqcPageContent() {
               <tr className="empty-row"><td colSpan={7}>{loading ? "Loading…" : "No records match your search/filters."}</td></tr>
             ) : (
               records.map((r) => {
-                // Same row-tap convention as Production: while a record is
-                // still Draft/Pending (nothing finished to review yet),
-                // tapping the row jumps straight into the fill-in form.
-                // Once it's Hold/Approved, tapping opens the read-only view
-                // instead -- editing from there on only happens via the
-                // explicit pencil action.
-                const rowMode: "view" | "edit" = canView(r.status) ? "view" : (perms?.can_edit ? "edit" : "view");
+                // Same convention as Inward QC/Production: while a record
+                // is still Draft/Pending (nothing finished to review yet),
+                // tapping the row jumps straight into the fill-in form --
+                // the dominant action. Once it's Hold/Approved, tapping
+                // opens the read-only view instead; editing from there on
+                // only happens via the More menu's Edit action.
+                const rowMode: "view" | "edit" = canView(r.status) || !perms?.can_fill_section ? "view" : "edit";
                 return (
                   <tr
                     key={r.id}
@@ -179,19 +180,11 @@ function IpqcPageContent() {
                     <td>{r.shift_incharge || "—"}</td>
                     <td><span className={`badge ${r.status === "approved" ? "approved" : r.status === "hold" ? "hold" : r.status === "pending" ? "pending" : "draft"}`}>{r.status.charAt(0).toUpperCase() + r.status.slice(1)}</span></td>
                     <td>{r.date || "—"}</td>
-                    <td>
-                      <span className="icon-actions">
-                        {canView(r.status) && (
-                          <a className="btn-tertiary" style={{ cursor: "pointer", marginRight: 10 }} onClick={(e) => { e.stopPropagation(); openDetail(r.id, "view"); }}>View →</a>
-                        )}
-                        {perms?.can_edit && (
-                          <button className="icon-btn" title="Fill in" onClick={(e) => { e.stopPropagation(); openDetail(r.id, "edit"); }}>
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4z" />
-                            </svg>
-                          </button>
-                        )}
-                      </span>
+                    <td onClick={(e) => e.stopPropagation()}>
+                      <MoreMenu
+                        canEdit={!!perms?.can_fill_section}
+                        onEdit={() => openDetail(r.id, "edit")}
+                      />
                     </td>
                   </tr>
                 );
@@ -205,9 +198,10 @@ function IpqcPageContent() {
         <IpqcDetailPanel
           record={openRecord}
           onClose={() => setOpenRecord(null)}
-          canEdit={!!perms?.can_edit}
+          canEdit={!!perms?.can_fill_section}
           onSaved={refresh}
           mode={panelMode}
+          onEdit={() => setPanelMode("edit")}
         />
       )}
 

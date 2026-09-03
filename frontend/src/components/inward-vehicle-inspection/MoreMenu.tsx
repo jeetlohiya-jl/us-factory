@@ -11,10 +11,13 @@ import { useEffect, useRef, useState } from "react";
  *
  * onEdit/canEdit are optional — omit them (e.g. from a list that only
  * supports deleting a record, not editing it) to render a Delete-only menu.
+ * onDelete/canDelete are likewise optional — omit them (e.g. Production/
+ * IPQC, whose records are auto-created and never deletable) to render an
+ * Edit-only menu instead.
  */
 export default function MoreMenu({
   onEdit, onDelete, canEdit, canDelete,
-}: { onEdit?: () => void; onDelete: () => void; canEdit?: boolean; canDelete: boolean }) {
+}: { onEdit?: () => void; onDelete?: () => void; canEdit?: boolean; canDelete?: boolean }) {
   const [open, setOpen] = useState(false);
   const [coords, setCoords] = useState<{ top: number; right: number } | null>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -66,7 +69,9 @@ export default function MoreMenu({
           {onEdit && (
             <button disabled={!canEdit} onClick={() => { setOpen(false); onEdit(); }}>Edit</button>
           )}
-          <button className="danger" disabled={!canDelete} onClick={() => { setOpen(false); onDelete(); }}>Delete</button>
+          {onDelete && (
+            <button className="danger" disabled={!canDelete} onClick={() => { setOpen(false); onDelete(); }}>Delete</button>
+          )}
         </div>
       )}
     </div>

@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import { useMe } from "@/lib/useMe";
 import type { ProductionListItem, ProductionDetail, Machine } from "@/lib/types";
 import ProductionDetailPanel from "@/components/production/ProductionDetailPanel";
+import MoreMenu from "@/components/inward-vehicle-inspection/MoreMenu";
 
 const SHIFTS = ["Shift A", "Shift B", "Shift C"];
 
@@ -149,15 +150,13 @@ function ProductionPageContent() {
               <tr className="empty-row"><td colSpan={10}>{loading ? "Loading…" : "No records match your search/filters."}</td></tr>
             ) : (
               records.map((r) => {
-                // Row tap mirrors the dominant action: while a run is still
+                // Same convention as Inward QC: while a run is still
                 // Pending (rejections/wastage/FG pallets not yet logged),
-                // tapping anywhere jumps straight into the fill-in form,
-                // same as the pencil. Once it's been Saved, tapping instead
-                // opens the read-only view -- editing a saved run is only
-                // ever reached through the explicit pencil/Edit action from
-                // here on, matching the More-menu-to-edit convention used
-                // elsewhere in the app.
-                const rowMode: "view" | "edit" = r.status === "pending" && perms?.can_edit ? "edit" : "view";
+                // tapping the row jumps straight into the fill-in form --
+                // the dominant action. Once it's been Saved, tapping opens
+                // the read-only view instead; editing a saved run from
+                // there on only happens via the More menu's Edit action.
+                const rowMode: "view" | "edit" = r.status === "pending" && perms?.can_fill_section ? "edit" : "view";
                 return (
                   <tr
                     key={r.id}
@@ -174,17 +173,11 @@ function ProductionPageContent() {
                     <td>{r.total_rejections || "—"}</td>
                     <td>{r.operator || "—"}</td>
                     <td>{r.date || "—"}</td>
-                    <td>
-                      <span className="icon-actions">
-                        <a className="btn-tertiary" style={{ cursor: "pointer", marginRight: 10 }} onClick={(e) => { e.stopPropagation(); openDetail(r.id, "view"); }}>View →</a>
-                        {perms?.can_edit && (
-                          <button className="icon-btn" title="Fill in" onClick={(e) => { e.stopPropagation(); openDetail(r.id, "edit"); }}>
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4z" />
-                            </svg>
-                          </button>
-                        )}
-                      </span>
+                    <td onClick={(e) => e.stopPropagation()}>
+                      <MoreMenu
+                        canEdit={!!perms?.can_fill_section}
+                        onEdit={() => openDetail(r.id, "edit")}
+                      />
                     </td>
                   </tr>
                 );
@@ -198,10 +191,11 @@ function ProductionPageContent() {
         <ProductionDetailPanel
           record={openRecord}
           onClose={() => setOpenRecord(null)}
-          canEdit={!!perms?.can_edit}
+          canEdit={!!perms?.can_fill_section}
           machines={machines}
           onSaved={refresh}
           mode={panelMode}
+          onEdit={() => setPanelMode("edit")}
         />
       )}
 

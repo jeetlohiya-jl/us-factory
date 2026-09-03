@@ -63,7 +63,10 @@ def save_ipqc_record(
     payload: schemas.IpqcSaveIn,
     db: Session = Depends(get_db),
     _current_user: AuthenticatedUser = Depends(get_current_user),
-    _perm: models.ModulePermission = Depends(require("edit")),
+    # Same convention as Inward QC / Inward Vehicle Inspection: the
+    # staff-facing "fill in this record" action is gated on
+    # can_fill_section, not can_edit (see 0017's migration note).
+    _perm: models.ModulePermission = Depends(require("fill_section")),
 ):
     """
     The single transactional write for IPQC: atomically saves Shift

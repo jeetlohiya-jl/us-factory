@@ -1,5 +1,46 @@
 # Factory OS — Change Summary (2026-09-03)
 
+## 0. Round 2: fixed a real permissions bug + standardized row navigation across every module
+
+Prompted by your screenshots. Two separate fixes:
+
+**Root-cause bug — Pending IPQC (and Production) opening read-only instead of the fill-in form.**
+No migration had ever seeded `module_permissions` rows for the `production` or `ipqc`
+modules (every other module gets seeded when it's introduced — these two were missed).
+With no row, every user — including the admin — silently fell back to view-only, which is
+exactly the symptom in your screenshot. Fixed with a new migration
+(`backend/migrations/0017_production_ipqc_permissions.sql`) that seeds those rows, and
+switched `save_production_run` / `save_ipqc_record` to gate on `can_fill_section` instead
+of `can_edit` — matching how Inward QC / Inward Vehicle Inspection already gate their
+staff-facing "fill in this record" action, instead of being the one inconsistent pair of
+modules. The migration uses `ON CONFLICT ... DO UPDATE` (not `DO NOTHING`) so it also
+repairs any stray rows that may already exist for these modules in your Supabase
+instance, rather than silently skipping them.
+
+**UI consistency — one navigation pattern everywhere.** Per your note ("no view button",
+Image 2's Edit/Delete pattern, and the goal of one consistent system), every module list
+page now matches Inward QC's existing convention: tapping anywhere on a row opens that
+record's detail (the fill-in form while it's actionable, a read-only view once it's
+finalized/resolved), and a "⋯" menu (the same `MoreMenu` component Inward QC already
+uses) is the one place Edit and Delete live. No more separate "View →" links, no pencil
+icons, no per-page variation.
+- **Production, IPQC**: row → detail (edit while Pending/Draft, view once Saved/
+  Approved); `MoreMenu` now offers Edit (routes into the same panel's edit mode); the
+  detail panel itself also grew a footer Edit button so both entry points agree.
+- **Material Consumption**: row → detail; `MoreMenu` now offers Delete with the same
+  confirm/blocked-delete dialog Inward QC uses (previously a plain `window.confirm()`).
+- **RM/FG QR Generation**: the row itself is now clickable (previously only the "View →
+  / Generate QR →" text link was); that link is gone, `MoreMenu` (Delete) unchanged.
+- **RM/FG Storage**: removed the redundant "View →" column — the row was already
+  clickable; there's no delete action on storage records, so no `MoreMenu` was added
+  there.
+
+Scoping note: I left the SKUs / Vendors / Machines admin config pages as they are —
+they're inline-editable tables (edit a cell directly, no separate "record detail" to
+navigate to), a different interaction model from records like Production or IPQC, so the
+row-tap-opens-detail pattern doesn't apply there. Flag it if you'd like those brought in
+line too.
+
 ## 1. Material Consumption draft data now visible on Production & IPQC; end time set automatically
 
 - The Production Run + IPQC record for a shift are now find-or-created the moment the
@@ -72,17 +113,25 @@ embed-levels deep in the Postgrest schema and couldn't be pushed into a single
 server-side filter — they now filter over the current 50-row page instead of the whole
 table, a real improvement but not a complete fix; noted inline in `lib/api.ts`.
 
-## Migration to apply
+## Migrations to apply
 
-`backend/migrations/0016_perf_list_indexes.sql` is new — run it after the existing
-0001–0015 migrations (it's guarded with `IF NOT EXISTS`, safe to re-run).
+Two new migrations, run after the existing 0001–0015 in order:
+- `backend/migrations/0016_perf_list_indexes.sql` — new indexes, guarded with
+  `IF NOT EXISTS`, safe to re-run.
+- `backend/migrations/0017_production_ipqc_permissions.sql` — permission seed/repair for
+  Production & IPQC, safe to re-run (upserts, never downgrades an existing grant).
 
 ## Verification performed
 
 - End-to-end smoke test (draft → shift/machine set → scan pallet → confirmed Production
-  Run + IPQC auto-created while still draft → Production saved → confirmed end_time
-  stamped + FG QR batch auto-created with the right quantity → Material Consumption
-  finalized) run against a live FastAPI app + local Postgres.
+  Run + IPQC auto-created while still draft → Production saved under the new
+  `can_fill_section` gate → confirmed end_time stamped + FG QR batch auto-created with
+  the right quantity → Material Consumption finalized) run against a live FastAPI app +
+  local Postgres, re-run after the migration 0017 fix to confirm the permission change
+  doesn't regress the item 1/2 flow.
+- Confirmed migration 0017 actually corrects a pre-existing stray permissions row (not
+  just the empty-table case) by deliberately reproducing that condition locally and
+  re-running the migration.
 - `python3 -m py_compile` clean on every touched backend file.
 - `npx tsc --noEmit` clean (0 errors) on the frontend.
 - Performance findings re-measured against the same seeded dataset used for the audit

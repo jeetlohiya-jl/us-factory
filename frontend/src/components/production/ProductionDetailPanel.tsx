@@ -79,7 +79,7 @@ function sumRejections(rc: ProductionDetail["rejection_classification"]): number
  * from Pending to Saved, matching prodSaveRecord.
  */
 export default function ProductionDetailPanel({
-  record, onClose, canEdit, machines, onSaved, mode,
+  record, onClose, canEdit, machines, onSaved, mode, onEdit,
 }: {
   record: ProductionDetail;
   onClose: () => void;
@@ -87,6 +87,11 @@ export default function ProductionDetailPanel({
   machines: Machine[];
   onSaved: () => void;
   mode: "view" | "edit";
+  // Same convention as Inward QC's RecordDetail: view mode gets its own
+  // "Edit" action in the footer instead of forcing a close-and-reopen from
+  // the list's More menu, so switching from viewing to filling in this
+  // record doesn't need a trip back out.
+  onEdit?: () => void;
 }) {
   const [rc, setRc] = useState(record.rejection_classification);
   const [totalFgPallets, setTotalFgPallets] = useState<number | "">(record.total_fg_pallets || "");
@@ -389,6 +394,9 @@ export default function ProductionDetailPanel({
             <button className="btn btn-primary" disabled={saving} onClick={handleSave}>
               {saving ? "Saving…" : "Save"}
             </button>
+          )}
+          {!isEdit && canEdit && onEdit && (
+            <button className="btn btn-primary" onClick={onEdit}>Edit</button>
           )}
         </div>
       </div>

@@ -109,10 +109,10 @@ export default function RmStoragePage() {
       </div>
       <div className="card card-flush">
         <table className="data">
-          <thead><tr><th>Pallet Number</th><th>SKU Name</th><th>Location</th><th>Stored At</th><th></th></tr></thead>
+          <thead><tr><th>Pallet Number</th><th>SKU Name</th><th>Location</th><th>Stored At</th></tr></thead>
           <tbody>
             {records.length === 0 ? (
-              <tr className="empty-row"><td colSpan={5}>No pallets stored yet.</td></tr>
+              <tr className="empty-row"><td colSpan={4}>No pallets stored yet.</td></tr>
             ) : (
               records.map((r) => (
                 <tr key={r.id} style={{ cursor: "pointer" }} onClick={() => openStorageRecord(r.id)}>
@@ -120,7 +120,6 @@ export default function RmStoragePage() {
                   <td className="mono">{r.sku_code}</td>
                   <td className="mono">{r.location_display_id}</td>
                   <td>{new Date(r.stored_at).toLocaleString()}</td>
-                  <td><a className="btn-tertiary">View →</a></td>
                 </tr>
               ))
             )}
