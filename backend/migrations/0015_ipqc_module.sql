@@ -58,16 +58,27 @@ create table if not exists ipqc_block_defects (
 create index if not exists idx_ipqc_block_defects_block on ipqc_block_defects(block_id);
 
 -- Ownership must match every other transactional table (production_runs,
--- production_wastage_entries, ipqc_records itself, ...): the FastAPI
--- backend writes through the factory_app role, and RLS only lets a
--- non-owner role through when a policy explicitly permits it. These two
--- tables only ever get an insert/update/delete via ipqc.py's own
--- require("edit") check, not RLS, so factory_app must own them the same
--- way it owns their parent -- otherwise CREATE TABLE run by a different
--- role (e.g. a Supabase SQL editor session as postgres) silently leaves
--- factory_app unable to write at all.
-alter table ipqc_check_blocks owner to factory_app;
-alter table ipqc_block_defects owner to factory_app;
+-- production_wastage_entries, ipqc_records itself, ...): whatever role the
+-- FastAPI backend's own DB connection uses needs to write these tables
+-- without RLS getting in the way, and RLS only lets a non-owner role
+-- through when a policy explicitly permits it -- these two only ever get
+-- an insert/update/delete via ipqc.py's own require("edit") check, not
+-- RLS, so they must be owned the same way their parent (ipqc_records) is.
+--
+-- 'factory_app' is only a real role in the local dev sandbox (a stand-in
+-- for "the backend's app role" used to test this migration end to end --
+-- see the delivery notes). On the real Supabase project FastAPI connects
+-- via the service-role/postgres connection string, which already owns
+-- and bypasses RLS on every table it creates, so there is nothing to
+-- reassign there -- this block only fires where 'factory_app' actually
+-- exists, and is a no-op everywhere else (Supabase included).
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'factory_app') then
+    alter table ipqc_check_blocks owner to factory_app;
+    alter table ipqc_block_defects owner to factory_app;
+  end if;
+end $$;
 
 alter table ipqc_check_blocks enable row level security;
 alter table ipqc_block_defects enable row level security;

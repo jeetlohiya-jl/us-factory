@@ -45,26 +45,45 @@ function blocksToEditable(blocks: IpqcDetail["check_blocks"]): EditableBlock[] {
 }
 
 /**
- * IPQC detail view -- read-only Product/Shipment Details and traceability
- * (Production Run + Material Consumption links), plus editable Shift
- * Incharge and Check Time inspection blocks, matching the prototype's
- * panel-ipqc form exactly (IPQC_DEFECTS grid, Failure -> computed Result,
- * free-text Reason and Overall Result per block, "+ Add Another Record").
- * Saving posts the atomic write to FastAPI (backend/app/api/ipqc.py's PUT
- * route).
+ * IPQC detail view, opened in one of two modes (a pencil-icon "Edit" and a
+ * separate "View" action on the list row, since these records are always
+ * auto-created -- there's no "New Record" flow to fold this into):
+ *
+ * - "edit": the focused fill-in form -- Record Details + the Frequency/
+ *   Sample-count callout + editable Check Time inspection blocks. While the
+ *   record is still untouched (status "pending") the Product/Shipment
+ *   Details and Production & Material Consumption Source cards are hidden
+ *   here too -- there's nothing filled in yet worth showing, and the point
+ *   of this mode is to get the inspection done, not review context.
+ * - "view": the full read-only record exactly as the prototype's own
+ *   detail view shows it -- every autopopulated field, every check block,
+ *   and the traceability links back to Production/Material Consumption.
+ *   Only offered from the list once status is Hold or Approved, since a
+ *   Pending/Draft record has nothing finished to review yet.
+ *
+ * Saving (edit mode only) posts the atomic write to FastAPI
+ * (backend/app/api/ipqc.py's PUT route).
  */
 export default function IpqcDetailPanel({
-  record, onClose, canEdit, onSaved,
+  record, onClose, canEdit, onSaved, mode,
 }: {
   record: IpqcDetail;
   onClose: () => void;
   canEdit: boolean;
   onSaved: () => void;
+  mode: "view" | "edit";
 }) {
   const [shiftIncharge, setShiftIncharge] = useState(record.shift_incharge || "");
   const [blocks, setBlocks] = useState<EditableBlock[]>(blocksToEditable(record.check_blocks));
   const [saving, setSaving] = useState<"draft" | "final" | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Editing is only live in "edit" mode -- "view" always renders read-only,
+  // even for a user who otherwise has edit permission on this module.
+  const editable = mode === "edit" && canEdit;
+  // Nothing autopopulated is worth showing yet on an untouched record --
+  // hide the context cards until there's actually something in them.
+  const showContextCards = record.status !== "pending";
 
   function addBlock() {
     setBlocks((b) => [...b, { key: `new-${Date.now()}`, check_time: nowHHMM(), overall_result: "", defects: {} }]);
@@ -119,19 +138,21 @@ export default function IpqcDetailPanel({
           <button className="sp-close" onClick={onClose}>×</button>
         </div>
         <div className="sp-body">
-          <div className="detail-card">
-            <h3>Product and Shipment Details</h3>
-            <div className="detail-grid">
-              <Kv label="Shipment Number" value={record.shipment_number ? <span className="mono">{record.shipment_number}</span> : "—"} />
-              <Kv label="Batch Code" value={record.batch_code} />
-              <Kv label="Manufacturer Name" value={record.manufacturer} />
-              <Kv label="Shift" value={record.shift} />
-              <Kv label="Pad Color" value={record.pad_color} />
-              <Kv label="Weight of Pad with Base Material" value={record.weight} />
-              <Kv label="Dimensions of Pad" value={record.dimensions} />
-              <Kv label="Absorption Rate" value={record.absorption_rate} />
+          {showContextCards && (
+            <div className="detail-card">
+              <h3>Product and Shipment Details</h3>
+              <div className="detail-grid">
+                <Kv label="Shipment Number" value={record.shipment_number ? <span className="mono">{record.shipment_number}</span> : "—"} />
+                <Kv label="Batch Code" value={record.batch_code} />
+                <Kv label="Manufacturer Name" value={record.manufacturer} />
+                <Kv label="Shift" value={record.shift} />
+                <Kv label="Pad Color" value={record.pad_color} />
+                <Kv label="Weight of Pad with Base Material" value={record.weight} />
+                <Kv label="Dimensions of Pad" value={record.dimensions} />
+                <Kv label="Absorption Rate" value={record.absorption_rate} />
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="plan-callout">
             <div className="pc-item"><div className="k">Frequency</div><div className="v">Every 2 hours</div></div>
@@ -144,7 +165,7 @@ export default function IpqcDetailPanel({
               <Kv label="SKU Code" value={record.sku_code ? <span className="mono">{record.sku_code}</span> : "—"} />
               <Kv label="SKU Version" value={record.sku_version} />
               <Kv label="Shift Incharge" value={
-                canEdit ? (
+                editable ? (
                   <input type="text" value={shiftIncharge} placeholder="e.g. R. Fernandez" onChange={(e) => setShiftIncharge(e.target.value)} />
                 ) : (record.shift_incharge || "—")
               } />
@@ -184,7 +205,7 @@ export default function IpqcDetailPanel({
                               <td>{d.method}</td>
                               <td><ResultBadge failure={defect?.failure ?? null} /></td>
                               <td>
-                                {canEdit ? (
+                                {editable ? (
                                   <input
                                     type="number" placeholder="0"
                                     value={defect?.failure ?? ""}
@@ -193,7 +214,7 @@ export default function IpqcDetailPanel({
                                 ) : (defect?.failure ?? "—")}
                               </td>
                               <td>
-                                {canEdit ? (
+                                {editable ? (
                                   <input
                                     type="text" placeholder="Not applicable"
                                     value={defect?.reason ?? ""}
@@ -208,7 +229,7 @@ export default function IpqcDetailPanel({
                     </table>
                     <div className="field" style={{ marginTop: 14, maxWidth: 320 }}>
                       <label>Overall Result</label>
-                      {canEdit ? (
+                      {editable ? (
                         <input type="text" value={block.overall_result ?? ""} onChange={(e) => setOverall(bIdx, e.target.value)} />
                       ) : (
                         <div className="detail-kv-value">{block.overall_result || "—"}</div>
@@ -218,42 +239,44 @@ export default function IpqcDetailPanel({
                 </div>
               ))
             )}
-            {canEdit && (
+            {editable && (
               <button className="btn btn-secondary" onClick={addBlock} style={{ marginTop: 6 }}>+ Add Another Record</button>
             )}
           </div>
 
-          <div className="detail-card">
-            <h3>Production &amp; Material Consumption Source</h3>
-            <div className="detail-grid">
-              <Kv
-                label="Production Run"
-                value={record.production_run_number ? (
-                  <Link className="mono" href={`/production?open=${record.production_run_id}`} style={{ textDecoration: "underline" }}>
-                    {record.production_run_number} →
-                  </Link>
-                ) : "—"}
-              />
-              <Kv
-                label="Material Consumption"
-                value={record.material_consumptions.length === 0 ? "—" : (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                    {record.material_consumptions.map((mc) => (
-                      <Link key={mc.id} className="mono" href={`/material-consumption?open=${mc.id}`} style={{ textDecoration: "underline" }}>
-                        {mc.id.slice(0, 8)}… ({mc.status}) →
-                      </Link>
-                    ))}
-                  </div>
-                )}
-              />
+          {showContextCards && (
+            <div className="detail-card">
+              <h3>Production &amp; Material Consumption Source</h3>
+              <div className="detail-grid">
+                <Kv
+                  label="Production Run"
+                  value={record.production_run_number ? (
+                    <Link className="mono" href={`/production?open=${record.production_run_id}`} style={{ textDecoration: "underline" }}>
+                      {record.production_run_number} →
+                    </Link>
+                  ) : "—"}
+                />
+                <Kv
+                  label="Material Consumption"
+                  value={record.material_consumptions.length === 0 ? "—" : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                      {record.material_consumptions.map((mc) => (
+                        <Link key={mc.id} className="mono" href={`/material-consumption?open=${mc.id}`} style={{ textDecoration: "underline" }}>
+                          {mc.id.slice(0, 8)}… ({mc.status}) →
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+                />
+              </div>
             </div>
-          </div>
+          )}
 
           {error && <div className="error-banner">{error}</div>}
         </div>
         <div className="sp-foot">
           <button className="btn btn-ghost" onClick={onClose}>Close</button>
-          {canEdit && (
+          {editable && (
             <div className="sp-foot-right">
               <button className="btn btn-secondary" disabled={saving !== null} onClick={() => handleSave("draft")}>
                 {saving === "draft" ? "Saving…" : "Save Draft"}

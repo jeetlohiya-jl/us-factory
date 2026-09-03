@@ -34,6 +34,7 @@ function ProductionPageContent() {
   const [showFilters, setShowFilters] = useState(false);
 
   const [openRecord, setOpenRecord] = useState<ProductionDetail | null>(null);
+  const [panelMode, setPanelMode] = useState<"view" | "edit">("view");
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -57,20 +58,23 @@ function ProductionPageContent() {
     return () => clearTimeout(t);
   }, [refresh]);
 
-  async function openDetail(id: string) {
+  async function openDetail(id: string, mode: "view" | "edit") {
     try {
       const rec = await api.getProduction(id);
       setOpenRecord(rec);
+      setPanelMode(mode);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load record");
     }
   }
 
-  // Deep-link support, same convention as every other module's detail panel.
+  // Deep-link support, same convention as every other module's detail panel
+  // -- lands on View, since a link followed from elsewhere is for context,
+  // not to jump straight into filling in rejections/wastage.
   useEffect(() => {
     const openId = searchParams.get("open");
     if (openId) {
-      openDetail(openId);
+      openDetail(openId, "view");
       router.replace("/production");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -143,7 +147,7 @@ function ProductionPageContent() {
               <tr className="empty-row"><td colSpan={10}>{loading ? "Loading…" : "No records match your search/filters."}</td></tr>
             ) : (
               records.map((r) => (
-                <tr key={r.id} className={r.status === "pending" ? "row-pending" : ""} style={{ cursor: "pointer" }} onClick={() => openDetail(r.id)}>
+                <tr key={r.id} className={r.status === "pending" ? "row-pending" : ""}>
                   <td className="mono">{r.run_number}</td>
                   <td className="mono">{r.shipment_number || "—"}</td>
                   <td>{r.machines || "—"}</td>
@@ -153,7 +157,18 @@ function ProductionPageContent() {
                   <td>{r.total_rejections || "—"}</td>
                   <td>{r.operator || "—"}</td>
                   <td>{r.date || "—"}</td>
-                  <td><a className="btn-tertiary">View →</a></td>
+                  <td>
+                    <span className="icon-actions">
+                      <a className="btn-tertiary" style={{ cursor: "pointer", marginRight: 10 }} onClick={() => openDetail(r.id, "view")}>View →</a>
+                      {perms?.can_edit && (
+                        <button className="icon-btn" title="Fill in" onClick={() => openDetail(r.id, "edit")}>
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4z" />
+                          </svg>
+                        </button>
+                      )}
+                    </span>
+                  </td>
                 </tr>
               ))
             )}
@@ -168,6 +183,7 @@ function ProductionPageContent() {
           canEdit={!!perms?.can_edit}
           machines={machines}
           onSaved={refresh}
+          mode={panelMode}
         />
       )}
 

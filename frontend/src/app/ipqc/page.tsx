@@ -39,6 +39,12 @@ function IpqcPageContent() {
   const [showFilters, setShowFilters] = useState(false);
 
   const [openRecord, setOpenRecord] = useState<IpqcDetail | null>(null);
+  const [panelMode, setPanelMode] = useState<"view" | "edit">("edit");
+
+  // "View" only makes sense once there's something finished to review --
+  // Pending/Draft records have nothing filled in yet, so the pencil (fill
+  // in) is the only action offered until the record reaches Hold/Approved.
+  const canView = (s: string) => s === "hold" || s === "approved";
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -58,20 +64,27 @@ function IpqcPageContent() {
     return () => clearTimeout(t);
   }, [refresh]);
 
-  async function openDetail(id: string) {
+  async function openDetail(id: string, mode: "view" | "edit") {
     try {
       const rec = await api.getIpqc(id);
       setOpenRecord(rec);
+      setPanelMode(mode);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load record");
     }
   }
 
-  // Deep-link support, same convention as every other module's detail panel.
+  // Deep-link support, same convention as every other module's detail panel
+  // -- opens in View when the linked record has something finished to show,
+  // Edit otherwise (so a link to a still-Pending record lands on the form
+  // that actually does something).
   useEffect(() => {
     const openId = searchParams.get("open");
     if (openId) {
-      openDetail(openId);
+      api.getIpqc(openId).then((rec) => {
+        setOpenRecord(rec);
+        setPanelMode(canView(rec.status) ? "view" : "edit");
+      }).catch((e) => setError(e instanceof Error ? e.message : "Failed to load record"));
       router.replace("/ipqc");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -144,14 +157,27 @@ function IpqcPageContent() {
               <tr className="empty-row"><td colSpan={7}>{loading ? "Loading…" : "No records match your search/filters."}</td></tr>
             ) : (
               records.map((r) => (
-                <tr key={r.id} className={r.status === "pending" ? "row-pending" : ""} style={{ cursor: "pointer" }} onClick={() => openDetail(r.id)}>
+                <tr key={r.id} className={r.status === "pending" ? "row-pending" : ""}>
                   <td className="mono">{r.shipment_number || "—"}</td>
                   <td className="mono">{r.sku_code || "—"}</td>
                   <td>{r.sku_version || "—"}</td>
                   <td>{r.shift_incharge || "—"}</td>
                   <td><span className={`badge ${r.status === "approved" ? "approved" : r.status === "hold" ? "hold" : r.status === "pending" ? "pending" : "draft"}`}>{r.status.charAt(0).toUpperCase() + r.status.slice(1)}</span></td>
                   <td>{r.date || "—"}</td>
-                  <td><a className="btn-tertiary">View →</a></td>
+                  <td>
+                    <span className="icon-actions">
+                      {canView(r.status) && (
+                        <a className="btn-tertiary" style={{ cursor: "pointer", marginRight: 10 }} onClick={() => openDetail(r.id, "view")}>View →</a>
+                      )}
+                      {perms?.can_edit && (
+                        <button className="icon-btn" title="Fill in" onClick={() => openDetail(r.id, "edit")}>
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4z" />
+                          </svg>
+                        </button>
+                      )}
+                    </span>
+                  </td>
                 </tr>
               ))
             )}
@@ -165,6 +191,7 @@ function IpqcPageContent() {
           onClose={() => setOpenRecord(null)}
           canEdit={!!perms?.can_edit}
           onSaved={refresh}
+          mode={panelMode}
         />
       )}
 
