@@ -203,7 +203,9 @@ def create_manual_draft(
     )
     db.add(qc)
     db.commit()
-    db.refresh(qc)
+    # _get_or_404 immediately below re-fetches this row fresh (with its
+    # joinedload'd relationships, needed for _serialize_detail) -- an extra
+    # db.refresh(qc) here just costs a round trip for an object we discard.
     return _serialize_detail(db, _get_or_404(db, qc.id))
 
 

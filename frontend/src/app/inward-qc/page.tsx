@@ -3,12 +3,19 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
 import { useMe } from "@/lib/useMe";
+import { cachedList, invalidateListCache, listCacheKey } from "@/lib/listCache";
+import { useImmediateThenDebounced } from "@/lib/useImmediateThenDebounced";
 import type { QcDetail, QcListItem, QcManualCategory, QcMeta, SkuCode } from "@/lib/types";
 import MoreMenu from "@/components/inward-vehicle-inspection/MoreMenu";
 import ConfirmDialog from "@/components/inward-vehicle-inspection/ConfirmDialog";
 import CategoryPicker from "@/components/inward-qc/CategoryPicker";
 import Wizard from "@/components/inward-qc/Wizard";
 import RecordDetail from "@/components/inward-qc/RecordDetail";
+
+const MODULE = "inward-qc";
+// Reference data (checklist/sampling meta, SKU codes) barely ever changes --
+// cache it much longer than the record list itself.
+const REFERENCE_STALE_MS = 5 * 60_000;
 
 const CATEGORY_LABELS: Record<string, string> = {
   fgtray: "FG NonPadded Tray", pad: "Soaker Pad", polybag: "Polybag", cfb: "CFB", glue: "Glue",
@@ -58,7 +65,8 @@ function InwardQcPageContent() {
     setLoading(true);
     setLoadError(null);
     try {
-      const res = await api.listQc({ search, status: fStatus, category: fCategory, date: fDate });
+      const key = listCacheKey(MODULE, { search, status: fStatus, category: fCategory, date: fDate });
+      const res = await cachedList(key, () => api.listQc({ search, status: fStatus, category: fCategory, date: fDate }));
       setItems(res.items);
       setMatchedCount(res.matched_count);
       setTotalCount(res.total_count);
@@ -70,13 +78,15 @@ function InwardQcPageContent() {
   }, [search, fStatus, fCategory, fDate]);
 
   useEffect(() => {
-    api.qcMeta().then(setMeta).catch(() => setMeta(null));
-    api.skuCodes().then(setSkuCodes).catch(() => setSkuCodes([]));
+    cachedList("inward-qc-meta:meta", () => api.qcMeta(), REFERENCE_STALE_MS).then(setMeta).catch(() => setMeta(null));
+    cachedList("inward-qc-meta:skuCodes", () => api.skuCodes(), REFERENCE_STALE_MS).then(setSkuCodes).catch(() => setSkuCodes([]));
   }, []);
 
-  useEffect(() => {
-    const t = setTimeout(refresh, 250);
-    return () => clearTimeout(t);
+  useImmediateThenDebounced(refresh, [refresh]);
+
+  const refreshAfterMutation = useCallback(() => {
+    invalidateListCache(MODULE);
+    refresh();
   }, [refresh]);
 
   async function handleCategoryChosen(category: QcManualCategory) {
@@ -137,7 +147,7 @@ function InwardQcPageContent() {
     try {
       await api.deleteQc(deleteTarget.id);
       setDeleteTarget(null);
-      refresh();
+      refreshAfterMutation();
     } catch (e) {
       setDeleteBlockedMsg(e instanceof ApiError ? e.message : (e instanceof Error ? e.message : "Failed to delete record"));
     }
@@ -249,8 +259,8 @@ function InwardQcPageContent() {
           meta={meta}
           skuCodes={skuCodes}
           permissions={perms}
-          onClose={() => { setWizardState(null); refresh(); }}
-          onSaved={refresh}
+          onClose={() => { setWizardState(null); refreshAfterMutation(); }}
+          onSaved={refreshAfterMutation}
         />
       )}
 

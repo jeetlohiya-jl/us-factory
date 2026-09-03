@@ -154,7 +154,10 @@ def create_draft(
     )
     db.add(inspection)
     db.commit()
-    db.refresh(inspection)
+    # _get_or_404 immediately below re-fetches this row fresh (with its
+    # joinedload'd relationships, needed for _serialize_detail) -- an extra
+    # db.refresh(inspection) here just costs a round trip for an object we
+    # discard.
     return _serialize_detail(db, _get_or_404(db, inspection.id))
 
 

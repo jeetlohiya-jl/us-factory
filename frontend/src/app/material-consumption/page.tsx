@@ -3,12 +3,15 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { useMe } from "@/lib/useMe";
+import { cachedList, invalidateListCache, listCacheKey } from "@/lib/listCache";
+import { useImmediateThenDebounced } from "@/lib/useImmediateThenDebounced";
 import type { MaterialConsumptionListItem, MaterialConsumptionDetail, Machine } from "@/lib/types";
 import MaterialConsumptionWizard, { formatTime12h } from "@/components/material-consumption/Wizard";
 import MoreMenu from "@/components/inward-vehicle-inspection/MoreMenu";
 import ConfirmDialog from "@/components/inward-vehicle-inspection/ConfirmDialog";
 
 const CATEGORY_LABELS: Record<string, string> = { tray: "Base Tray", fgtray: "FG Non-Padded Tray" };
+const MODULE = "material-consumption";
 
 export default function MaterialConsumptionPage() {
   return (
@@ -43,11 +46,14 @@ function MaterialConsumptionPageContent() {
     setLoading(true);
     setError(null);
     try {
-      const [recs, machineList, shiftList] = await Promise.all([
-        api.listMaterialConsumption({ search, category, date }),
-        api.machines(),
-        api.materialConsumptionShifts(),
-      ]);
+      const key = listCacheKey(MODULE, { search, category, date });
+      const [recs, machineList, shiftList] = await cachedList(key, () =>
+        Promise.all([
+          api.listMaterialConsumption({ search, category, date }),
+          api.machines(),
+          api.materialConsumptionShifts(),
+        ])
+      );
       setRecords(recs.items);
       setMatchedCount(recs.matched_count);
       setMachines(machineList);
@@ -59,9 +65,11 @@ function MaterialConsumptionPageContent() {
     }
   }, [search, category, date]);
 
-  useEffect(() => {
-    const t = setTimeout(refresh, 250);
-    return () => clearTimeout(t);
+  useImmediateThenDebounced(refresh, [refresh]);
+
+  const refreshAfterMutation = useCallback(() => {
+    invalidateListCache(MODULE);
+    refresh();
   }, [refresh]);
 
   async function handleNewRecord() {
@@ -99,7 +107,7 @@ function MaterialConsumptionPageContent() {
     try {
       await api.deleteMaterialConsumption(deleteTarget.id);
       setDeleteTarget(null);
-      refresh();
+      refreshAfterMutation();
     } catch (e) {
       setDeleteError(e instanceof Error ? e.message : "Failed to delete record");
     }
@@ -207,7 +215,7 @@ function MaterialConsumptionPageContent() {
           shifts={shifts}
           permissions={perms || { can_view: true, can_create: false, can_edit: false, can_delete: false, can_approve: false, can_fill_section: false }}
           onClose={() => setOpenMc(null)}
-          onSaved={refresh}
+          onSaved={refreshAfterMutation}
         />
       )}
 

@@ -3,9 +3,13 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { useMe } from "@/lib/useMe";
+import { cachedList, invalidateListCache, listCacheKey } from "@/lib/listCache";
+import { useImmediateThenDebounced } from "@/lib/useImmediateThenDebounced";
 import type { ProductionListItem, ProductionDetail, Machine } from "@/lib/types";
 import ProductionDetailPanel from "@/components/production/ProductionDetailPanel";
 import MoreMenu from "@/components/inward-vehicle-inspection/MoreMenu";
+
+const MODULE = "production";
 
 const SHIFTS = ["Shift A", "Shift B", "Shift C"];
 
@@ -42,10 +46,10 @@ function ProductionPageContent() {
     setLoading(true);
     setError(null);
     try {
-      const [recs, machineList] = await Promise.all([
-        api.listProduction({ search, date, shift, machine }),
-        api.machines(),
-      ]);
+      const key = listCacheKey(MODULE, { search, date, shift, machine });
+      const [recs, machineList] = await cachedList(key, () =>
+        Promise.all([api.listProduction({ search, date, shift, machine }), api.machines()])
+      );
       setRecords(recs.items);
       setMatchedCount(recs.matched_count);
       setMachines(machineList);
@@ -56,9 +60,11 @@ function ProductionPageContent() {
     }
   }, [search, date, shift, machine]);
 
-  useEffect(() => {
-    const t = setTimeout(refresh, 250);
-    return () => clearTimeout(t);
+  useImmediateThenDebounced(refresh, [refresh]);
+
+  const refreshAfterMutation = useCallback(() => {
+    invalidateListCache(MODULE);
+    refresh();
   }, [refresh]);
 
   async function openDetail(id: string, mode: "view" | "edit") {
@@ -193,7 +199,7 @@ function ProductionPageContent() {
           onClose={() => setOpenRecord(null)}
           canEdit={!!perms?.can_fill_section}
           machines={machines}
-          onSaved={refresh}
+          onSaved={refreshAfterMutation}
           mode={panelMode}
           onEdit={() => setPanelMode("edit")}
         />

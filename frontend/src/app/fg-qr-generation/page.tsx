@@ -3,10 +3,14 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { useMe } from "@/lib/useMe";
+import { cachedList, invalidateListCache, listCacheKey } from "@/lib/listCache";
+import { useImmediateThenDebounced } from "@/lib/useImmediateThenDebounced";
 import type { QrGenerationDetail, QrGenerationListItem, ProductionRun } from "@/lib/types";
 import QrGenerationPanel from "@/components/qr-generation/QrGenerationPanel";
 import ConfirmDialog from "@/components/inward-vehicle-inspection/ConfirmDialog";
 import MoreMenu from "@/components/inward-vehicle-inspection/MoreMenu";
+
+const MODULE = "fg-qr-generation";
 
 export default function FgQrGenerationPage() {
   return (
@@ -41,7 +45,10 @@ function FgQrGenerationPageContent() {
     setLoading(true);
     setLoadError(null);
     try {
-      const [qrRes, runsRes] = await Promise.all([api.listFgQr({ search }), api.listProductionRuns()]);
+      const key = listCacheKey(MODULE, { search });
+      const [qrRes, runsRes] = await cachedList(key, () =>
+        Promise.all([api.listFgQr({ search }), api.listProductionRuns()])
+      );
       setItems(qrRes.items);
       setRuns(runsRes);
     } catch (e) {
@@ -51,9 +58,11 @@ function FgQrGenerationPageContent() {
     }
   }, [search]);
 
-  useEffect(() => {
-    const t = setTimeout(refresh, 250);
-    return () => clearTimeout(t);
+  useImmediateThenDebounced(refresh, [refresh]);
+
+  const refreshAfterMutation = useCallback(() => {
+    invalidateListCache(MODULE);
+    refresh();
   }, [refresh]);
 
   async function openRecord(id: string) {
@@ -80,7 +89,7 @@ function FgQrGenerationPageContent() {
     try {
       const d = await api.createFgQrFromRun(runId);
       setDetail(d);
-      refresh();
+      refreshAfterMutation();
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : "Failed to create FG QR record");
     }
@@ -90,7 +99,7 @@ function FgQrGenerationPageContent() {
     if (!detail) return;
     const updated = await api.generateFgQr(detail.id);
     setDetail(updated);
-    refresh();
+    refreshAfterMutation();
   }
 
   async function confirmDelete() {
@@ -98,7 +107,7 @@ function FgQrGenerationPageContent() {
     try {
       await api.deleteFgQr(deleteTarget.id);
       setDeleteTarget(null);
-      refresh();
+      refreshAfterMutation();
     } catch (e) {
       setDeleteBlockedMsg(e instanceof Error ? e.message : "Failed to delete record");
     }

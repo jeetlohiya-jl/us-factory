@@ -2,9 +2,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { useMe } from "@/lib/useMe";
+import { cachedList, invalidateListCache, listCacheKey } from "@/lib/listCache";
+import { useImmediateThenDebounced } from "@/lib/useImmediateThenDebounced";
 import type { Pallet, StorageRecordDetail } from "@/lib/types";
 import StorageScanPanel from "@/components/storage/StorageScanPanel";
 import StorageRecordDetailPanel from "@/components/storage/StorageRecordDetailPanel";
+
+const MODULE = "rm-storage";
 
 export default function RmStoragePage() {
   const me = useMe();
@@ -24,10 +28,10 @@ export default function RmStoragePage() {
     setLoading(true);
     setLoadError(null);
     try {
-      const [pendingRes, recordsRes] = await Promise.all([
-        api.listRmPending({ search }),
-        api.listRmStorageRecords(recordsSearch),
-      ]);
+      const key = listCacheKey(MODULE, { search, recordsSearch });
+      const [pendingRes, recordsRes] = await cachedList(key, () =>
+        Promise.all([api.listRmPending({ search }), api.listRmStorageRecords(recordsSearch)])
+      );
       setPending(pendingRes.items);
       setRecords(recordsRes.items);
     } catch (e) {
@@ -37,9 +41,11 @@ export default function RmStoragePage() {
     }
   }, [search, recordsSearch]);
 
-  useEffect(() => {
-    const t = setTimeout(refresh, 250);
-    return () => clearTimeout(t);
+  useImmediateThenDebounced(refresh, [refresh]);
+
+  const refreshAfterMutation = useCallback(() => {
+    invalidateListCache(MODULE);
+    refresh();
   }, [refresh]);
 
   async function openStorageRecord(id: string) {
@@ -133,7 +139,7 @@ export default function RmStoragePage() {
           hintSub="Scan the Pallet, then scan the Location."
           onScanPallet={api.scanRmPallet}
           onScanLocation={api.scanRmLocation}
-          onConfirm={async (p, l) => { await api.confirmRmStorage(p, l); refresh(); }}
+          onConfirm={async (p, l) => { await api.confirmRmStorage(p, l); refreshAfterMutation(); }}
           onClose={() => { setShowScan(false); refresh(); }}
         />
       )}

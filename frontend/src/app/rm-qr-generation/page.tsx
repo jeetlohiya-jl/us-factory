@@ -2,10 +2,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { useMe } from "@/lib/useMe";
+import { cachedList, invalidateListCache, listCacheKey } from "@/lib/listCache";
+import { useImmediateThenDebounced } from "@/lib/useImmediateThenDebounced";
 import type { QrGenerationDetail, QrGenerationListItem } from "@/lib/types";
 import QrGenerationPanel from "@/components/qr-generation/QrGenerationPanel";
 import ConfirmDialog from "@/components/inward-vehicle-inspection/ConfirmDialog";
 import MoreMenu from "@/components/inward-vehicle-inspection/MoreMenu";
+
+const MODULE = "rm-qr-generation";
 
 export default function RmQrGenerationPage() {
   const me = useMe();
@@ -29,7 +33,8 @@ export default function RmQrGenerationPage() {
     setLoading(true);
     setLoadError(null);
     try {
-      const res = await api.listRmQr({ search, date: fDate, sku: fSku });
+      const key = listCacheKey(MODULE, { search, date: fDate, sku: fSku });
+      const res = await cachedList(key, () => api.listRmQr({ search, date: fDate, sku: fSku }));
       setItems(res.items);
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : "Failed to load records");
@@ -38,9 +43,11 @@ export default function RmQrGenerationPage() {
     }
   }, [search, fDate, fSku]);
 
-  useEffect(() => {
-    const t = setTimeout(refresh, 250);
-    return () => clearTimeout(t);
+  useImmediateThenDebounced(refresh, [refresh]);
+
+  const refreshAfterMutation = useCallback(() => {
+    invalidateListCache(MODULE);
+    refresh();
   }, [refresh]);
 
   async function openRecord(id: string) {
@@ -56,7 +63,7 @@ export default function RmQrGenerationPage() {
     if (!detail) return;
     const updated = await api.generateRmQr(detail.id);
     setDetail(updated);
-    refresh();
+    refreshAfterMutation();
   }
 
   async function confirmDelete() {
@@ -64,7 +71,7 @@ export default function RmQrGenerationPage() {
     try {
       await api.deleteRmQr(deleteTarget.id);
       setDeleteTarget(null);
-      refresh();
+      refreshAfterMutation();
     } catch (e) {
       setDeleteBlockedMsg(e instanceof Error ? e.message : "Failed to delete record");
     }

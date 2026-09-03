@@ -2,11 +2,16 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import { useMe } from "@/lib/useMe";
+import { cachedList, invalidateListCache, listCacheKey } from "@/lib/listCache";
+import { useImmediateThenDebounced } from "@/lib/useImmediateThenDebounced";
 import type { Category, InspectionDetail, InspectionListItem, SkuCode } from "@/lib/types";
 import MoreMenu from "@/components/inward-vehicle-inspection/MoreMenu";
 import Wizard from "@/components/inward-vehicle-inspection/Wizard";
 import RecordDetail from "@/components/inward-vehicle-inspection/RecordDetail";
 import ConfirmDialog from "@/components/inward-vehicle-inspection/ConfirmDialog";
+
+const MODULE = "inward-vehicle-inspection";
+const REFERENCE_STALE_MS = 5 * 60_000;
 
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, string> = { draft: "Draft", approved: "Approved", hold: "Hold" };
@@ -40,7 +45,8 @@ export default function InwardVehicleInspectionPage() {
     setLoading(true);
     setLoadError(null);
     try {
-      const res = await api.listInspections({ search, status: fStatus, category: fCategory, date: fDate });
+      const key = listCacheKey(MODULE, { search, status: fStatus, category: fCategory, date: fDate });
+      const res = await cachedList(key, () => api.listInspections({ search, status: fStatus, category: fCategory, date: fDate }));
       setItems(res.items);
       setMatchedCount(res.matched_count);
       setTotalCount(res.total_count);
@@ -52,12 +58,14 @@ export default function InwardVehicleInspectionPage() {
   }, [search, fStatus, fCategory, fDate]);
 
   useEffect(() => {
-    api.skuCodes().then(setSkuCodes).catch(() => setSkuCodes([]));
+    cachedList("inward-vehicle-inspection-meta:skuCodes", () => api.skuCodes(), REFERENCE_STALE_MS).then(setSkuCodes).catch(() => setSkuCodes([]));
   }, []);
 
-  useEffect(() => {
-    const t = setTimeout(refresh, 250);
-    return () => clearTimeout(t);
+  useImmediateThenDebounced(refresh, [refresh]);
+
+  const refreshAfterMutation = useCallback(() => {
+    invalidateListCache(MODULE);
+    refresh();
   }, [refresh]);
 
   async function handleNewRecord() {
@@ -93,7 +101,7 @@ export default function InwardVehicleInspectionPage() {
     try {
       await api.deleteInspection(deleteTarget.id);
       setDeleteTarget(null);
-      refresh();
+      refreshAfterMutation();
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) {
         setDeleteBlockedMsg(e.message);
@@ -200,8 +208,8 @@ export default function InwardVehicleInspectionPage() {
           initialDetail={wizardState.detail}
           skuCodes={skuCodes}
           permissions={perms}
-          onClose={() => { setWizardState(null); refresh(); }}
-          onSaved={refresh}
+          onClose={() => { setWizardState(null); refreshAfterMutation(); }}
+          onSaved={refreshAfterMutation}
         />
       )}
 

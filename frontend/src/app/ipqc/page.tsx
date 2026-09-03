@@ -3,9 +3,13 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { useMe } from "@/lib/useMe";
+import { cachedList, invalidateListCache, listCacheKey } from "@/lib/listCache";
+import { useImmediateThenDebounced } from "@/lib/useImmediateThenDebounced";
 import type { IpqcListItem, IpqcDetail } from "@/lib/types";
 import IpqcDetailPanel from "@/components/ipqc/IpqcDetailPanel";
 import MoreMenu from "@/components/inward-vehicle-inspection/MoreMenu";
+
+const MODULE = "ipqc";
 
 const SHIFTS = ["Shift A", "Shift B", "Shift C"];
 const STATUSES = [
@@ -52,7 +56,8 @@ function IpqcPageContent() {
     setLoading(true);
     setError(null);
     try {
-      const { items, matched_count } = await api.listIpqc({ search, date, shift, status });
+      const key = listCacheKey(MODULE, { search, date, shift, status });
+      const { items, matched_count } = await cachedList(key, () => api.listIpqc({ search, date, shift, status }));
       setRecords(items);
       setMatchedCount(matched_count);
     } catch (e) {
@@ -62,9 +67,11 @@ function IpqcPageContent() {
     }
   }, [search, date, shift, status]);
 
-  useEffect(() => {
-    const t = setTimeout(refresh, 250);
-    return () => clearTimeout(t);
+  useImmediateThenDebounced(refresh, [refresh]);
+
+  const refreshAfterMutation = useCallback(() => {
+    invalidateListCache(MODULE);
+    refresh();
   }, [refresh]);
 
   async function openDetail(id: string, mode: "view" | "edit") {
@@ -199,7 +206,7 @@ function IpqcPageContent() {
           record={openRecord}
           onClose={() => setOpenRecord(null)}
           canEdit={!!perms?.can_fill_section}
-          onSaved={refresh}
+          onSaved={refreshAfterMutation}
           mode={panelMode}
           onEdit={() => setPanelMode("edit")}
         />
