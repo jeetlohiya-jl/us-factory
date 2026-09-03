@@ -127,7 +127,12 @@ def list_material_consumption(
 ):
     filtered = _filtered_mc_query(db, search, category, date, status_)
     total_all = db.query(func.count(models.MaterialConsumption.id)).scalar()
-    matched = filtered.count()
+    # When no filter is active, `filtered` is equivalent to the unfiltered
+    # query, so matched_count == total_count by construction -- skip the
+    # second COUNT round trip for the common no-filter (default list load)
+    # case. Any active filter still runs its own COUNT, since the two can
+    # genuinely differ.
+    matched = total_all if not (search or category or date or status_) else filtered.count()
     page_ids = [
         row[0]
         for row in filtered.order_by(models.MaterialConsumption.created_at.desc())

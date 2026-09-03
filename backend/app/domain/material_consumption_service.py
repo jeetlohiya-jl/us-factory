@@ -449,13 +449,23 @@ def finalize(db: Session, mc: models.MaterialConsumption, actor_user_id=None) ->
             )
 
     all_pallets = _all_pallets(mc)
-    for row in all_pallets:
-        db.refresh(row.pallet)
-        if row.pallet.lifecycle_status != "stored":
-            raise MaterialConsumptionError(
-                f"Pallet {row.pallet.display_id} is no longer available in RM Storage "
-                f"(status: {row.pallet.lifecycle_status}) and cannot be consumed. Remove it and re-scan."
-            )
+    # Re-check every pallet's *live* lifecycle_status inside this same
+    # transaction (never trusting the scan-time snapshot already held on
+    # the loaded objects) -- same guarantee as before, but as one batched
+    # query instead of one db.refresh() round trip per pallet.
+    if all_pallets:
+        live_status_by_id = dict(
+            db.query(models.Pallet.id, models.Pallet.lifecycle_status)
+            .filter(models.Pallet.id.in_([row.pallet_id for row in all_pallets]))
+            .all()
+        )
+        for row in all_pallets:
+            live_status = live_status_by_id.get(row.pallet_id)
+            if live_status != "stored":
+                raise MaterialConsumptionError(
+                    f"Pallet {row.pallet.display_id} is no longer available in RM Storage "
+                    f"(status: {live_status}) and cannot be consumed. Remove it and re-scan."
+                )
 
     for row in all_pallets:
         pallet_service.record_lifecycle_event(

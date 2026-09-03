@@ -42,26 +42,26 @@ def required_checklist_ids(db: Session) -> list[uuid.UUID]:
     return [i.id for i in items]
 
 
-def checklist_is_complete(db: Session, inspection_id: uuid.UUID) -> bool:
+def checklist_is_complete(db: Session, inspection: models.InwardVehicleInspection) -> bool:
+    """Takes the already-loaded inspection (its `checklist_answers` relationship
+    is eager-loaded by `_get_or_404`) instead of re-querying by id -- the
+    caller (`submit_inspection`) already has this exact row set in memory."""
     required = set(str(i) for i in required_checklist_ids(db))
     if not required:
         return False
-    answers = (
-        db.query(models.InwardVehicleInspectionChecklistAnswer)
-        .filter(models.InwardVehicleInspectionChecklistAnswer.inspection_id == inspection_id)
-        .all()
-    )
-    answered = {str(a.checklist_item_id): a.answer for a in answers if a.answer in ("ok", "not_ok")}
+    answered = {
+        str(a.checklist_item_id): a.answer
+        for a in inspection.checklist_answers
+        if a.answer in ("ok", "not_ok")
+    }
     return required.issubset(answered.keys())
 
 
-def compute_status(db: Session, inspection_id: uuid.UUID) -> str:
-    answers = (
-        db.query(models.InwardVehicleInspectionChecklistAnswer)
-        .filter(models.InwardVehicleInspectionChecklistAnswer.inspection_id == inspection_id)
-        .all()
-    )
-    if any(a.answer == "not_ok" for a in answers):
+def compute_status(db: Session, inspection: models.InwardVehicleInspection) -> str:
+    """Same note as checklist_is_complete: reads the already-loaded
+    `inspection.checklist_answers` instead of issuing a fresh query for rows
+    the caller already has in memory."""
+    if any(a.answer == "not_ok" for a in inspection.checklist_answers):
         return "hold"
     return "approved"
 

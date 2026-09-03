@@ -61,7 +61,9 @@ def list_fg_qr(
     if sku:
         q = q.filter(models.QrGenerationRecord.sku_code_snapshot.ilike(f"%{sku}%"))
     total_all = db.query(func.count(models.QrGenerationRecord.id)).filter(models.QrGenerationRecord.qr_type == "fg").scalar()
-    matched = q.count()
+    # No filter active => matched_count == total_count by construction;
+    # skip the second COUNT query in that (common, default-load) case.
+    matched = total_all if not (search or date or sku) else q.count()
     recs = q.order_by(models.QrGenerationRecord.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
     items = [serialize_qr_list_item(r) for r in recs]
     return {"items": items, "matched_count": matched, "total_count": total_all}

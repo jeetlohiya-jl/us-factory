@@ -165,7 +165,9 @@ def list_qc(
         q = q.filter(func.cast(models.InwardQcRecord.created_at, Date) == date)
 
     total_all = db.query(models.InwardQcRecord).count()
-    matched = q.count()
+    # No filter active => matched_count == total_count by construction;
+    # skip the second COUNT query in that (common, default-load) case.
+    matched = total_all if not (search or status_filter or category or date) else q.count()
     rows = q.order_by(models.InwardQcRecord.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
     items = [
         schemas.QcListItemOut(

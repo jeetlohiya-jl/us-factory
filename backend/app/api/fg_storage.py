@@ -66,7 +66,9 @@ def list_storage_records(
             )
         )
     total_all = db.query(func.count(models.StorageRecord.id)).filter(models.StorageRecord.storage_type == STORAGE_TYPE).scalar()
-    matched = q.count()
+    # No filter active => matched_count == total_count by construction;
+    # skip the second COUNT query in that (common, default-load) case.
+    matched = total_all if not search else q.count()
     recs = (
         q.options(joinedload(models.StorageRecord.pallet), joinedload(models.StorageRecord.location), joinedload(models.StorageRecord.source_qr_generation), joinedload(models.StorageRecord.stored_by_user))
         .order_by(models.StorageRecord.stored_at.desc())

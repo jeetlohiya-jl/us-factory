@@ -113,7 +113,9 @@ def list_inspections(
         q = q.filter(func.cast(models.InwardVehicleInspection.created_at, Date) == date)
 
     total_all = db.query(models.InwardVehicleInspection).count()
-    matched = q.count()
+    # No filter active => matched_count == total_count by construction;
+    # skip the second COUNT query in that (common, default-load) case.
+    matched = total_all if not (search or status_filter or category or date) else q.count()
     rows = (
         q.order_by(models.InwardVehicleInspection.created_at.desc())
         .offset((page - 1) * page_size)
@@ -237,12 +239,12 @@ def submit_inspection(
     _perm=Depends(require_permission("approve")),
 ):
     inspection = _get_or_404(db, inspection_id)
-    if not svc.checklist_is_complete(db, inspection_id):
+    if not svc.checklist_is_complete(db, inspection):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="All checklist items must be answered OK or NOT OK before submitting. Use Save Draft to keep this Pending.",
         )
-    new_status = svc.compute_status(db, inspection_id)
+    new_status = svc.compute_status(db, inspection)
     if new_status == "approved":
         # Requirement: if anything is NOT OK, never ask for passed quantity;
         # only meaningful when the record is fully approved.
