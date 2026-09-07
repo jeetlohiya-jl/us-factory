@@ -28,6 +28,21 @@ const QC_CONCLUSION_LABEL: Record<QcManualCategory, string> = {
   pad: "Suggestions", polybag: "Conclusion", cfb: "Conclusion", glue: "Conclusion",
 };
 
+// Reference/master data (machines, vendors, SKUs) changes only through the
+// admin screens and is read on nearly every module's mount (Production and
+// Material Consumption both fetch `machines`, the Inward Vehicle Inspection
+// wizard fetches `vendors` per category, etc.) -- before this, every one of
+// those mounts paid a full network round trip for data that's effectively
+// static minute-to-minute. Same cachedList/staleMs convention already used
+// for Inward QC's/Inward Vehicle Inspection's meta reads (see those
+// page.tsx files' own REFERENCE_STALE_MS), just centralized here in api.ts
+// so every caller of machines()/vendors()/skus() benefits without each page
+// having to know caching exists. `ref:*`-prefixed keys are invalidated by
+// the matching admin-screen create/update/delete mutation below, so an
+// edit on /machines, /vendors, or /skus is visible on the very next read
+// instead of waiting out the stale window.
+const REFERENCE_STALE_MS = 5 * 60_000;
+
 const BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
 
 /** Default page size for every paginated list fetch below (Supabase
@@ -457,6 +472,31 @@ const MC_DETAIL_SELECT_INNER = MC_DETAIL_SELECT.replace(
   "machine_entries:material_consumption_machine_entries!inner("
 );
 
+// `flattenMcListItem` above only ever reads, per machine entry: category,
+// sku_code/sku_version (snapshots), machine.code, start_time, end_time, and
+// sort_order (to order entries); per pallet: role, sort_order, and
+// pallet.display_id. It never reads either level's own `id`, the raw
+// machine_id/sku_code_id/sku_version_id, pallet quantity, or the pallet's
+// own sku_code/sku_version/category/lifecycle_status -- all of that is
+// MC_DETAIL_SELECT-only data that only the single-record detail view
+// (getMaterialConsumptionSb) needs. The list also never reads
+// production_run/production_run_id (ipqc_id and production_run_number are
+// MaterialConsumptionDetail-only fields), so that embed is dropped too.
+// Trimming the list's own select to exactly this shape removes 4 unused
+// columns per pallet, 4 per machine entry, and an entire extra join
+// (production_runs -> ipqc_records) from every list-page row.
+const MC_LIST_PALLET_SELECT = "role,sort_order,pallet:pallets(display_id)";
+const MC_LIST_ENTRY_SELECT =
+  "machine:machines(code),category,sku_code:sku_code_snapshot,sku_version:sku_version_snapshot,start_time,end_time,sort_order," +
+  `pallets:material_consumption_pallets(${MC_LIST_PALLET_SELECT})`;
+const MC_LIST_SELECT =
+  "id,consumption_date,shift,status," +
+  `machine_entries:material_consumption_machine_entries(${MC_LIST_ENTRY_SELECT})`;
+const MC_LIST_SELECT_INNER = MC_LIST_SELECT.replace(
+  "machine_entries:material_consumption_machine_entries(",
+  "machine_entries:material_consumption_machine_entries!inner("
+);
+
 async function listMaterialConsumptionSb(
   params: { search?: string; category?: string; date?: string; status?: string; page?: number }
 ): Promise<{ items: MaterialConsumptionListItem[]; matched_count: number }> {
@@ -468,7 +508,7 @@ async function listMaterialConsumptionSb(
   const needsEntryJoin = !!(params.category || params.search);
   let q = supabase
     .from("material_consumptions")
-    .select(needsEntryJoin ? MC_DETAIL_SELECT_INNER : MC_DETAIL_SELECT, { count: "exact" });
+    .select(needsEntryJoin ? MC_LIST_SELECT_INNER : MC_LIST_SELECT, { count: "exact" });
   if (params.status) q = q.eq("status", params.status);
   if (params.date) q = q.eq("consumption_date", params.date);
   if (params.category) q = q.eq("material_consumption_machine_entries.category", params.category);
@@ -997,35 +1037,49 @@ export const api = {
     ),
 
   vendors: (params?: { category?: string; includeInactive?: boolean }) =>
-    sbRequest<Vendor[]>(() => {
-      let q = supabase.from("vendors").select("id, category, name, country, is_active");
-      if (params?.category) q = q.eq("category", params.category);
-      if (!params?.includeInactive) q = q.eq("is_active", true);
-      return q.order("category").order("name") as unknown as Promise<{ data: Vendor[] | null; error: { message: string; code?: string } | null }>;
-    }),
+    cachedList(
+      listCacheKey("ref:vendors", { category: params?.category, includeInactive: params?.includeInactive }),
+      () =>
+        sbRequest<Vendor[]>(() => {
+          let q = supabase.from("vendors").select("id, category, name, country, is_active");
+          if (params?.category) q = q.eq("category", params.category);
+          if (!params?.includeInactive) q = q.eq("is_active", true);
+          return q.order("category").order("name") as unknown as Promise<{ data: Vendor[] | null; error: { message: string; code?: string } | null }>;
+        }),
+      REFERENCE_STALE_MS
+    ),
 
   skus: (params?: { category?: string; includeInactive?: boolean }) =>
-    sbRequest<SkuCode[]>(() => {
-      let q = supabase.from("sku_codes").select(SKU_SELECT);
-      if (params?.category) q = q.eq("category", params.category);
-      if (!params?.includeInactive) q = q.eq("is_active", true);
-      return q.order("category").order("code") as unknown as Promise<{ data: SkuCode[] | null; error: { message: string; code?: string } | null }>;
-    }),
+    cachedList(
+      listCacheKey("ref:skus", { category: params?.category, includeInactive: params?.includeInactive }),
+      () =>
+        sbRequest<SkuCode[]>(() => {
+          let q = supabase.from("sku_codes").select(SKU_SELECT);
+          if (params?.category) q = q.eq("category", params.category);
+          if (!params?.includeInactive) q = q.eq("is_active", true);
+          return q.order("category").order("code") as unknown as Promise<{ data: SkuCode[] | null; error: { message: string; code?: string } | null }>;
+        }),
+      REFERENCE_STALE_MS
+    ),
+  // Every SKU/version mutation below invalidates the `ref:skus` cache key
+  // (see the `skus()` read above) so the admin screen's own next read, and
+  // every other module's cached dropdown data, sees the change immediately
+  // instead of serving up to REFERENCE_STALE_MS of stale SKU data.
   createSku: (category: string, code: string) =>
     sbVoid(
       () => supabase.from("sku_codes").insert({ category, code, is_active: true }),
       { conflict: `"${code}" already exists.` }
-    ),
+    ).then(() => invalidateListCache("ref:skus")),
   updateSku: (id: string, patch: { code?: string; is_active?: boolean }) =>
     sbVoid(
       () => supabase.from("sku_codes").update(patch).eq("id", id),
       { conflict: `"${patch.code}" already exists.` }
-    ),
+    ).then(() => invalidateListCache("ref:skus")),
   deleteSku: (id: string) =>
     sbVoid(
       () => supabase.from("sku_codes").delete().eq("id", id),
       { fk: "This SKU is referenced by existing records and can't be deleted — deactivate it instead." }
-    ),
+    ).then(() => invalidateListCache("ref:skus")),
   addSkuVersion: (
     skuId: string,
     version: string,
@@ -1034,7 +1088,7 @@ export const api = {
     sbVoid(
       () => supabase.from("sku_versions").insert({ sku_code_id: skuId, version, is_active: true, ...productionDetails }),
       { conflict: `Version "${version}" already exists for this SKU.` }
-    ),
+    ).then(() => invalidateListCache("ref:skus")),
   updateSkuVersion: (
     versionId: string,
     patch: Partial<Omit<SkuVersion, "id">> & { version?: string; is_active?: boolean }
@@ -1042,33 +1096,35 @@ export const api = {
     sbVoid(
       () => supabase.from("sku_versions").update(patch).eq("id", versionId),
       { conflict: `Version "${patch.version}" already exists for this SKU.` }
-    ),
+    ).then(() => invalidateListCache("ref:skus")),
   deleteSkuVersion: (versionId: string) =>
     sbVoid(
       () => supabase.from("sku_versions").delete().eq("id", versionId),
       { fk: "This version is referenced by existing records and can't be deleted — deactivate it instead." }
-    ),
+    ).then(() => invalidateListCache("ref:skus")),
   // Unlike every other Phase 1 mutation, this one's return value is used
   // directly (Wizard.tsx's inline "add a new vendor" flow appends it to
   // the dropdown and selects it without a full refetch) -- so this is the
   // one create/update call that needs `.select().single()` chained rather
   // than the fire-and-forget sbVoid the admin screen's own equivalent call
-  // uses.
+  // uses. Still invalidates `ref:vendors` (after resolving, so the return
+  // value Wizard.tsx depends on is untouched) so any OTHER already-mounted
+  // vendor dropdown picks up the addition on its next read too.
   createVendor: (category: Category, name: string, country: string) =>
     sbRequest<Vendor>(
       () => supabase.from("vendors").insert({ category, name, country, is_active: true }).select("id, category, name, country, is_active").single() as unknown as Promise<{ data: Vendor | null; error: { message: string; code?: string } | null }>,
       { conflict: `"${name}" already exists for this category.` }
-    ),
+    ).then((v) => { invalidateListCache("ref:vendors"); return v; }),
   updateVendor: (id: string, patch: { name?: string; country?: string; is_active?: boolean }) =>
     sbVoid(
       () => supabase.from("vendors").update(patch).eq("id", id),
       { conflict: `"${patch.name}" already exists for this category.` }
-    ),
+    ).then(() => invalidateListCache("ref:vendors")),
   deleteVendor: (id: string) =>
     sbVoid(
       () => supabase.from("vendors").delete().eq("id", id),
       { fk: "This vendor is referenced by existing records and can't be deleted — deactivate it instead." }
-    ),
+    ).then(() => invalidateListCache("ref:vendors")),
 
   // -- Phase 2: Inward Vehicle Inspection list/detail, direct Supabase ----
   listInspections: async (params: { search?: string; status?: string; category?: string; date?: string }) => {
@@ -1079,7 +1135,16 @@ export const api = {
     const ordered = (filtered as unknown as typeof base).order("created_at", { ascending: false }).range(0, 49);
     const { data, error, count } = await ordered;
     if (error) throw new ApiError(500, error.message);
-    const total_count = await countAll("inward_vehicle_inspections");
+    // total_count is the GRAND total regardless of filters, while
+    // matched_count (`count` above) is scoped to whatever filters are
+    // active -- those are genuinely different numbers whenever a filter is
+    // active, so a second query is unavoidable then. But with no filters
+    // active (the common case: opening the module with a blank search/no
+    // filters) they're the same number by definition, so the extra
+    // unfiltered-count round trip this used to always fire is now skipped
+    // and `count` is reused directly.
+    const hasActiveFilter = !!(params.search || params.status || params.category || params.date);
+    const total_count = hasActiveFilter ? await countAll("inward_vehicle_inspections") : count ?? 0;
     return { items: (data || []) as InspectionListItem[], matched_count: count ?? 0, total_count };
   },
 
@@ -1333,27 +1398,35 @@ export const api = {
     ),
 
   // -- Machines (master data for Material Consumption) ---------------------
+  // Fetched fresh on nearly every module mount (Production, Material
+  // Consumption) despite being a small, rarely-changing list -- cached like
+  // vendors()/skus() above, invalidated by the three mutations right below.
   machines: (includeInactive = false) =>
-    sbRequest<Machine[]>(() => {
-      let q = supabase.from("machines").select("id, code, is_active");
-      if (!includeInactive) q = q.eq("is_active", true);
-      return q.order("code") as unknown as Promise<{ data: Machine[] | null; error: { message: string; code?: string } | null }>;
-    }),
+    cachedList(
+      listCacheKey("ref:machines", { includeInactive }),
+      () =>
+        sbRequest<Machine[]>(() => {
+          let q = supabase.from("machines").select("id, code, is_active");
+          if (!includeInactive) q = q.eq("is_active", true);
+          return q.order("code") as unknown as Promise<{ data: Machine[] | null; error: { message: string; code?: string } | null }>;
+        }),
+      REFERENCE_STALE_MS
+    ),
   createMachine: (code: string) =>
     sbVoid(
       () => supabase.from("machines").insert({ code, is_active: true }),
       { conflict: `"${code}" already exists.` }
-    ),
+    ).then(() => invalidateListCache("ref:machines")),
   updateMachine: (id: string, patch: { code?: string; is_active?: boolean }) =>
     sbVoid(
       () => supabase.from("machines").update(patch).eq("id", id),
       { conflict: `"${patch.code}" already exists.` }
-    ),
+    ).then(() => invalidateListCache("ref:machines")),
   deleteMachine: (id: string) =>
     sbVoid(
       () => supabase.from("machines").delete().eq("id", id),
       { fk: "This machine is referenced by an existing Material Consumption or Production record and cannot be deleted. Deactivate it instead." }
-    ),
+    ).then(() => invalidateListCache("ref:machines")),
 
   // -- Material Consumption -------------------------------------------------
   // list/detail go direct to Supabase (Phase 2); every draft/scan/finalize
