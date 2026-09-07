@@ -3,12 +3,30 @@ import { supabase } from "./supabaseClient";
 import { cachedList, invalidateListCache, listCacheKey } from "./listCache";
 import type {
   InspectionDetail, InspectionListItem, SkuCode, SkuVersion, ChecklistItemRef, MeResponse, Category, ImageType,
-  QcMeta, QcListItem, QcDetail, QcManualCategory,
+  QcMeta, QcListItem, QcDetail, QcManualCategory, QcAttributeDefinition, QcFgtrayCriterion, QcSamplingPlanTier,
   Pallet, QrGenerationListItem, QrGenerationDetail, StorageRecordDetail, LocationRef, ProductionRun,
   Vendor, Machine, MaterialConsumptionListItem, MaterialConsumptionDetail, SecondaryMaterialCategory,
   MaterialConsumptionPalletRow, ProductionListItem, ProductionDetail, ProductionMachineEntry, ProductionSavePayload,
   IpqcListItem, IpqcDetail, IpqcSavePayload,
 } from "./types";
+
+// Static, never-changing business constants -- mirrored 1:1 from
+// backend/app/domain/inward_qc_service.py's own hardcoded Python dicts
+// (MANUAL_CATEGORIES, QC_COUNT_LABEL, CONCLUSION_LABEL). These never touch
+// the DB on the backend either; GET /api/v1/inward-qc/meta was serving them
+// over the network alongside three real table reads for no reason other
+// than convenience of returning one bundled object.
+// Alphabetical -- matches the backend's own `sorted(svc.MANUAL_CATEGORIES)`
+// exactly, since CategoryPicker renders these in array order and a
+// different order here would be a visible (if minor) UI change.
+const QC_MANUAL_CATEGORIES: QcManualCategory[] = ["cfb", "glue", "pad", "polybag"];
+const QC_COUNT_LABEL: Record<QcManualCategory, string> = {
+  pad: "Number of pads to be checked", polybag: "Number of bags to be checked",
+  cfb: "Number of bags to be checked", glue: "Number of units to be checked",
+};
+const QC_CONCLUSION_LABEL: Record<QcManualCategory, string> = {
+  pad: "Suggestions", polybag: "Conclusion", cfb: "Conclusion", glue: "Conclusion",
+};
 
 const BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
 
@@ -627,6 +645,46 @@ async function listProductionSb(
   return { items: rows, matched_count: count ?? rows.length };
 }
 
+type RawProductionRun = {
+  id: string; run_number: string; shipment_number: string | null; category: string;
+  total_fg_pallets: number; status: string;
+  sku_code: { code: string } | null; sku_version: { version: string } | null;
+  fg_qr: { id: string }[] | null;
+};
+
+/**
+ * `GET /api/v1/production-runs` was plain FastAPI for a plain read -- no
+ * business logic, no multi-table write, just a SELECT with two joins and a
+ * computed EXISTS flag -- the exact kind of endpoint the hybrid architecture
+ * says belongs on Supabase-direct, same as `listProductionSb` right above
+ * (which already reads this same table for the paginated Production list).
+ * It's also unbounded by design (this is the full dropdown source for FG QR
+ * Generation's "eligible runs" picker, not a paginated list), and Postgrest
+ * RLS on `production_runs` (migration 0012) already gates SELECT on
+ * `app_can('production', 'view')` -- stricter than the FastAPI route this
+ * replaces, which had no permission check of its own beyond authentication.
+ */
+async function listProductionRunsSb(): Promise<ProductionRun[]> {
+  const { data, error } = await supabase
+    .from("production_runs")
+    .select(
+      "id,run_number,shipment_number,category,total_fg_pallets,status," +
+        "sku_code:sku_codes(code),sku_version:sku_versions(version)," +
+        "fg_qr:qr_generation_records!source_production_run_id(id)"
+    )
+    .order("created_at", { ascending: false }) as unknown as {
+    data: RawProductionRun[] | null;
+    error: { message: string } | null;
+  };
+  if (error) throw new ApiError(500, error.message);
+  return (data || []).map((r) => ({
+    id: r.id, run_number: r.run_number, shipment_number: r.shipment_number,
+    sku_code: r.sku_code?.code ?? null, sku_version: r.sku_version?.version ?? null,
+    category: r.category, total_fg_pallets: r.total_fg_pallets, status: r.status,
+    has_fg_qr: !!(r.fg_qr && r.fg_qr.length > 0),
+  }));
+}
+
 type RawProdPallet = {
   id: string; role: string; pallet_id: string; quantity: string | number; sort_order: number;
   pallet: { display_id: string; sku_code: string | null; sku_version: string | null; category: string | null; lifecycle_status: string; shipment_number: string | null } | null;
@@ -861,6 +919,63 @@ const SKU_SELECT =
   "prod_total_pcs_per_pallet, prod_total_pallets, prod_target_shots, prod_pad_type, prod_pad_color, prod_case_type, " +
   "prod_dimensions, prod_absorption_rate)";
 
+/**
+ * `GET /api/v1/inward-qc/meta` was FastAPI for a plain read: three ordered/
+ * filtered SELECTs (attribute definitions, fgtray criteria, sampling plan
+ * tiers) plus a few hardcoded constant dicts bundled into one response --
+ * no business logic, no write, no privileged access. Moved to three
+ * parallel Supabase-direct reads (RLS already grants these three tables'
+ * SELECT to authenticated users -- migration 0011's
+ * qc_attribute_definitions_select / qc_fgtray_criteria_select /
+ * qc_sampling_plan_tiers_select policies), with the constant dicts mirrored
+ * client-side (see QC_MANUAL_CATEGORIES etc. above) instead of fetched.
+ */
+async function qcMetaSb(): Promise<QcMeta> {
+  const [{ data: attrRows, error: attrErr }, { data: criteriaRows, error: critErr }, { data: tierRows, error: tierErr }] =
+    await Promise.all([
+      supabase
+        .from("inward_qc_attribute_definitions")
+        .select("id,category,label,field_type,options_json,is_required,sort_order")
+        .eq("is_active", true)
+        .order("category")
+        .order("sort_order") as unknown as Promise<{ data: QcAttributeDefinition[] | null; error: { message: string } | null }>,
+      supabase
+        .from("inward_qc_fgtray_criteria")
+        .select("id,label,sort_order")
+        .eq("is_active", true)
+        .order("sort_order") as unknown as Promise<{ data: QcFgtrayCriterion[] | null; error: { message: string } | null }>,
+      supabase
+        .from("inward_qc_sampling_plan_tiers")
+        .select("category,qty_label,min_qty,max_qty,sample_size,upper_limit,note")
+        .order("category")
+        .order("sort_order") as unknown as Promise<{ data: QcSamplingPlanTier[] | null; error: { message: string } | null }>,
+    ]);
+  const err = attrErr || critErr || tierErr;
+  if (err) throw new ApiError(500, err.message);
+
+  const attribute_definitions = QC_MANUAL_CATEGORIES.reduce((acc, cat) => {
+    acc[cat] = (attrRows || []).filter((a) => a.category === cat);
+    return acc;
+  }, {} as Record<QcManualCategory, QcAttributeDefinition[]>);
+
+  // First tier row per category is this category's qty_label -- same
+  // "first match wins" lookup `quantity_label_for()` does server-side.
+  const quantity_labels: Record<string, string> = { fgtray: "No. of Pallets" };
+  for (const cat of QC_MANUAL_CATEGORIES) {
+    quantity_labels[cat] = (tierRows || []).find((t) => t.category === cat)?.qty_label || "Quantity";
+  }
+
+  return {
+    manual_categories: QC_MANUAL_CATEGORIES,
+    attribute_definitions,
+    fgtray_criteria: criteriaRows || [],
+    sampling_plan_tiers: tierRows || [],
+    quantity_labels,
+    conclusion_labels: QC_CONCLUSION_LABEL,
+    count_labels: QC_COUNT_LABEL,
+  };
+}
+
 export const api = {
   me: () => request<MeResponse>("/api/v1/me"),
 
@@ -1067,7 +1182,7 @@ export const api = {
   mediaUrl: (path: string) => (path.startsWith("http") ? path : `${BASE}${path}`),
 
   // -- Inward QC --------------------------------------------------------
-  qcMeta: () => request<QcMeta>("/api/v1/inward-qc/meta"),
+  qcMeta: () => qcMetaSb(),
 
   // getQc (the detail read that seeds the QC edit flow) deliberately stays
   // on FastAPI: QcDetailOut's coa_url is built from a bare storage path
@@ -1169,7 +1284,7 @@ export const api = {
   },
 
   // -- Production Runs (minimal, feeds FG QR Generation) ------------------
-  listProductionRuns: () => request<ProductionRun[]>("/api/v1/production-runs"),
+  listProductionRuns: () => listProductionRunsSb(),
 
   // -- RM Storage ----------------------------------------------------------
   listRmPending: (params: { search?: string; sku?: string; page?: number } = {}) =>

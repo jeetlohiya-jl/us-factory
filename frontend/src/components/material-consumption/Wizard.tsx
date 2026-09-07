@@ -284,10 +284,18 @@ export default function MaterialConsumptionWizard({
   }
 
   async function handleShiftChange(shift: string) {
+    // Optimistic: the <select>'s value is bound to `detail.shift`, so update
+    // it locally the instant the user picks an option instead of waiting on
+    // the PUT round trip -- the network save still happens, this just stops
+    // the dropdown itself from lagging behind the click. Roll back to the
+    // previous value if the save actually fails.
+    const previous = detail;
+    setDetail((d) => ({ ...d, shift }));
     try {
       const updated = await api.updateMaterialConsumptionBasic(mcId, { shift });
       setDetail(updated);
     } catch (e) {
+      setDetail(previous);
       setError(e instanceof Error ? e.message : "Failed to save");
     }
   }
@@ -319,10 +327,20 @@ export default function MaterialConsumptionWizard({
   }
 
   async function handleSetEntryMachine(entryId: string, machineId: string) {
+    // Same optimistic-update reasoning as handleShiftChange: this <select>
+    // is bound to `entry.machine_id`, so patch it into local state right
+    // away rather than waiting on the PUT before the dropdown reflects the
+    // choice. Rolled back on failure.
+    const previous = detail;
+    setDetail((d) => ({
+      ...d,
+      machine_entries: d.machine_entries.map((e) => (e.id === entryId ? { ...e, machine_id: machineId || null } : e)),
+    }));
     try {
       const updated = await api.setMaterialConsumptionMachineEntryMachine(mcId, entryId, machineId || null);
       setDetail(updated);
     } catch (e) {
+      setDetail(previous);
       setError(e instanceof ApiError ? e.message : "Failed to set machine");
     }
   }

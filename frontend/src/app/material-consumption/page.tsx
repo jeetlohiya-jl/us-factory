@@ -12,6 +12,13 @@ import ConfirmDialog from "@/components/inward-vehicle-inspection/ConfirmDialog"
 
 const CATEGORY_LABELS: Record<string, string> = { tray: "Base Tray", fgtray: "FG Non-Padded Tray" };
 const MODULE = "material-consumption";
+// A static, never-changing list -- same constant Production's and IPQC's own
+// pages already hardcode client-side (see app/production/page.tsx). It was
+// previously served from `GET /api/v1/material-consumption/shifts`, whose
+// entire implementation was `return SHIFTS` against a hardcoded Python list
+// with no DB query and no business logic -- a full network round trip on
+// every page load for a constant. Hardcoding it here removes that call.
+const SHIFTS = ["Shift A", "Shift B", "Shift C"];
 
 export default function MaterialConsumptionPage() {
   return (
@@ -29,7 +36,6 @@ function MaterialConsumptionPageContent() {
   const [records, setRecords] = useState<MaterialConsumptionListItem[]>([]);
   const [matchedCount, setMatchedCount] = useState(0);
   const [machines, setMachines] = useState<Machine[]>([]);
-  const [shifts, setShifts] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -47,17 +53,15 @@ function MaterialConsumptionPageContent() {
     setError(null);
     try {
       const key = listCacheKey(MODULE, { search, category, date });
-      const [recs, machineList, shiftList] = await cachedList(key, () =>
+      const [recs, machineList] = await cachedList(key, () =>
         Promise.all([
           api.listMaterialConsumption({ search, category, date }),
           api.machines(),
-          api.materialConsumptionShifts(),
         ])
       );
       setRecords(recs.items);
       setMatchedCount(recs.matched_count);
       setMachines(machineList);
-      setShifts(shiftList);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load records");
     } finally {
@@ -212,7 +216,7 @@ function MaterialConsumptionPageContent() {
           mcId={openMc.id}
           initialDetail={openMc}
           machines={machines}
-          shifts={shifts}
+          shifts={SHIFTS}
           permissions={perms || { can_view: true, can_create: false, can_edit: false, can_delete: false, can_approve: false, can_fill_section: false }}
           onClose={() => setOpenMc(null)}
           onSaved={refreshAfterMutation}
