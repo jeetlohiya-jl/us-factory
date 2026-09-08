@@ -8,6 +8,7 @@ import type {
   Vendor, Machine, MaterialConsumptionListItem, MaterialConsumptionDetail, SecondaryMaterialCategory,
   MaterialConsumptionPalletRow, ProductionListItem, ProductionDetail, ProductionMachineEntry, ProductionSavePayload,
   IpqcListItem, IpqcDetail, IpqcSavePayload,
+  AppUser, UserCreateInput, UserUpdateInput,
 } from "./types";
 
 // Static, never-changing business constants -- mirrored 1:1 from
@@ -1018,6 +1019,15 @@ async function qcMetaSb(): Promise<QcMeta> {
 
 export const api = {
   me: () => request<MeResponse>("/api/v1/me"),
+
+  // -- Users (Setup -> Users, admin-only) -- privileged multi-table
+  // (app_users + module_permissions) writes, so unlike Vendors/SKUs/
+  // Machines these go through FastAPI's `request()`, not direct Supabase.
+  users: () => request<AppUser[]>("/api/v1/users"),
+  createUser: (payload: UserCreateInput) =>
+    request<AppUser>("/api/v1/users", { method: "POST", body: JSON.stringify(payload) }),
+  updateUser: (id: string, patch: UserUpdateInput) =>
+    request<AppUser>(`/api/v1/users/${id}`, { method: "PUT", body: JSON.stringify(patch) }),
 
   // -- Phase 1: reference/master data, direct Supabase (RLS-enforced) -----
   skuCodes: (category?: string) =>

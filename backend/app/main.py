@@ -7,7 +7,7 @@ from app.core.config import get_settings
 from app.api import (
     reference, inward_vehicle_inspections, me, inward_qc,
     rm_qr, rm_storage, fg_qr, fg_storage, production, ipqc, locations, vendors, skus,
-    machines, material_consumption,
+    machines, material_consumption, users,
 )
 
 settings = get_settings()
@@ -41,6 +41,7 @@ app.include_router(locations.router)
 app.include_router(vendors.router)
 app.include_router(skus.router)
 app.include_router(me.router)
+app.include_router(users.router)
 
 
 @app.get("/api/v1/health")

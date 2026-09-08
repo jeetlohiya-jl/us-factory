@@ -585,3 +585,52 @@ class MaterialConsumptionDetailOut(BaseModel):
     production_run_number: Optional[str] = None
     ipqc_id: Optional[uuid.UUID] = None
     machine_entries: list[MaterialConsumptionMachineEntryOut] = []
+
+
+# ---------------------------------------------------------------------------
+# User management (Setup -> Users) -- app_users + module_permissions CRUD,
+# admin-only (see require_admin in app/api/deps.py). Mirrors the exact
+# module list and permission flags /api/v1/me already returns
+# (app/api/me.py MODULES) so the "shape" of a user's permissions is
+# identical whether you're reading your own via /me or managing someone
+# else's here.
+# ---------------------------------------------------------------------------
+
+USER_MODULES = [
+    "inward_vehicle_inspection", "inward_qc",
+    "rm_qr_generation", "rm_storage", "material_consumption", "production", "ipqc", "fg_qr_generation", "fg_storage",
+]
+
+
+class PermissionFlags(BaseModel):
+    can_view: bool = True
+    can_create: bool = False
+    can_edit: bool = False
+    can_delete: bool = False
+    can_approve: bool = False
+    can_fill_section: bool = False
+
+
+class UserOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    email: str
+    full_name: str
+    is_active: bool
+    is_admin: bool
+    permissions: dict[str, PermissionFlags]
+
+
+class UserCreateIn(BaseModel):
+    email: str
+    full_name: str
+    is_admin: bool = False
+    is_active: bool = True
+    permissions: dict[str, PermissionFlags] = {}
+
+
+class UserUpdateIn(BaseModel):
+    full_name: Optional[str] = None
+    is_active: Optional[bool] = None
+    is_admin: Optional[bool] = None
+    permissions: Optional[dict[str, PermissionFlags]] = None

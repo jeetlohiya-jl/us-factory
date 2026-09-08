@@ -21,6 +21,7 @@ class AppUser(Base):
     email = Column(Text, nullable=False, unique=True)
     full_name = Column(Text, nullable=False)
     is_active = Column(Boolean, nullable=False, default=True)
+    is_admin = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
     permissions = relationship("ModulePermission", back_populates="user")

@@ -117,21 +117,59 @@ export interface Permissions {
   can_fill_section: boolean;
 }
 
+export interface ModulePermissionsMap {
+  inward_vehicle_inspection: Permissions;
+  inward_qc: Permissions;
+  rm_qr_generation: Permissions;
+  rm_storage: Permissions;
+  material_consumption: Permissions;
+  production: Permissions;
+  ipqc: Permissions;
+  fg_qr_generation: Permissions;
+  fg_storage: Permissions;
+}
+
 export interface MeResponse {
   user_id: string;
   email: string;
   full_name: string;
-  permissions: {
-    inward_vehicle_inspection: Permissions;
-    inward_qc: Permissions;
-    rm_qr_generation: Permissions;
-    rm_storage: Permissions;
-    material_consumption: Permissions;
-    production: Permissions;
-    ipqc: Permissions;
-    fg_qr_generation: Permissions;
-    fg_storage: Permissions;
-  };
+  is_admin: boolean;
+  permissions: ModulePermissionsMap;
+}
+
+// ---------------------------------------------------------------------------
+// Users (Setup -> Users, admin-only)
+// ---------------------------------------------------------------------------
+
+export type ModuleKey = keyof ModulePermissionsMap;
+
+export const USER_MODULES: ModuleKey[] = [
+  "inward_vehicle_inspection", "inward_qc",
+  "rm_qr_generation", "rm_storage", "material_consumption", "production", "ipqc", "fg_qr_generation", "fg_storage",
+];
+
+export interface AppUser {
+  id: string;
+  email: string;
+  full_name: string;
+  is_active: boolean;
+  is_admin: boolean;
+  permissions: Record<ModuleKey, Permissions>;
+}
+
+export interface UserCreateInput {
+  email: string;
+  full_name: string;
+  is_admin?: boolean;
+  is_active?: boolean;
+  permissions?: Partial<Record<ModuleKey, Permissions>>;
+}
+
+export interface UserUpdateInput {
+  full_name?: string;
+  is_active?: boolean;
+  is_admin?: boolean;
+  permissions?: Partial<Record<ModuleKey, Permissions>>;
 }
 
 // ---------------------------------------------------------------------------

@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabaseClient";
 import { signInWithGoogle, signOut } from "@/lib/session";
+import { useMe } from "@/lib/useMe";
 
 /**
  * Shell matching the approved prototype's sidebar visual language (brand
@@ -102,10 +103,24 @@ const SETUP_NAV_ITEMS = [
   },
 ];
 
+// Admin-only -- appended to SETUP_NAV_ITEMS below rather than listed
+// directly, since (unlike the always-visible Setup items above) this one
+// only renders once useMe() resolves and confirms is_admin, same gate the
+// /users page itself re-checks server-side via require_admin.
+const USERS_NAV_ITEM = {
+  href: "/users",
+  label: "Users",
+  icon: (
+    <path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM22 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+  ),
+};
+
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [checkedSession, setCheckedSession] = useState(false);
   const pathname = usePathname();
+  const me = useMe();
+  const setupNavItems = me?.is_admin ? [...SETUP_NAV_ITEMS, USERS_NAV_ITEM] : SETUP_NAV_ITEMS;
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -159,7 +174,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             </Link>
           ))}
           <div className="sb-group">Setup</div>
-          {SETUP_NAV_ITEMS.map((item) => (
+          {setupNavItems.map((item) => (
             <Link key={item.href} href={item.href} className={`sb-item ${pathname?.startsWith(item.href) ? "active" : ""}`}>
               <svg viewBox="0 0 24 24" fill="none">{item.icon}</svg>
               <span className="label-text">{item.label}</span>

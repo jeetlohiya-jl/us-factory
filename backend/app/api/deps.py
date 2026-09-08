@@ -51,3 +51,18 @@ def require_permission(action: str):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"You do not have permission to {action} this record.")
         return perm
     return _dep
+
+
+def require_admin(
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> models.AppUser:
+    """Gate for the Setup -> Users screen (app/api/users.py). Separate from
+    the module_permissions model entirely -- managing other users' accounts
+    and permissions isn't a per-module action, so it gets its own flag
+    (app_users.is_admin, migration 0018) rather than overloading an
+    existing module's can_edit."""
+    user = db.query(models.AppUser).filter(models.AppUser.id == current_user.user_id).first()
+    if not user or not user.is_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required.")
+    return user
