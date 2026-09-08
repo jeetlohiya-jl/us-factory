@@ -13,6 +13,7 @@ const MODULE_LABELS: Record<ModuleKey, string> = {
   material_consumption: "Material Consumption",
   production: "Production",
   ipqc: "IPQC",
+  rqc: "RQC",
   fg_qr_generation: "FG QR Generation",
   fg_storage: "FG Storage",
 };

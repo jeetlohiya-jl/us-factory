@@ -5,7 +5,7 @@ import { api } from "@/lib/api";
 import { useMe } from "@/lib/useMe";
 import { cachedList, invalidateListCache, listCacheKey } from "@/lib/listCache";
 import { useImmediateThenDebounced } from "@/lib/useImmediateThenDebounced";
-import type { QrGenerationDetail, QrGenerationListItem, ProductionRun } from "@/lib/types";
+import type { QrGenerationDetail, QrGenerationListItem } from "@/lib/types";
 import QrGenerationPanel from "@/components/qr-generation/QrGenerationPanel";
 import ConfirmDialog from "@/components/inward-vehicle-inspection/ConfirmDialog";
 import MoreMenu from "@/components/inward-vehicle-inspection/MoreMenu";
@@ -25,7 +25,6 @@ function FgQrGenerationPageContent() {
   const searchParams = useSearchParams();
   const me = useMe();
   const [items, setItems] = useState<QrGenerationListItem[]>([]);
-  const [runs, setRuns] = useState<ProductionRun[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -35,22 +34,14 @@ function FgQrGenerationPageContent() {
   const [deleteBlockedMsg, setDeleteBlockedMsg] = useState<string | null>(null);
 
   const perms = me?.permissions.fg_qr_generation;
-  // Prototype semantics: prodPropagateToFgQr fires once a Production
-  // record's status becomes 'saved' (prodSaveRecord) -- 'approved' is kept
-  // too for backward compatibility with existing dev/test data created
-  // before the editable-Production feature existed.
-  const eligibleRuns = runs.filter((r) => (r.status === "saved" || r.status === "approved") && !r.has_fg_qr);
 
   const refresh = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
     try {
       const key = listCacheKey(MODULE, { search });
-      const [qrRes, runsRes] = await cachedList(key, () =>
-        Promise.all([api.listFgQr({ search }), api.listProductionRuns()])
-      );
+      const qrRes = await cachedList(key, () => api.listFgQr({ search }));
       setItems(qrRes.items);
-      setRuns(runsRes);
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : "Failed to load records");
     } finally {
@@ -85,16 +76,6 @@ function FgQrGenerationPageContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
-  async function handleCreateFromRun(runId: string) {
-    try {
-      const d = await api.createFgQrFromRun(runId);
-      setDetail(d);
-      refreshAfterMutation();
-    } catch (e) {
-      setLoadError(e instanceof Error ? e.message : "Failed to create FG QR record");
-    }
-  }
-
   async function handleGenerate() {
     if (!detail) return;
     const updated = await api.generateFgQr(detail.id);
@@ -118,22 +99,10 @@ function FgQrGenerationPageContent() {
       <div className="page-head2">
         <div>
           <h1>FG QR Generation</h1>
-          <div className="desc">Every FG QR generation record created to date. Records auto-appear here once an approved Production Run feeds them — the same fundamental design as RM QR Generation.</div>
+          <div className="desc">Every FG QR generation record created to date. Records auto-appear here once RQC (Final Quality Control) approves a Production Run — the same fundamental design as RM QR Generation.</div>
         </div>
-        <span className="auto-note">Records are created automatically from an approved Production Run.</span>
+        <span className="auto-note">Records are created automatically from an Approved RQC record.</span>
       </div>
-
-      {eligibleRuns.length > 0 && perms?.can_create && (
-        <div className="card" style={{ marginBottom: 18, padding: "14px 20px" }}>
-          <div className="section-label" style={{ marginTop: 0 }}>Approved Production Runs awaiting FG QR Generation</div>
-          {eligibleRuns.map((r) => (
-            <div key={r.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid var(--rule)" }}>
-              <div className="mono" style={{ fontSize: 13 }}>{r.run_number} · {r.sku_code} / {r.sku_version} · {r.total_fg_pallets} pallets · {r.shipment_number || "—"}</div>
-              <button className="btn btn-primary" onClick={() => handleCreateFromRun(r.id)}>Open FG QR Generation →</button>
-            </div>
-          ))}
-        </div>
-      )}
 
       <div className="toolbar">
         <div className="toolbar-left">

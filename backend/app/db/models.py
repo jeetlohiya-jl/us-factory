@@ -396,6 +396,7 @@ class ProductionRun(Base):
     machines = relationship("ProductionRunMachine", back_populates="production_run", cascade="all, delete-orphan")
     material_consumptions = relationship("MaterialConsumption", back_populates="production_run")
     ipqc_record = relationship("IpqcRecord", back_populates="production_run", uselist=False)
+    rqc_record = relationship("RqcRecord", back_populates="production_run", uselist=False)
     wastage_entries = relationship(
         "ProductionWastageEntry", back_populates="production_run",
         cascade="all, delete-orphan", order_by="ProductionWastageEntry.sort_order",
@@ -528,6 +529,106 @@ class IpqcBlockDefect(Base):
     block = relationship("IpqcCheckBlock", back_populates="defects")
 
     __table_args__ = (UniqueConstraint("block_id", "defect_sr"),)
+
+
+class RqcRecord(Base):
+    """
+    RQC (Final Quality Control) -- auto-created (never duplicated) the
+    moment the relevant Material Consumption record is finalized (see
+    rqc_service.find_or_create_rqc, called from
+    material_consumption_service.finalize() immediately after
+    find_or_create_ipqc). Creation is independent of IPQC's status: this
+    record exists as Pending from Material Consumption save onward.
+
+    The quality gate between IPQC and FG QR Generation: only once *this*
+    record's own status is 'approved' -- via its own save route, after its
+    own inspection requirements are completed, never automatically -- does
+    the existing FG QR Generation record get created for the run
+    (get_or_create_fg_qr_for_production_run, called from rqc.py's save
+    route instead of Production's, per the corrected workflow).
+
+    One RQC record per Production Run (unique constraint on
+    production_run_id) is the dedup mechanism, exactly mirroring
+    IpqcRecord's own production_run_id uniqueness.
+
+    sku_code/version/shipment_number are autopopulated at creation from the
+    Production Run and never re-entered. Manufacturer has no upstream
+    source in this app (same as the HTML prototype's own plain-text field)
+    so it's seeded with a placeholder and left genuinely user-editable.
+    The FG pallet count shown alongside this record is read live from
+    production_runs.total_fg_pallets via the FK -- never duplicated onto
+    this table, so there is exactly one source of truth for "how many FG
+    pallets this run produced."
+    """
+    __tablename__ = "rqc_records"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    production_run_id = Column(UUID(as_uuid=True), ForeignKey("production_runs.id", ondelete="CASCADE"), nullable=False, unique=True)
+    ipqc_record_id = Column(UUID(as_uuid=True), ForeignKey("ipqc_records.id"), nullable=True)
+    sku_code_id = Column(UUID(as_uuid=True), ForeignKey("sku_codes.id"), nullable=True)
+    sku_version_id = Column(UUID(as_uuid=True), ForeignKey("sku_versions.id"), nullable=True)
+    sku_code_snapshot = Column(Text, nullable=True)
+    sku_version_snapshot = Column(Text, nullable=True)
+    shipment_number = Column(Text, nullable=True)
+    manufacturer = Column(Text, nullable=True)
+    # Free-text summary field, genuinely user-entered -- never computed,
+    # matching the prototype's #rqc-f-overall-result exactly (separate from
+    # `status`, which IS computed from the defect grid below).
+    overall_result = Column(Text, nullable=True)
+    status = Column(Text, nullable=False, default="pending")
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+    production_run = relationship("ProductionRun", back_populates="rqc_record")
+    ipqc_record = relationship("IpqcRecord")
+    sku_code = relationship("SkuCode")
+    sku_version = relationship("SkuVersion")
+    defect_results = relationship(
+        "RqcDefectResult", back_populates="rqc_record",
+        cascade="all, delete-orphan", order_by="RqcDefectResult.defect_sr",
+    )
+    coa_observations = relationship(
+        "RqcCoaObservation", back_populates="rqc_record",
+        cascade="all, delete-orphan",
+    )
+
+
+class RqcDefectResult(Base):
+    """One defect row's Defects Found + Remarks. defect_sr matches RQC's
+    own fixed 15-item defect list (RQC_DEFECT_GROUPS in rqc_service.py /
+    frontend types.ts) -- 4 classification groups (Unacceptable/Critical/
+    Major/Minor), each with its own AQL accept/reject numbers. The
+    type/classification/sample-size/accept/reject text is static reference
+    data, not stored per record, same as IPQC_DEFECTS. Result (OK / NOT OK)
+    is never stored -- it's computed from found vs. the defect's group
+    reject threshold, matching rqcRecalcResult exactly."""
+    __tablename__ = "rqc_defect_results"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    rqc_record_id = Column(UUID(as_uuid=True), ForeignKey("rqc_records.id", ondelete="CASCADE"), nullable=False)
+    defect_sr = Column(Integer, nullable=False)
+    found = Column(Numeric, nullable=True)
+    remarks = Column(Text, nullable=True)
+
+    rqc_record = relationship("RqcRecord", back_populates="defect_results")
+
+    __table_args__ = (UniqueConstraint("rqc_record_id", "defect_sr"),)
+
+
+class RqcCoaObservation(Base):
+    """One Observation value for one COA parameter row, within one of the
+    four fixed COA tables (coa_group: 'base' | 'functional' | 'packing' |
+    'printing' -- RQC_COA_BASE/FUNCTIONAL/PACKING/PRINTING in
+    rqc_service.py / frontend types.ts). Parameter/Specification text is
+    static reference data, not stored per record, same as the defect
+    grid's type/classification text."""
+    __tablename__ = "rqc_coa_observations"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    rqc_record_id = Column(UUID(as_uuid=True), ForeignKey("rqc_records.id", ondelete="CASCADE"), nullable=False)
+    coa_group = Column(Text, nullable=False)
+    sr = Column(Integer, nullable=False)
+    observation = Column(Text, nullable=True)
+
+    rqc_record = relationship("RqcRecord", back_populates="coa_observations")
+
+    __table_args__ = (UniqueConstraint("rqc_record_id", "coa_group", "sr"),)
 
 
 class Location(Base):

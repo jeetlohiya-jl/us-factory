@@ -111,15 +111,22 @@ def create_fg_qr_from_run(
     Inward QC auto-creating its RM QR Generation record. A real Production
     module would call this the moment a run is approved; here it is exposed
     directly since the Production module itself is out of scope."""
-    run = db.query(models.ProductionRun).filter(models.ProductionRun.id == run_id).first()
+    run = (
+        db.query(models.ProductionRun)
+        .options(joinedload(models.ProductionRun.rqc_record))
+        .filter(models.ProductionRun.id == run_id)
+        .first()
+    )
     if not run:
         raise HTTPException(status_code=404, detail="Production Run not found")
-    # 'saved' is the status prodSaveRecord actually sets once a user
-    # completes a Production record's editable fields (Rejection
-    # Classification / Wastage / FG Pallets); 'approved' is kept for
-    # backward compatibility with pre-existing dev/test data.
-    if run.status not in ("saved", "approved"):
-        raise HTTPException(status_code=422, detail="Only a saved/completed Production Run can feed FG QR Generation.")
+    # FG QR Generation is gated on RQC (the quality gate between IPQC and
+    # FG QR Generation), not on Production's own status -- Production
+    # output passing final QC is what makes it FG-eligible, not merely
+    # being recorded. This endpoint is a manual escape hatch (normally RQC
+    # approval triggers this automatically -- see api/rqc.py's save route)
+    # so it must honor the same gate, not bypass it.
+    if not run.rqc_record or run.rqc_record.status != "approved":
+        raise HTTPException(status_code=422, detail="Only a Production Run whose RQC record is Approved can feed FG QR Generation.")
     rec = qr_generation_service.get_or_create_fg_qr_for_production_run(db, run)
     db.commit()
     return serialize_qr_detail(_get_or_404(db, rec.id))

@@ -125,6 +125,7 @@ export interface ModulePermissionsMap {
   material_consumption: Permissions;
   production: Permissions;
   ipqc: Permissions;
+  rqc: Permissions;
   fg_qr_generation: Permissions;
   fg_storage: Permissions;
 }
@@ -145,7 +146,7 @@ export type ModuleKey = keyof ModulePermissionsMap;
 
 export const USER_MODULES: ModuleKey[] = [
   "inward_vehicle_inspection", "inward_qc",
-  "rm_qr_generation", "rm_storage", "material_consumption", "production", "ipqc", "fg_qr_generation", "fg_storage",
+  "rm_qr_generation", "rm_storage", "material_consumption", "production", "ipqc", "rqc", "fg_qr_generation", "fg_storage",
 ];
 
 export interface AppUser {
@@ -559,6 +560,8 @@ export interface ProductionDetail {
   completed_at: string | null;
   ipqc_id: string | null;
   ipqc_status: string | null;
+  rqc_id: string | null;
+  rqc_status: string | null;
   fg_qr_batches: { id: string; batch_display_id: string; status: string }[];
 }
 
@@ -572,8 +575,10 @@ export interface ProductionDetail {
 
 // The prototype's fixed IPQC_DEFECTS list -- static reference data (type,
 // classification, inspection method, sample size), never stored per
-// record. Only order/sr/label matter for rendering; sr values intentionally
-// skip 4 and 5 (RQC-only defects), matching the prototype exactly.
+// record. Only order/sr/label matter for rendering. Note: sr skips 4/5
+// here, but this is IPQC's own independent numbering -- RQC has its own
+// fully separate 15-item defect grid (RQC_DEFECT_GROUPS below, sr 1-15),
+// not a continuation of this list.
 export interface IpqcDefectDef {
   sr: number;
   type: string;
@@ -646,4 +651,150 @@ export interface IpqcSavePayload {
   shift_incharge: string | null;
   save_mode: "draft" | "final";
   blocks: { check_time: string | null; overall_result: string | null; defects: IpqcBlockDefect[] }[];
+}
+
+// ---------------------------------------------------------------------------
+// RQC (Final Quality Control) -- auto-created (never manually) the moment
+// its Production Run's IPQC record reaches Approved. Sits between IPQC and
+// FG QR Generation: Shipment/SKU/pallet-count fields are autopopulated from
+// upstream (the Production Run, via IPQC) and read-only; Manufacturer, the
+// defect grid, the COA observation tables, and Overall Result are the
+// editable data, saved atomically through FastAPI. RQC does not create or
+// own any FG pallets -- it only gates when Production's own existing FG
+// pallet count becomes eligible for FG QR Generation.
+// ---------------------------------------------------------------------------
+
+// The prototype's fixed RQC_DEFECT_GROUPS -- 4 classification groups, each
+// with its own AQL accept/reject sample numbers, 15 items total. Static
+// reference data, never stored per record -- only the per-defect Found/
+// Remarks answers are. Independent sr numbering space from IPQC_DEFECTS.
+export interface RqcDefectItemDef {
+  sr: number;
+  type: string;
+}
+
+export interface RqcDefectGroupDef {
+  classification: string;
+  badgeClass: string;
+  sampleSize: number;
+  accept: number;
+  reject: number;
+  items: RqcDefectItemDef[];
+}
+
+export const RQC_DEFECT_GROUPS: RqcDefectGroupDef[] = [
+  { classification: "Unacceptable", badgeClass: "unacceptable", sampleSize: 800, accept: 0, reject: 1, items: [
+    { sr: 1, type: "Foreign Material (Insects , Hair and Dust)" },
+    { sr: 2, type: "Metal Particles" },
+    { sr: 3, type: "Lamination black spots (due to metal pieces)" },
+  ] },
+  { classification: "Critical", badgeClass: "critical", sampleSize: 800, accept: 14, reject: 15, items: [
+    { sr: 4, type: "Surface Cracks and Cuts" },
+    { sr: 5, type: "Lamination bubbles on tray" },
+    { sr: 6, type: "Stickiness of the Pad" },
+    { sr: 7, type: "Placement Side of the Pad" },
+  ] },
+  { classification: "Major", badgeClass: "major", sampleSize: 800, accept: 21, reject: 22, items: [
+    { sr: 8, type: "Direction of the Pad" },
+    { sr: 9, type: "Lamination peel off" },
+    { sr: 10, type: "Trimming burs" },
+    { sr: 11, type: "Lamination film darkening" },
+    { sr: 12, type: "Flange damage or bend" },
+  ] },
+  { classification: "Minor", badgeClass: "minor", sampleSize: 800, accept: 53, reject: 54, items: [
+    { sr: 13, type: "Color spots (Black, yellow etc)" },
+    { sr: 14, type: "Watermarks or mold marks" },
+    { sr: 15, type: "Lamination fold" },
+  ] },
+];
+
+export interface RqcCoaParamDef {
+  sr: number;
+  param: string;
+  spec: string;
+}
+
+export const RQC_COA_BASE: RqcCoaParamDef[] = [
+  { sr: 1, param: "Tray Colour", spec: "Natural" },
+  { sr: 2, param: "Tray Dimensions (L x W x H) mm", spec: "As per specs" },
+  { sr: 3, param: "Tray Weight with liner (g)", spec: "As per specs" },
+  { sr: 4, param: "Pad color", spec: "As per specs" },
+  { sr: 5, param: "Base material of Pad", spec: "As per specs" },
+  { sr: 6, param: "Dimensions of Pad", spec: "As per specs" },
+  { sr: 7, param: "Weight of pad with Base material", spec: "As per specs" },
+  { sr: 8, param: "Absorption Rate", spec: "As per specs" },
+];
+
+export const RQC_COA_FUNCTIONAL: RqcCoaParamDef[] = [
+  { sr: 1, param: "Air gap (AB Stacking)", spec: "1 sample set of 10 trays/pallet (Test procedure)" },
+  { sr: 2, param: "Gravity fall (AB stacking)", spec: "1 sample set of 10 trays/pallet (Test procedure)" },
+];
+
+export const RQC_COA_PACKING: RqcCoaParamDef[] = [
+  { sr: 1, param: "Pallet Box Dimensions", spec: "As per specifications (Pallet Box need to be having 1500 Kgf)" },
+  { sr: 2, param: "Trays/Bag", spec: "As per specifications" },
+  { sr: 3, param: "Bags/Pallet", spec: "As per specifications" },
+  { sr: 4, param: "Trays/Pallet", spec: "As per specifications" },
+  { sr: 5, param: "Tray Packing Direction in bags", spec: "As per specifications" },
+  { sr: 6, param: "Strapping & Angle Boards", spec: "As per specifications" },
+  { sr: 7, param: "Stretch wrapping of pallet boxes", spec: "As per specifications" },
+  { sr: 8, param: "Pallet Material and Quality", spec: "As per specs - Plywood pallets" },
+];
+
+export const RQC_COA_PRINTING: RqcCoaParamDef[] = [
+  { sr: 1, param: "Artwork", spec: "As per approved artwork" },
+  { sr: 2, param: "Print shade", spec: "As per approved artwork" },
+  { sr: 3, param: "Barcode", spec: "As per approved artwork" },
+  { sr: 4, param: "Packing Label", spec: "As per approved artwork" },
+  { sr: 5, param: "Special Label", spec: "As per approved artwork" },
+];
+
+export interface RqcListItem {
+  id: string;
+  shipment_number: string | null;
+  sku_code: string | null;
+  sku_version: string | null;
+  manufacturer: string | null;
+  status: string;
+  date: string | null;
+}
+
+export interface RqcDefectResult {
+  defect_sr: number;
+  found: number | null;
+  remarks: string | null;
+}
+
+export interface RqcCoaObservation {
+  coa_group: string;
+  sr: number;
+  observation: string | null;
+}
+
+export interface RqcDetail {
+  id: string;
+  production_run_id: string;
+  production_run_number: string | null;
+  ipqc_id: string | null;
+  shipment_number: string | null;
+  manufacturer: string | null;
+  sku_code: string | null;
+  sku_version: string | null;
+  total_fg_pallets: number | null;
+  shift: string | null;
+  date: string | null;
+  overall_result: string | null;
+  status: string;
+  defect_results: RqcDefectResult[];
+  coa_observations: RqcCoaObservation[];
+}
+
+// Payload for api.saveRqc -- the single atomic write for RQC (backend/
+// app/api/rqc.py's PUT route).
+export interface RqcSavePayload {
+  manufacturer: string | null;
+  overall_result: string | null;
+  save_mode: "draft" | "final";
+  defect_results: RqcDefectResult[];
+  coa_observations: RqcCoaObservation[];
 }

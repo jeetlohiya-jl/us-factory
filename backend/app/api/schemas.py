@@ -473,6 +473,65 @@ class IpqcSaveOut(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# RQC (Final Quality Control) -- migration 0019. Auto-created the moment the
+# relevant Material Consumption record is finalized, independent of IPQC's
+# status (see rqc_service.find_or_create_rqc).
+# Shape is flat (no "blocks" concept like IPQC's Check Time entries) -- one
+# fixed 15-item defect grid (RQC_DEFECT_GROUPS) and 4 fixed COA parameter
+# tables (RQC_COA_BASE/FUNCTIONAL/PACKING/PRINTING) answered once per record.
+# Shipment Number / SKU Code / SKU Version / No. of Pallets are all
+# autopopulated from the Production Run at creation and never re-entered
+# here -- only Manufacturer (no real upstream source, placeholder + editable)
+# and the inspection answers themselves are genuinely user-editable.
+# ---------------------------------------------------------------------------
+
+class RqcDefectResultIn(BaseModel):
+    defect_sr: int
+    found: Optional[Decimal] = None
+    remarks: Optional[str] = None
+
+
+class RqcDefectResultOut(BaseModel):
+    defect_sr: int
+    found: Optional[Decimal] = None
+    remarks: Optional[str] = None
+
+
+class RqcCoaObservationIn(BaseModel):
+    coa_group: str
+    sr: int
+    observation: Optional[str] = None
+
+
+class RqcCoaObservationOut(BaseModel):
+    coa_group: str
+    sr: int
+    observation: Optional[str] = None
+
+
+class RqcSaveIn(BaseModel):
+    manufacturer: Optional[str] = None
+    overall_result: Optional[str] = None
+    # 'draft' always saves as Draft (Save Draft button); 'final' computes
+    # Approved/Hold from whether any defect's Found >= that defect group's
+    # reject number across the whole grid (Save button) -- matches
+    # rqcRecalcResult/rqcOverallStatus exactly, same shape as IPQC's own
+    # save_mode/status computation.
+    save_mode: Literal["draft", "final"] = "draft"
+    defect_results: list[RqcDefectResultIn] = []
+    coa_observations: list[RqcCoaObservationIn] = []
+
+
+class RqcSaveOut(BaseModel):
+    id: uuid.UUID
+    status: str
+    manufacturer: Optional[str] = None
+    overall_result: Optional[str] = None
+    defect_results: list[RqcDefectResultOut] = []
+    coa_observations: list[RqcCoaObservationOut] = []
+
+
+# ---------------------------------------------------------------------------
 # Machines (master data for Material Consumption / Production)
 # ---------------------------------------------------------------------------
 
@@ -598,7 +657,7 @@ class MaterialConsumptionDetailOut(BaseModel):
 
 USER_MODULES = [
     "inward_vehicle_inspection", "inward_qc",
-    "rm_qr_generation", "rm_storage", "material_consumption", "production", "ipqc", "fg_qr_generation", "fg_storage",
+    "rm_qr_generation", "rm_storage", "material_consumption", "production", "ipqc", "rqc", "fg_qr_generation", "fg_storage",
 ]
 
 

@@ -367,7 +367,17 @@ export default function ProductionDetailPanel({
                 <Kv
                   label="IPQC"
                   value={record.ipqc_id ? (
-                    <span className="mono">{record.ipqc_id.slice(0, 8)}… <span style={{ marginLeft: 6 }}><StatusBadge status={record.ipqc_status || "pending"} /></span></span>
+                    <Link className="mono" href={`/ipqc?open=${record.ipqc_id}`} style={{ textDecoration: "underline" }}>
+                      {record.ipqc_id.slice(0, 8)}… <span style={{ marginLeft: 6 }}><StatusBadge status={record.ipqc_status || "pending"} /></span> →
+                    </Link>
+                  ) : "Not yet created"}
+                />
+                <Kv
+                  label="RQC"
+                  value={record.rqc_id ? (
+                    <Link className="mono" href={`/rqc?open=${record.rqc_id}`} style={{ textDecoration: "underline" }}>
+                      {record.rqc_id.slice(0, 8)}… <span style={{ marginLeft: 6 }}><StatusBadge status={record.rqc_status || "pending"} /></span> →
+                    </Link>
                   ) : "Not yet created"}
                 />
                 <Kv

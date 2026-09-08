@@ -19,7 +19,6 @@ from app.api import schemas
 from app.api.deps import get_current_user
 from app.adapters.auth.base import AuthenticatedUser
 from app.domain import material_consumption_service as mc_svc
-from app.domain import qr_generation_service
 
 router = APIRouter(prefix="/api/v1/production-runs", tags=["production-runs"])
 
@@ -200,14 +199,17 @@ def save_production_run(
     # started after the run was first saved still gets its end_time.
     mc_svc.stamp_end_times_for_production_run(db, run, client_time=payload.client_time)
 
-    # Per explicit direction: FG Pallets Generated, once recorded here, IS
-    # what populates FG QR Generation (and, once that batch is generated,
-    # FG Storage's pending list) -- the operator no longer has to separately
-    # trigger it. Idempotent find-or-create/refresh, mirroring exactly how
-    # an Accepted Inward QC auto-populates RM QR Generation. Only bother
-    # once there's actually a positive pallet count to generate QR codes for.
-    if run.total_fg_pallets and run.total_fg_pallets > 0:
-        qr_generation_service.get_or_create_fg_qr_for_production_run(db, run)
+    # NOTE: FG QR Generation is intentionally NOT triggered from here.
+    # Saving Total FG Pallets Generated only records Production's own
+    # output -- it is not the same as that output passing final QC. FG QR
+    # Generation is now gated on RQC (the quality gate between IPQC and FG
+    # QR Generation) reaching 'approved' -- see api/rqc.py's save route,
+    # which calls the same get_or_create_fg_qr_for_production_run that used
+    # to be called unconditionally here. (RQC's own record is created much
+    # earlier -- the moment Material Consumption is finalized, see
+    # rqc_service.find_or_create_rqc -- but it only reaches 'approved',
+    # and only then triggers FG QR Generation, once its own inspection is
+    # completed and saved.)
 
     # Records who actually filled in and saved this record's editable
     # fields -- every save re-stamps this, not just the first, so the

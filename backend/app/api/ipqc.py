@@ -120,6 +120,13 @@ def save_ipqc_record(
 
     rec.status = "draft" if payload.save_mode == "draft" else ("hold" if has_failure else "approved")
 
+    # NOTE: RQC is NOT auto-created from here. RQC's creation trigger is
+    # Material Consumption (see material_consumption_service.finalize,
+    # which calls find_or_create_ipqc immediately followed by
+    # find_or_create_rqc) -- RQC exists as Pending from the moment Material
+    # Consumption is finalized, regardless of this IPQC record's status.
+    # This route only ever affects an RQC record that already exists.
+
     db.commit()
     db.refresh(rec)
     return _serialize_save(rec)

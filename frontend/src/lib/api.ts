@@ -8,6 +8,7 @@ import type {
   Vendor, Machine, MaterialConsumptionListItem, MaterialConsumptionDetail, SecondaryMaterialCategory,
   MaterialConsumptionPalletRow, ProductionListItem, ProductionDetail, ProductionMachineEntry, ProductionSavePayload,
   IpqcListItem, IpqcDetail, IpqcSavePayload,
+  RqcListItem, RqcDetail, RqcSavePayload,
   AppUser, UserCreateInput, UserUpdateInput,
 } from "./types";
 
@@ -777,6 +778,7 @@ const PRODUCTION_DETAIL_SELECT =
   "created_by_user:app_users!production_runs_created_by_fkey(full_name)," +
   "completed_by_user:app_users!production_runs_completed_by_fkey(full_name)," +
   "ipqc_record:ipqc_records(id,status)," +
+  "rqc_record:rqc_records(id,status)," +
   "fg_qr_batches:qr_generation_records(id,batch_display_id,status,qr_type)," +
   `wastage_entries:production_wastage_entries(${PRODUCTION_WASTAGE_SELECT}),` +
   `material_consumptions(id,status,machine_entries:material_consumption_machine_entries(${PRODUCTION_MACHINE_ENTRY_SELECT}))`;
@@ -794,6 +796,7 @@ type RawProductionRunDetail = {
   created_by_user: { full_name: string } | null;
   completed_by_user: { full_name: string } | null;
   ipqc_record: { id: string; status: string } | { id: string; status: string }[] | null;
+  rqc_record: { id: string; status: string } | { id: string; status: string }[] | null;
   fg_qr_batches: { id: string; batch_display_id: string; status: string; qr_type: string }[];
   wastage_entries: RawProdWastageEntry[];
   material_consumptions: RawProdMc[];
@@ -818,6 +821,8 @@ function deriveShipmentNumberFromEntries(mcs: RawProdMc[]): string | null {
 function flattenProductionDetail(raw: RawProductionRunDetail): ProductionDetail {
   const ipqc = raw.ipqc_record;
   const ipqcObj = Array.isArray(ipqc) ? ipqc[0] ?? null : ipqc;
+  const rqc = raw.rqc_record;
+  const rqcObj = Array.isArray(rqc) ? rqc[0] ?? null : rqc;
   const mcs = raw.material_consumptions || [];
   const machineEntries: ProductionMachineEntry[] = [];
   for (const mc of mcs) {
@@ -856,6 +861,7 @@ function flattenProductionDetail(raw: RawProductionRunDetail): ProductionDetail 
     completed_by: raw.completed_by_user?.full_name ?? null,
     completed_at: raw.completed_at,
     ipqc_id: ipqcObj?.id ?? null, ipqc_status: ipqcObj?.status ?? null,
+    rqc_id: rqcObj?.id ?? null, rqc_status: rqcObj?.status ?? null,
     fg_qr_batches: (raw.fg_qr_batches || []).filter((b) => b.qr_type === "fg").map((b) => ({ id: b.id, batch_display_id: b.batch_display_id, status: b.status })),
   };
 }
@@ -947,6 +953,84 @@ async function getIpqcSb(id: string): Promise<IpqcDetail> {
   const { data, error } = await supabase.from("ipqc_records").select(IPQC_DETAIL_SELECT).eq("id", id).single();
   if (error || !data) throw new ApiError(404, "IPQC record not found");
   return flattenIpqcDetail(data as unknown as RawIpqcRecordDetail);
+}
+
+// -- RQC: list/detail via Supabase, save via FastAPI ------------------------
+// Records are auto-created (never manually) the moment their Production
+// Run's IPQC record reaches Approved -- see rqc_service.find_or_create_rqc
+// -- so there is no create function here, only list/detail reads and the
+// one editable-fields save (Manufacturer + defect grid + COA observations).
+
+type RawRqcListItem = {
+  id: string; shipment_number: string | null; sku_code_snapshot: string | null; sku_version_snapshot: string | null;
+  manufacturer: string | null; status: string; created_at: string | null;
+};
+
+const RQC_LIST_SELECT = "id,shipment_number,sku_code_snapshot,sku_version_snapshot,manufacturer,status,created_at";
+
+function flattenRqcListItem(raw: RawRqcListItem): RqcListItem {
+  return {
+    id: raw.id, shipment_number: raw.shipment_number,
+    sku_code: raw.sku_code_snapshot, sku_version: raw.sku_version_snapshot,
+    manufacturer: raw.manufacturer, status: raw.status, date: raw.created_at,
+  };
+}
+
+async function listRqcSb(
+  params: { search?: string; status?: string; page?: number } = {}
+): Promise<{ items: RqcListItem[]; matched_count: number }> {
+  const page = params.page && params.page > 0 ? params.page : 1;
+  let q = supabase.from("rqc_records").select(RQC_LIST_SELECT, { count: "exact" }).order("created_at", { ascending: false });
+  if (params.status) q = q.eq("status", params.status);
+  if (params.search) {
+    const like = ilikeTerm(params.search);
+    q = q.or(`sku_code_snapshot.ilike.${like},manufacturer.ilike.${like},shipment_number.ilike.${like}`);
+  }
+  const { data, error, count } = await q.range((page - 1) * LIST_PAGE_SIZE, page * LIST_PAGE_SIZE - 1);
+  if (error) throw new ApiError(500, error.message);
+  const rows = ((data || []) as unknown as RawRqcListItem[]).map(flattenRqcListItem);
+  return { items: rows, matched_count: count ?? rows.length };
+}
+
+type RawRqcDefectResult = { defect_sr: number; found: number | string | null; remarks: string | null };
+type RawRqcCoaObservation = { coa_group: string; sr: number; observation: string | null };
+type RawRqcRecordDetail = {
+  id: string; production_run_id: string; shipment_number: string | null; manufacturer: string | null;
+  sku_code_snapshot: string | null; sku_version_snapshot: string | null; overall_result: string | null; status: string;
+  ipqc_record_id: string | null;
+  production_run: { run_number: string; total_fg_pallets: number; shift: string | null; production_date: string | null } |
+    { run_number: string; total_fg_pallets: number; shift: string | null; production_date: string | null }[] | null;
+  defect_results: RawRqcDefectResult[];
+  coa_observations: RawRqcCoaObservation[];
+};
+
+const RQC_DETAIL_SELECT =
+  "id,production_run_id,shipment_number,manufacturer,sku_code_snapshot,sku_version_snapshot,overall_result,status,ipqc_record_id," +
+  "production_run:production_runs(run_number,total_fg_pallets,shift,production_date)," +
+  "defect_results:rqc_defect_results(defect_sr,found,remarks)," +
+  "coa_observations:rqc_coa_observations(coa_group,sr,observation)";
+
+function flattenRqcDetail(raw: RawRqcRecordDetail): RqcDetail {
+  const runObj = Array.isArray(raw.production_run) ? raw.production_run[0] ?? null : raw.production_run;
+  return {
+    id: raw.id, production_run_id: raw.production_run_id, production_run_number: runObj?.run_number ?? null,
+    ipqc_id: raw.ipqc_record_id,
+    shipment_number: raw.shipment_number, manufacturer: raw.manufacturer,
+    sku_code: raw.sku_code_snapshot, sku_version: raw.sku_version_snapshot,
+    total_fg_pallets: runObj?.total_fg_pallets ?? null,
+    shift: runObj?.shift ?? null, date: runObj?.production_date ?? null,
+    overall_result: raw.overall_result, status: raw.status,
+    defect_results: (raw.defect_results || [])
+      .map((d) => ({ defect_sr: d.defect_sr, found: d.found == null ? null : Number(d.found), remarks: d.remarks }))
+      .sort((a, c) => a.defect_sr - c.defect_sr),
+    coa_observations: (raw.coa_observations || []).map((o) => ({ coa_group: o.coa_group, sr: o.sr, observation: o.observation })),
+  };
+}
+
+async function getRqcSb(id: string): Promise<RqcDetail> {
+  const { data, error } = await supabase.from("rqc_records").select(RQC_DETAIL_SELECT).eq("id", id).single();
+  if (error || !data) throw new ApiError(404, "RQC record not found");
+  return flattenRqcDetail(data as unknown as RawRqcRecordDetail);
 }
 
 // Sku_codes rows always come back with their versions embedded via
@@ -1517,6 +1601,32 @@ export const api = {
       body: JSON.stringify(payload),
     });
     invalidateListCache("ipqc");
+    // An IPQC save that reaches Approved auto-creates RQC (see
+    // rqc_service.find_or_create_rqc) -- invalidate RQC's list cache too so
+    // the new Pending record shows up without a hard refresh.
+    invalidateListCache("rqc");
+    return res;
+  },
+
+  // -- RQC (Final Quality Control) --------------------------------------
+  // Same split as IPQC: list/detail reads Supabase-direct (every record is
+  // auto-created the moment its Production Run's IPQC reaches Approved),
+  // the one editable-fields save (Manufacturer + defect grid + COA
+  // observations) through FastAPI.
+  listRqc: (params: { search?: string; status?: string; page?: number } = {}) =>
+    cachedList(listCacheKey("rqc", params), () => listRqcSb(params)),
+  getRqc: (id: string) => getRqcSb(id),
+  saveRqc: async (id: string, payload: RqcSavePayload) => {
+    const res = await request<{ id: string; status: string }>(`/api/v1/rqc-records/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+    invalidateListCache("rqc");
+    // A save that reaches Approved auto-creates/refreshes the FG QR
+    // Generation record for this run (see api/rqc.py's save route) --
+    // invalidate its list cache too so the new Pending record shows up
+    // without a hard refresh.
+    invalidateListCache("fg-qr");
     return res;
   },
 };
