@@ -16,6 +16,8 @@ const MODULE_LABELS: Record<ModuleKey, string> = {
   rqc: "RQC",
   fg_qr_generation: "FG QR Generation",
   fg_storage: "FG Storage",
+  customer_shipment: "Customer Shipment",
+  shipment_picking: "Shipment Picking",
 };
 
 const ACTIONS: { key: keyof Permissions; label: string }[] = [

@@ -846,3 +846,105 @@ class MaterialConsumptionPallet(Base):
 
     machine_entry = relationship("MaterialConsumptionMachineEntry", back_populates="pallets")
     pallet = relationship("Pallet")
+
+
+class CustomerShipment(Base):
+    """
+    Customer Shipment -- the downstream workflow after FG Storage:
+      FG Storage -> Customer Shipment -> Shipment Picking
+
+    A manual, Admin-only record (create-once, no edit, no status workflow
+    of its own -- see migration 0020's header notes). Creating one is the
+    completion event; it atomically fans out exactly one
+    ShipmentPickingRequest per line item (see
+    customer_shipment_service.create_customer_shipment). Does NOT touch RQC
+    -- RQC is fully upstream (Material Consumption -> Production -> IPQC ->
+    RQC -> FG QR Generation -> FG Storage) and must never be re-triggered
+    here.
+    """
+    __tablename__ = "customer_shipments"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    shipment_number = Column(Text, nullable=False, unique=True)
+    container_number = Column(Text, nullable=False, unique=True)
+    customer = Column(Text, nullable=False)
+    created_by = Column(UUID(as_uuid=True), ForeignKey("app_users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+    line_items = relationship(
+        "CustomerShipmentLineItem", back_populates="customer_shipment",
+        cascade="all, delete-orphan",
+    )
+    picking_requests = relationship("ShipmentPickingRequest", back_populates="customer_shipment")
+
+
+class CustomerShipmentLineItem(Base):
+    __tablename__ = "customer_shipment_line_items"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    customer_shipment_id = Column(UUID(as_uuid=True), ForeignKey("customer_shipments.id", ondelete="CASCADE"), nullable=False)
+    sku_code_id = Column(UUID(as_uuid=True), ForeignKey("sku_codes.id"), nullable=True)
+    sku_version_id = Column(UUID(as_uuid=True), ForeignKey("sku_versions.id"), nullable=True)
+    sku_code_snapshot = Column(Text, nullable=True)
+    sku_version_snapshot = Column(Text, nullable=True)
+    pallets_required = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+    customer_shipment = relationship("CustomerShipment", back_populates="line_items")
+    sku_code = relationship("SkuCode")
+    sku_version = relationship("SkuVersion")
+
+
+class ShipmentPickingRequest(Base):
+    """
+    One per CustomerShipmentLineItem (unique constraint on
+    customer_shipment_line_item_id backstops this -- never one generic
+    request per whole shipment). Every field needed to drive picking
+    (Shipment Number, Customer, SKU Code, SKU Version, required pallet
+    quantity) is snapshotted here at fan-out time, matching the
+    snapshot-at-creation convention used by qr_generation_records / pallets
+    / rqc_records elsewhere in this app.
+    """
+    __tablename__ = "shipment_picking_requests"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    customer_shipment_id = Column(UUID(as_uuid=True), ForeignKey("customer_shipments.id"), nullable=False)
+    customer_shipment_line_item_id = Column(UUID(as_uuid=True), ForeignKey("customer_shipment_line_items.id"), nullable=False, unique=True)
+    shipment_number = Column(Text, nullable=True)
+    container_number = Column(Text, nullable=True)
+    customer = Column(Text, nullable=True)
+    sku_code_id = Column(UUID(as_uuid=True), ForeignKey("sku_codes.id"), nullable=True)
+    sku_version_id = Column(UUID(as_uuid=True), ForeignKey("sku_versions.id"), nullable=True)
+    sku_code_snapshot = Column(Text, nullable=True)
+    sku_version_snapshot = Column(Text, nullable=True)
+    pallets_required = Column(Integer, nullable=False, default=0)
+    status = Column(Text, nullable=False, default="pending")  # 'pending' | 'partial' | 'complete'
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+    customer_shipment = relationship("CustomerShipment", back_populates="picking_requests")
+    line_item = relationship("CustomerShipmentLineItem")
+    sku_code = relationship("SkuCode")
+    sku_version = relationship("SkuVersion")
+    picks = relationship(
+        "ShipmentPickingPick", back_populates="request",
+        cascade="all, delete-orphan", order_by="ShipmentPickingPick.picked_at",
+    )
+
+
+class ShipmentPickingPick(Base):
+    """
+    The one genuinely new piece of information nothing existing tracks:
+    which specific pallet was picked against which request, and from which
+    location (so an undo/remove-pick can restore a StorageRecord there).
+    Picking itself reuses Pallet.lifecycle_status ('picked') +
+    PalletLifecycleEvent + deleting the pallet's StorageRecord -- no
+    duplicate pallet or storage source of truth is created here.
+    """
+    __tablename__ = "shipment_picking_picks"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    shipment_picking_request_id = Column(UUID(as_uuid=True), ForeignKey("shipment_picking_requests.id", ondelete="CASCADE"), nullable=False)
+    pallet_id = Column(UUID(as_uuid=True), ForeignKey("pallets.id"), nullable=False)
+    location_id = Column(UUID(as_uuid=True), ForeignKey("locations.id"), nullable=True)
+    picked_by = Column(UUID(as_uuid=True), ForeignKey("app_users.id"), nullable=True)
+    picked_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+    request = relationship("ShipmentPickingRequest", back_populates="picks")
+    pallet = relationship("Pallet")
+    location = relationship("Location")

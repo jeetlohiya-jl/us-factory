@@ -111,6 +111,7 @@ table.data.compact thead th, table.data.compact tbody td{padding:11px 12px;}
 .badge.onhold{background:var(--red-bg);color:var(--red);}
 .badge.pending{background:var(--amber-bg);color:var(--amber);}
 .badge.generated{background:#e3ecdd;color:var(--green-deep);}
+.badge.partial{background:var(--amber-bg);color:var(--amber);}
 .row-pending td{background:var(--amber-bg);}
 .tab-bar{display:flex;gap:4px;border-bottom:1px solid var(--rule);margin-bottom:20px;}
 .tab-btn{background:none;border:none;padding:10px 16px;font-size:13.5px;font-weight:600;color:var(--ink-50);border-bottom:2px solid transparent;margin-bottom:-1px;}

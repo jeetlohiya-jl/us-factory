@@ -7,7 +7,7 @@ from app.core.config import get_settings
 from app.api import (
     reference, inward_vehicle_inspections, me, inward_qc,
     rm_qr, rm_storage, fg_qr, fg_storage, production, ipqc, rqc, locations, vendors, skus,
-    machines, material_consumption, users,
+    machines, material_consumption, users, customer_shipment, shipment_picking,
 )
 
 settings = get_settings()
@@ -38,6 +38,8 @@ app.include_router(fg_storage.router)
 app.include_router(production.router)
 app.include_router(ipqc.router)
 app.include_router(rqc.router)
+app.include_router(customer_shipment.router)
+app.include_router(shipment_picking.router)
 app.include_router(locations.router)
 app.include_router(vendors.router)
 app.include_router(skus.router)

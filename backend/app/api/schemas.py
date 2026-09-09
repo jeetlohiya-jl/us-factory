@@ -647,6 +647,52 @@ class MaterialConsumptionDetailOut(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Customer Shipment / Shipment Picking -- downstream of FG Storage:
+#   FG Storage -> Customer Shipment -> Shipment Picking
+# Customer Shipment list/detail reads are direct-Supabase (per spec); the
+# only FastAPI routes are the one atomic create transaction and delete for
+# Customer Shipment, and pick/undo-pick for Shipment Picking.
+# ---------------------------------------------------------------------------
+
+class CustomerShipmentLineItemIn(BaseModel):
+    sku_code_id: uuid.UUID
+    sku_version_id: uuid.UUID
+    pallets_required: int
+
+
+class CustomerShipmentCreateIn(BaseModel):
+    customer: str
+    line_items: list[CustomerShipmentLineItemIn] = []
+
+
+class CustomerShipmentLineItemOut(BaseModel):
+    id: uuid.UUID
+    sku_code: Optional[str] = None
+    sku_version: Optional[str] = None
+    pallets_required: int
+
+
+class CustomerShipmentCreateOut(BaseModel):
+    id: uuid.UUID
+    shipment_number: str
+    container_number: str
+    customer: str
+    line_items: list[CustomerShipmentLineItemOut] = []
+
+
+class ShipmentPickIn(BaseModel):
+    payload: str  # scanned pallet QR payload
+
+
+class ShipmentPickOut(BaseModel):
+    request_id: uuid.UUID
+    status: str
+    pallet_display_id: str
+    pallets_picked: int
+    pallets_required: int
+
+
+# ---------------------------------------------------------------------------
 # User management (Setup -> Users) -- app_users + module_permissions CRUD,
 # admin-only (see require_admin in app/api/deps.py). Mirrors the exact
 # module list and permission flags /api/v1/me already returns
@@ -658,6 +704,7 @@ class MaterialConsumptionDetailOut(BaseModel):
 USER_MODULES = [
     "inward_vehicle_inspection", "inward_qc",
     "rm_qr_generation", "rm_storage", "material_consumption", "production", "ipqc", "rqc", "fg_qr_generation", "fg_storage",
+    "customer_shipment", "shipment_picking",
 ]
 
 

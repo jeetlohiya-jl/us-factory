@@ -128,6 +128,8 @@ export interface ModulePermissionsMap {
   rqc: Permissions;
   fg_qr_generation: Permissions;
   fg_storage: Permissions;
+  customer_shipment: Permissions;
+  shipment_picking: Permissions;
 }
 
 export interface MeResponse {
@@ -147,6 +149,7 @@ export type ModuleKey = keyof ModulePermissionsMap;
 export const USER_MODULES: ModuleKey[] = [
   "inward_vehicle_inspection", "inward_qc",
   "rm_qr_generation", "rm_storage", "material_consumption", "production", "ipqc", "rqc", "fg_qr_generation", "fg_storage",
+  "customer_shipment", "shipment_picking",
 ];
 
 export interface AppUser {
@@ -797,4 +800,102 @@ export interface RqcSavePayload {
   save_mode: "draft" | "final";
   defect_results: RqcDefectResult[];
   coa_observations: RqcCoaObservation[];
+}
+
+// ---------------------------------------------------------------------------
+// Customer Shipment / Shipment Picking -- downstream of FG Storage:
+//   FG Storage -> Customer Shipment -> Shipment Picking
+// List/detail reads are direct-Supabase (see lib/api.ts); FastAPI is only
+// used for the one atomic create transaction, delete, and the pick/undo-pick
+// actions. Customer Shipment is create-once (no edit, no own status).
+// ---------------------------------------------------------------------------
+
+export interface CustomerShipmentListItem {
+  id: string;
+  shipment_number: string;
+  container_number: string;
+  customer: string;
+  sku_summary: string; // e.g. "SKU-A / V1, SKU-B / V2"
+  total_pallets: number;
+  created_at: string;
+}
+
+export interface CustomerShipmentLineItem {
+  id: string;
+  sku_code_id: string | null;
+  sku_version_id: string | null;
+  sku_code: string | null;
+  sku_version: string | null;
+  pallets_required: number;
+}
+
+export interface ShipmentPickingRequestSummary {
+  id: string;
+  sku_code: string | null;
+  sku_version: string | null;
+  pallets_required: number;
+  pallets_picked: number;
+  status: string;
+}
+
+export interface CustomerShipmentDetail {
+  id: string;
+  shipment_number: string;
+  container_number: string;
+  customer: string;
+  created_at: string;
+  line_items: CustomerShipmentLineItem[];
+  picking_requests: ShipmentPickingRequestSummary[];
+}
+
+// Draft-form line item shape, before save (no id yet -- keyed locally).
+export interface CustomerShipmentLineItemDraft {
+  key: string;
+  sku_code_id: string | null;
+  sku_version_id: string | null;
+  pallets_required: string | number;
+}
+
+export interface CustomerShipmentCreatePayload {
+  customer: string;
+  line_items: { sku_code_id: string; sku_version_id: string; pallets_required: number }[];
+}
+
+export interface CustomerShipmentCreateResult {
+  id: string;
+  shipment_number: string;
+  container_number: string;
+  customer: string;
+  line_items: { id: string; sku_code: string | null; sku_version: string | null; pallets_required: number }[];
+}
+
+export interface ShipmentPickingListItem {
+  id: string;
+  shipment_number: string | null;
+  customer: string | null;
+  sku_code: string | null;
+  sku_version: string | null;
+  pallets_required: number;
+  pallets_picked: number;
+  status: string;
+  created_at: string;
+}
+
+export interface ShipmentPickingPick {
+  id: string;
+  pallet_id: string;
+  pallet_display_id: string | null;
+  picked_at: string;
+}
+
+export interface ShipmentPickingDetail {
+  id: string;
+  shipment_number: string | null;
+  container_number: string | null;
+  customer: string | null;
+  sku_code: string | null;
+  sku_version: string | null;
+  pallets_required: number;
+  status: string;
+  picks: ShipmentPickingPick[];
 }

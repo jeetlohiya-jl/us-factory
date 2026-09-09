@@ -84,6 +84,20 @@ const NAV_ITEMS = [
       <path d="M3 9l9-5 9 5v9a2 2 0 01-2 2H5a2 2 0 01-2-2zM3 9l9 5 9-5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
     ),
   },
+  {
+    href: "/customer-shipment",
+    label: "Customer Shipment",
+    icon: (
+      <path d="M3 3h13l3 5v10a1 1 0 01-1 1H4a1 1 0 01-1-1zM16 8H3M8 12v6M13 12v6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    ),
+  },
+  {
+    href: "/shipment-picking",
+    label: "Shipment Picking",
+    icon: (
+      <path d="M20 12V8a2 2 0 00-1-1.73l-6-3.46a2 2 0 00-2 0l-6 3.46A2 2 0 004 8v8a2 2 0 001 1.73l6 3.46a2 2 0 002 0l1.5-.87M16 17l2 2 4-4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    ),
+  },
 ];
 
 const SETUP_NAV_ITEMS = [

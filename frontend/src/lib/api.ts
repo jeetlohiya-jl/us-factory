@@ -9,6 +9,8 @@ import type {
   MaterialConsumptionPalletRow, ProductionListItem, ProductionDetail, ProductionMachineEntry, ProductionSavePayload,
   IpqcListItem, IpqcDetail, IpqcSavePayload,
   RqcListItem, RqcDetail, RqcSavePayload,
+  CustomerShipmentListItem, CustomerShipmentDetail, CustomerShipmentCreatePayload, CustomerShipmentCreateResult,
+  ShipmentPickingListItem, ShipmentPickingDetail,
   AppUser, UserCreateInput, UserUpdateInput,
 } from "./types";
 
@@ -1033,6 +1035,187 @@ async function getRqcSb(id: string): Promise<RqcDetail> {
   return flattenRqcDetail(data as unknown as RawRqcRecordDetail);
 }
 
+// -- Customer Shipment / Shipment Picking: list/detail via Supabase --------
+// Downstream of FG Storage: FG Storage -> Customer Shipment -> Shipment
+// Picking. Customer Shipment is create-once (no edit route at all); the
+// only FastAPI routes are the one atomic create transaction and delete for
+// Customer Shipment, and pick/undo-pick for Shipment Picking -- everything
+// else here is a lightweight direct-Supabase read, per spec point 15.
+
+type RawCsListItem = {
+  id: string; shipment_number: string; container_number: string; customer: string; created_at: string;
+  line_items: { sku_code_snapshot: string | null; sku_version_snapshot: string | null; pallets_required: number }[];
+};
+
+// List reads fetch ONLY what the table needs (Shipment Number, Container
+// Number, Customer, SKU summary, Total pallets, Date) -- never the full
+// nested detail -- per spec point 15's "do not over-fetch for the list".
+const CS_LIST_SELECT =
+  "id,shipment_number,container_number,customer,created_at," +
+  "line_items:customer_shipment_line_items(sku_code_snapshot,sku_version_snapshot,pallets_required)";
+
+function flattenCsListItem(raw: RawCsListItem): CustomerShipmentListItem {
+  const items = raw.line_items || [];
+  const sku_summary = items
+    .map((li) => [li.sku_code_snapshot, li.sku_version_snapshot].filter(Boolean).join(" / "))
+    .filter(Boolean)
+    .join(", ");
+  const total_pallets = items.reduce((sum, li) => sum + (li.pallets_required || 0), 0);
+  return {
+    id: raw.id, shipment_number: raw.shipment_number, container_number: raw.container_number,
+    customer: raw.customer, sku_summary, total_pallets, created_at: raw.created_at,
+  };
+}
+
+async function listCustomerShipmentsSb(
+  params: { search?: string; date?: string; page?: number } = {}
+): Promise<{ items: CustomerShipmentListItem[]; matched_count: number }> {
+  const page = params.page && params.page > 0 ? params.page : 1;
+  let q = supabase.from("customer_shipments").select(CS_LIST_SELECT, { count: "exact" }).order("created_at", { ascending: false });
+  if (params.search) {
+    const like = ilikeTerm(params.search);
+    q = q.or(`customer.ilike.${like},container_number.ilike.${like},shipment_number.ilike.${like}`);
+  }
+  if (params.date) {
+    q = q.gte("created_at", `${params.date}T00:00:00`).lte("created_at", `${params.date}T23:59:59`);
+  }
+  const { data, error, count } = await q.range((page - 1) * LIST_PAGE_SIZE, page * LIST_PAGE_SIZE - 1);
+  if (error) throw new ApiError(500, error.message);
+  const rows = ((data || []) as unknown as RawCsListItem[]).map(flattenCsListItem);
+  return { items: rows, matched_count: count ?? rows.length };
+}
+
+type RawCsLineItem = {
+  id: string; sku_code_id: string | null; sku_version_id: string | null;
+  sku_code_snapshot: string | null; sku_version_snapshot: string | null; pallets_required: number;
+};
+type RawCsPickingRequest = {
+  id: string; sku_code_snapshot: string | null; sku_version_snapshot: string | null;
+  pallets_required: number; status: string; picks: { id: string }[];
+};
+type RawCsDetail = {
+  id: string; shipment_number: string; container_number: string; customer: string; created_at: string;
+  line_items: RawCsLineItem[];
+  picking_requests: RawCsPickingRequest[];
+};
+
+// Detail only fetched when the user opens a record (spec point 15) -- full
+// line items + linked Shipment Picking requests, for traceability.
+const CS_DETAIL_SELECT =
+  "id,shipment_number,container_number,customer,created_at," +
+  "line_items:customer_shipment_line_items(id,sku_code_id,sku_version_id,sku_code_snapshot,sku_version_snapshot,pallets_required)," +
+  "picking_requests:shipment_picking_requests(id,sku_code_snapshot,sku_version_snapshot,pallets_required,status,picks:shipment_picking_picks(id))";
+
+function flattenCsDetail(raw: RawCsDetail): CustomerShipmentDetail {
+  return {
+    id: raw.id, shipment_number: raw.shipment_number, container_number: raw.container_number,
+    customer: raw.customer, created_at: raw.created_at,
+    line_items: (raw.line_items || []).map((li) => ({
+      id: li.id, sku_code_id: li.sku_code_id, sku_version_id: li.sku_version_id,
+      sku_code: li.sku_code_snapshot, sku_version: li.sku_version_snapshot, pallets_required: li.pallets_required,
+    })),
+    picking_requests: (raw.picking_requests || []).map((r) => ({
+      id: r.id, sku_code: r.sku_code_snapshot, sku_version: r.sku_version_snapshot,
+      pallets_required: r.pallets_required, pallets_picked: (r.picks || []).length, status: r.status,
+    })),
+  };
+}
+
+async function getCustomerShipmentSb(id: string): Promise<CustomerShipmentDetail> {
+  const { data, error } = await supabase.from("customer_shipments").select(CS_DETAIL_SELECT).eq("id", id).single();
+  if (error || !data) throw new ApiError(404, "Customer Shipment record not found");
+  return flattenCsDetail(data as unknown as RawCsDetail);
+}
+
+/**
+ * Non-incrementing preview of the next Shipment/Container numbers, for the
+ * create panel to display before save (spec point 8) -- a plain SELECT
+ * against display_id_counters (RLS-opened read-only in migration 0020),
+ * never the atomic next_seq() UPSERT the backend uses at actual save time.
+ * "next_value" already IS "the next number that will be issued" (next_seq
+ * returns next_value - 1 *after* incrementing) -- a counter row that
+ * doesn't exist yet simply hasn't issued anything, so this defaults to 1.
+ */
+async function peekNextCsNumbers(): Promise<{ shipment: string; container: string }> {
+  const yymm = new Date().toISOString().slice(2, 7).replace("-", "");
+  const { data, error } = await supabase
+    .from("display_id_counters")
+    .select("counter_key, next_value")
+    .in("counter_key", ["cs_shipment", "cs_container"]);
+  if (error) throw new ApiError(500, error.message);
+  const byKey = new Map((data || []).map((r: { counter_key: string; next_value: number }) => [r.counter_key, r.next_value]));
+  const shipmentSeq = byKey.get("cs_shipment") ?? 1;
+  const containerSeq = byKey.get("cs_container") ?? 1;
+  return {
+    shipment: `US-SHP-${yymm}-${String(shipmentSeq).padStart(4, "0")}`,
+    container: `US-CTN-${yymm}-${String(containerSeq).padStart(4, "0")}`,
+  };
+}
+
+type RawSpListItem = {
+  id: string; shipment_number: string | null; customer: string | null;
+  sku_code_snapshot: string | null; sku_version_snapshot: string | null;
+  pallets_required: number; status: string; created_at: string;
+  picks: { id: string }[];
+};
+
+const SP_LIST_SELECT =
+  "id,shipment_number,customer,sku_code_snapshot,sku_version_snapshot,pallets_required,status,created_at," +
+  "picks:shipment_picking_picks(id)";
+
+function flattenSpListItem(raw: RawSpListItem): ShipmentPickingListItem {
+  return {
+    id: raw.id, shipment_number: raw.shipment_number, customer: raw.customer,
+    sku_code: raw.sku_code_snapshot, sku_version: raw.sku_version_snapshot,
+    pallets_required: raw.pallets_required, pallets_picked: (raw.picks || []).length,
+    status: raw.status, created_at: raw.created_at,
+  };
+}
+
+async function listShipmentPickingSb(
+  params: { search?: string; status?: string; page?: number } = {}
+): Promise<{ items: ShipmentPickingListItem[]; matched_count: number }> {
+  const page = params.page && params.page > 0 ? params.page : 1;
+  let q = supabase.from("shipment_picking_requests").select(SP_LIST_SELECT, { count: "exact" }).order("created_at", { ascending: false });
+  if (params.status) q = q.eq("status", params.status);
+  if (params.search) {
+    const like = ilikeTerm(params.search);
+    q = q.or(`customer.ilike.${like},sku_code_snapshot.ilike.${like},shipment_number.ilike.${like}`);
+  }
+  const { data, error, count } = await q.range((page - 1) * LIST_PAGE_SIZE, page * LIST_PAGE_SIZE - 1);
+  if (error) throw new ApiError(500, error.message);
+  const rows = ((data || []) as unknown as RawSpListItem[]).map(flattenSpListItem);
+  return { items: rows, matched_count: count ?? rows.length };
+}
+
+type RawSpDetail = {
+  id: string; shipment_number: string | null; container_number: string | null; customer: string | null;
+  sku_code_snapshot: string | null; sku_version_snapshot: string | null; pallets_required: number; status: string;
+  picks: { id: string; pallet_id: string; picked_at: string; pallet: { display_id: string } | { display_id: string }[] | null }[];
+};
+
+const SP_DETAIL_SELECT =
+  "id,shipment_number,container_number,customer,sku_code_snapshot,sku_version_snapshot,pallets_required,status," +
+  "picks:shipment_picking_picks(id,pallet_id,picked_at,pallet:pallets(display_id))";
+
+function flattenSpDetail(raw: RawSpDetail): ShipmentPickingDetail {
+  return {
+    id: raw.id, shipment_number: raw.shipment_number, container_number: raw.container_number, customer: raw.customer,
+    sku_code: raw.sku_code_snapshot, sku_version: raw.sku_version_snapshot, pallets_required: raw.pallets_required,
+    status: raw.status,
+    picks: (raw.picks || []).map((p) => {
+      const pallet = Array.isArray(p.pallet) ? p.pallet[0] ?? null : p.pallet;
+      return { id: p.id, pallet_id: p.pallet_id, pallet_display_id: pallet?.display_id ?? null, picked_at: p.picked_at };
+    }),
+  };
+}
+
+async function getShipmentPickingSb(id: string): Promise<ShipmentPickingDetail> {
+  const { data, error } = await supabase.from("shipment_picking_requests").select(SP_DETAIL_SELECT).eq("id", id).single();
+  if (error || !data) throw new ApiError(404, "Shipment Picking request not found");
+  return flattenSpDetail(data as unknown as RawSpDetail);
+}
+
 // Sku_codes rows always come back with their versions embedded via
 // PostgREST's nested-resource select -- matches the joinedload(versions)
 // every FastAPI /skus and /reference/sku-codes route already did, with the
@@ -1628,5 +1811,46 @@ export const api = {
     // without a hard refresh.
     invalidateListCache("fg-qr");
     return res;
+  },
+
+  // -- Customer Shipment / Shipment Picking ------------------------------
+  // List/detail reads are direct-Supabase (spec point 15); the atomic
+  // create transaction, delete, and pick/undo-pick actions go through
+  // FastAPI since they're privileged multi-table writes.
+  listCustomerShipments: (params: { search?: string; date?: string; page?: number } = {}) =>
+    cachedList(listCacheKey("customer-shipment", params), () => listCustomerShipmentsSb(params)),
+  getCustomerShipment: (id: string) => getCustomerShipmentSb(id),
+  peekNextCsNumbers: () => peekNextCsNumbers(),
+  createCustomerShipment: async (payload: CustomerShipmentCreatePayload) => {
+    const res = await request<CustomerShipmentCreateResult>("/api/v1/customer-shipments", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    invalidateListCache("customer-shipment");
+    // Every Customer Shipment save fans out new Shipment Picking requests
+    // (see customer_shipment_service.create_customer_shipment) -- invalidate
+    // its list cache too so they show up without a hard refresh.
+    invalidateListCache("shipment-picking");
+    return res;
+  },
+  deleteCustomerShipment: async (id: string) => {
+    await request<void>(`/api/v1/customer-shipments/${id}`, { method: "DELETE" });
+    invalidateListCache("customer-shipment");
+  },
+
+  listShipmentPicking: (params: { search?: string; status?: string; page?: number } = {}) =>
+    cachedList(listCacheKey("shipment-picking", params), () => listShipmentPickingSb(params)),
+  getShipmentPicking: (id: string) => getShipmentPickingSb(id),
+  pickPallet: async (requestId: string, payload: string) => {
+    const res = await request<{ request_id: string; status: string; pallet_display_id: string; pallets_picked: number; pallets_required: number }>(
+      `/api/v1/shipment-picking/${requestId}/pick`,
+      { method: "POST", body: JSON.stringify({ payload }) }
+    );
+    invalidateListCache("shipment-picking");
+    return res;
+  },
+  removePick: async (requestId: string, pickId: string) => {
+    await request<void>(`/api/v1/shipment-picking/${requestId}/picks/${pickId}`, { method: "DELETE" });
+    invalidateListCache("shipment-picking");
   },
 };
