@@ -19,8 +19,9 @@ Numbering uses the same `%y%m`-based convention (see pallet_service /
 inward_qc_service / vehicle_inspection_service's own next_*_number
 functions) rather than the prototype's illustrative 4-digit-year example --
 the existing app numbering logic is the actual source of truth (spec point
-8). New counter keys "cs_shipment" / "cs_container" (see id_counters.py's
-namespacing convention).
+8). New counter key "cs_container" (see id_counters.py's namespacing
+convention). Shipment Number is user-entered (see create_customer_shipment
+below), so it has no counter of its own.
 
 Explicitly does NOT create, touch, or reference RQC in any way -- RQC is
 fully upstream (Material Consumption -> Production -> IPQC -> RQC -> FG QR
@@ -34,17 +35,12 @@ from sqlalchemy.orm import Session
 
 from app.db import models
 from app.domain.id_counters import next_seq
+from app.domain import ovi_service
 
 # Exact prototype wording (spec point 21) -- must match verbatim.
 BLOCKED_DELETE_MESSAGE = (
     "This Customer Shipment record has linked Shipment Picking requests and cannot be deleted."
 )
-
-
-def next_shipment_number(db: Session) -> str:
-    yymm = datetime.now(timezone.utc).strftime("%y%m")
-    seq = next_seq(db, "cs_shipment")
-    return f"US-SHP-{yymm}-{str(seq).zfill(4)}"
 
 
 def next_container_number(db: Session) -> str:
@@ -57,23 +53,32 @@ def create_customer_shipment(
     db: Session,
     *,
     customer: str,
+    shipment_number: str,
     line_items: list[dict],
     actor_user_id=None,
 ) -> models.CustomerShipment:
     """
-    One atomic transaction: allocates both numbers, creates the shipment,
-    its line items (only ones with sku_code_id set and pallets_required > 0
-    -- matching the prototype's own csSave() validation), and exactly one
-    ShipmentPickingRequest per valid line item, snapshotting every field
-    Shipment Picking needs (spec point 18) so it never has to re-join back
-    through Customer Shipment / SKU master on every read.
+    One atomic transaction: allocates the Container Number, creates the
+    shipment, its line items (only ones with sku_code_id set and
+    pallets_required > 0 -- matching the prototype's own csSave()
+    validation), and exactly one ShipmentPickingRequest per valid line
+    item, snapshotting every field Shipment Picking needs (spec point 18)
+    so it never has to re-join back through Customer Shipment / SKU master
+    on every read.
+
+    Shipment Number is user-entered, not system-generated (corrected per
+    explicit user feedback: the prototype's auto-numbered Shipment Number
+    was wrong for the real workflow -- the Shipment Number is a real-world
+    identifier the customer/forwarder supplies, unlike Container Number,
+    which stays a genuine internal auto-allocation). The unique constraint
+    on customer_shipments.shipment_number (migration 0020) is the backstop
+    against duplicates -- see the 23505 handling in api/customer_shipment.py.
 
     Caller (api/customer_shipment.py) is responsible for the actual
     db.commit() -- this function only adds/flushes within the caller's
     existing transaction, matching every other *_service.py save function
     in this codebase.
     """
-    shipment_number = next_shipment_number(db)
     container_number = next_container_number(db)
 
     shipment = models.CustomerShipment(
@@ -122,6 +127,16 @@ def create_customer_shipment(
             pallets_required=pallets_required,
             status="pending",
         ))
+
+    db.flush()
+
+    # Auto-create the linked Outward Vehicle Inspection record, Pending,
+    # in the SAME transaction -- per explicit clarification this is keyed
+    # off Customer Shipment (not RQC): the instant a Customer Shipment is
+    # recorded, its Outward Vehicle Inspection should already be Pending.
+    # Idempotent structurally (CS itself is create-once) and backstopped by
+    # the unique constraint on outward_vehicle_inspections.customer_shipment_id.
+    ovi_service.create_pending_for_shipment(db, shipment)
 
     db.flush()
     return shipment

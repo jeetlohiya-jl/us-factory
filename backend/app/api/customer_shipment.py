@@ -17,6 +17,7 @@ from app.api import schemas
 from app.api.deps import get_current_user
 from app.adapters.auth.base import AuthenticatedUser
 from app.domain import customer_shipment_service
+from sqlalchemy.exc import IntegrityError
 
 router = APIRouter(prefix="/api/v1/customer-shipments", tags=["customer-shipment"])
 
@@ -47,17 +48,26 @@ def create(
 ):
     if not body.customer or not body.customer.strip():
         raise HTTPException(status_code=422, detail="Customer / Recipient is required.")
+    if not body.shipment_number or not body.shipment_number.strip():
+        raise HTTPException(status_code=422, detail="Shipment Number is required.")
     valid_items = [li for li in body.line_items if li.pallets_required > 0]
     if not valid_items:
         raise HTTPException(status_code=422, detail="At least one line item with a SKU, Version and pallet quantity is required.")
 
-    shipment = customer_shipment_service.create_customer_shipment(
-        db,
-        customer=body.customer.strip(),
-        line_items=[li.model_dump() for li in valid_items],
-        actor_user_id=current_user.user_id,
-    )
-    db.commit()
+    try:
+        shipment = customer_shipment_service.create_customer_shipment(
+            db,
+            customer=body.customer.strip(),
+            shipment_number=body.shipment_number.strip(),
+            line_items=[li.model_dump() for li in valid_items],
+            actor_user_id=current_user.user_id,
+        )
+        db.commit()
+    except IntegrityError as e:
+        db.rollback()
+        if "customer_shipments_shipment_number_key" in str(e.orig):
+            raise HTTPException(status_code=409, detail=f'Shipment Number "{body.shipment_number.strip()}" already exists.')
+        raise HTTPException(status_code=409, detail="Could not save this Customer Shipment (a unique value conflicted).")
     db.refresh(shipment)
 
     return schemas.CustomerShipmentCreateOut(

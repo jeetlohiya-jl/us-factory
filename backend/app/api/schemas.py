@@ -662,6 +662,10 @@ class CustomerShipmentLineItemIn(BaseModel):
 
 class CustomerShipmentCreateIn(BaseModel):
     customer: str
+    # User-entered, not system-generated (see customer_shipment_service.
+    # create_customer_shipment's docstring) -- Container Number is still
+    # allocated automatically.
+    shipment_number: str
     line_items: list[CustomerShipmentLineItemIn] = []
 
 
@@ -693,6 +697,47 @@ class ShipmentPickOut(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Outward Vehicle Inspection -- auto-created from Customer Shipment (see
+# customer_shipment_service.create_customer_shipment); this router exists
+# solely for the one atomic save (Step 1 fields + the 7-question checklist
+# + remarks) and Admin-only delete. No create schema -- there is no
+# POST/create route.
+# ---------------------------------------------------------------------------
+
+class OviAnswerIn(BaseModel):
+    question_sr: int
+    answer: Optional[Literal["ok", "not_ok"]] = None
+
+
+class OviAnswerOut(BaseModel):
+    question_sr: int
+    answer: Optional[str] = None
+
+
+class OviSaveIn(BaseModel):
+    truck_number: Optional[str] = None
+    invoice_number: Optional[str] = None
+    transporter_name: Optional[str] = None
+    seal_number: Optional[str] = None
+    quantity: Optional[str] = None
+    remarks: Optional[str] = None
+    save_mode: Literal["draft", "final"] = "draft"
+    answers: list[OviAnswerIn] = []
+
+
+class OviSaveOut(BaseModel):
+    id: uuid.UUID
+    status: str
+    truck_number: Optional[str] = None
+    invoice_number: Optional[str] = None
+    transporter_name: Optional[str] = None
+    seal_number: Optional[str] = None
+    quantity: Optional[str] = None
+    remarks: Optional[str] = None
+    answers: list[OviAnswerOut] = []
+
+
+# ---------------------------------------------------------------------------
 # User management (Setup -> Users) -- app_users + module_permissions CRUD,
 # admin-only (see require_admin in app/api/deps.py). Mirrors the exact
 # module list and permission flags /api/v1/me already returns
@@ -704,7 +749,7 @@ class ShipmentPickOut(BaseModel):
 USER_MODULES = [
     "inward_vehicle_inspection", "inward_qc",
     "rm_qr_generation", "rm_storage", "material_consumption", "production", "ipqc", "rqc", "fg_qr_generation", "fg_storage",
-    "customer_shipment", "shipment_picking",
+    "customer_shipment", "shipment_picking", "outward_vehicle_inspection", "machine_downtime",
 ]
 
 

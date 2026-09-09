@@ -6,10 +6,13 @@ import CsLineItemsEditor from "./CsLineItemsEditor";
 
 /**
  * Single-page side panel -- matches the prototype's panel-customer-shipment
- * exactly (spec point 3: "not a wizard"). Shipment Number / Container
- * Number are shown as a non-incrementing preview (spec point 8) as soon as
- * the panel opens, and are never editable; the real numbers are only
- * allocated atomically at save (customer_shipment_service.create_customer_shipment).
+ * exactly (spec point 3: "not a wizard"). Shipment Number is manually
+ * entered by the user (corrected per explicit feedback -- it's a real-
+ * world identifier the customer/forwarder supplies, not something this
+ * app should invent); Container Number is still shown as a non-
+ * incrementing preview as soon as the panel opens and stays read-only --
+ * it's a genuine internal auto-allocation, only allocated atomically at
+ * save (customer_shipment_service.create_customer_shipment).
  */
 export default function NewCustomerShipmentPanel({
   skuCodes, onClose, onSaved,
@@ -19,7 +22,8 @@ export default function NewCustomerShipmentPanel({
   onSaved: () => void;
 }) {
   const [customer, setCustomer] = useState("");
-  const [preview, setPreview] = useState<{ shipment: string; container: string } | null>(null);
+  const [shipmentNumber, setShipmentNumber] = useState("");
+  const [containerPreview, setContainerPreview] = useState<string | null>(null);
   const [lineItems, setLineItems] = useState<CustomerShipmentLineItemDraft[]>([
     { key: "li-0", sku_code_id: null, sku_version_id: null, pallets_required: "" },
   ]);
@@ -27,7 +31,7 @@ export default function NewCustomerShipmentPanel({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api.peekNextCsNumbers().then(setPreview).catch(() => setPreview(null));
+    api.peekNextContainerNumber().then(setContainerPreview).catch(() => setContainerPreview(null));
   }, []);
 
   const validItems = lineItems.filter(
@@ -39,6 +43,10 @@ export default function NewCustomerShipmentPanel({
       setError("Customer / Recipient is required.");
       return;
     }
+    if (!shipmentNumber.trim()) {
+      setError("Shipment Number is required.");
+      return;
+    }
     if (validItems.length === 0) {
       setError("At least one line item with a SKU, Version and No. of Pallets is required.");
       return;
@@ -48,6 +56,7 @@ export default function NewCustomerShipmentPanel({
     try {
       await api.createCustomerShipment({
         customer: customer.trim(),
+        shipment_number: shipmentNumber.trim(),
         line_items: validItems.map((li) => ({
           sku_code_id: li.sku_code_id as string,
           sku_version_id: li.sku_version_id as string,
@@ -78,11 +87,11 @@ export default function NewCustomerShipmentPanel({
           </div>
           <div className="field">
             <label>Shipment Number</label>
-            <div className="readonly-val">{preview?.shipment ?? "…"}</div>
+            <input type="text" placeholder="e.g. US-SHP-2609-0001" value={shipmentNumber} onChange={(e) => setShipmentNumber(e.target.value)} />
           </div>
           <div className="field">
             <label>Container Number</label>
-            <div className="readonly-val">{preview?.container ?? "…"}</div>
+            <div className="readonly-val">{containerPreview ?? "…"}</div>
           </div>
         </div>
         <div className="section-label" style={{ marginTop: 0 }}>Line Items</div>

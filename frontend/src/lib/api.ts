@@ -11,6 +11,8 @@ import type {
   RqcListItem, RqcDetail, RqcSavePayload,
   CustomerShipmentListItem, CustomerShipmentDetail, CustomerShipmentCreatePayload, CustomerShipmentCreateResult,
   ShipmentPickingListItem, ShipmentPickingDetail,
+  OviListItem, OviDetail, OviSavePayload,
+  MachineDowntimeRecord, MachineDowntimeSavePayload,
   AppUser, UserCreateInput, UserUpdateInput,
 } from "./types";
 
@@ -1128,28 +1130,26 @@ async function getCustomerShipmentSb(id: string): Promise<CustomerShipmentDetail
 }
 
 /**
- * Non-incrementing preview of the next Shipment/Container numbers, for the
- * create panel to display before save (spec point 8) -- a plain SELECT
- * against display_id_counters (RLS-opened read-only in migration 0020),
- * never the atomic next_seq() UPSERT the backend uses at actual save time.
+ * Non-incrementing preview of the next Container Number, for the create
+ * panel to display before save (spec point 8) -- a plain SELECT against
+ * display_id_counters (RLS-opened read-only in migration 0020), never the
+ * atomic next_seq() UPSERT the backend uses at actual save time. Shipment
+ * Number is no longer previewed here -- it's user-entered (see
+ * customer_shipment_service.create_customer_shipment), not system-issued.
  * "next_value" already IS "the next number that will be issued" (next_seq
  * returns next_value - 1 *after* incrementing) -- a counter row that
  * doesn't exist yet simply hasn't issued anything, so this defaults to 1.
  */
-async function peekNextCsNumbers(): Promise<{ shipment: string; container: string }> {
+async function peekNextContainerNumber(): Promise<string> {
   const yymm = new Date().toISOString().slice(2, 7).replace("-", "");
   const { data, error } = await supabase
     .from("display_id_counters")
     .select("counter_key, next_value")
-    .in("counter_key", ["cs_shipment", "cs_container"]);
+    .eq("counter_key", "cs_container")
+    .maybeSingle();
   if (error) throw new ApiError(500, error.message);
-  const byKey = new Map((data || []).map((r: { counter_key: string; next_value: number }) => [r.counter_key, r.next_value]));
-  const shipmentSeq = byKey.get("cs_shipment") ?? 1;
-  const containerSeq = byKey.get("cs_container") ?? 1;
-  return {
-    shipment: `US-SHP-${yymm}-${String(shipmentSeq).padStart(4, "0")}`,
-    container: `US-CTN-${yymm}-${String(containerSeq).padStart(4, "0")}`,
-  };
+  const containerSeq = data?.next_value ?? 1;
+  return `US-CTN-${yymm}-${String(containerSeq).padStart(4, "0")}`;
 }
 
 type RawSpListItem = {
@@ -1214,6 +1214,113 @@ async function getShipmentPickingSb(id: string): Promise<ShipmentPickingDetail> 
   const { data, error } = await supabase.from("shipment_picking_requests").select(SP_DETAIL_SELECT).eq("id", id).single();
   if (error || !data) throw new ApiError(404, "Shipment Picking request not found");
   return flattenSpDetail(data as unknown as RawSpDetail);
+}
+
+// -- Outward Vehicle Inspection: list/detail via Supabase -------------------
+// Auto-created (never manually) the instant a Customer Shipment is
+// recorded -- NOT linked to RQC. List/detail reads are direct-Supabase; the
+// one editable-fields save goes through FastAPI (status computed
+// server-side), same split as RQC/IPQC.
+
+type RawOviListItem = { id: string; shipment_number: string | null; invoice_number: string | null; status: string; created_at: string | null };
+
+const OVI_LIST_SELECT = "id,shipment_number,invoice_number,status,created_at";
+
+function flattenOviListItem(raw: RawOviListItem): OviListItem {
+  return { id: raw.id, shipment_number: raw.shipment_number, invoice_number: raw.invoice_number, status: raw.status, date: raw.created_at };
+}
+
+async function listOviSb(
+  params: { search?: string; status?: string; date?: string; page?: number } = {}
+): Promise<{ items: OviListItem[]; matched_count: number }> {
+  const page = params.page && params.page > 0 ? params.page : 1;
+  let q = supabase.from("outward_vehicle_inspections").select(OVI_LIST_SELECT, { count: "exact" }).order("created_at", { ascending: false });
+  if (params.status) q = q.eq("status", params.status);
+  if (params.search) {
+    const like = ilikeTerm(params.search);
+    q = q.or(`shipment_number.ilike.${like},invoice_number.ilike.${like},truck_number.ilike.${like}`);
+  }
+  if (params.date) {
+    q = q.gte("created_at", `${params.date}T00:00:00`).lte("created_at", `${params.date}T23:59:59`);
+  }
+  const { data, error, count } = await q.range((page - 1) * LIST_PAGE_SIZE, page * LIST_PAGE_SIZE - 1);
+  if (error) throw new ApiError(500, error.message);
+  const rows = ((data || []) as unknown as RawOviListItem[]).map(flattenOviListItem);
+  return { items: rows, matched_count: count ?? rows.length };
+}
+
+type RawOviDetail = {
+  id: string; customer_shipment_id: string; shipment_number: string | null; customer_name: string | null; quantity: string | null;
+  truck_number: string | null; invoice_number: string | null; transporter_name: string | null; seal_number: string | null;
+  remarks: string | null; status: string;
+  answers: { question_sr: number; answer: string | null }[];
+};
+
+const OVI_DETAIL_SELECT =
+  "id,customer_shipment_id,shipment_number,customer_name,quantity,truck_number,invoice_number,transporter_name,seal_number,remarks,status," +
+  "answers:outward_vehicle_inspection_answers(question_sr,answer)";
+
+function flattenOviDetail(raw: RawOviDetail): OviDetail {
+  return {
+    id: raw.id, customer_shipment_id: raw.customer_shipment_id, shipment_number: raw.shipment_number,
+    customer_name: raw.customer_name, quantity: raw.quantity, truck_number: raw.truck_number,
+    invoice_number: raw.invoice_number, transporter_name: raw.transporter_name, seal_number: raw.seal_number,
+    remarks: raw.remarks, status: raw.status,
+    answers: (raw.answers || []).map((a) => ({ question_sr: a.question_sr, answer: (a.answer as "ok" | "not_ok" | null) })),
+  };
+}
+
+async function getOviSb(id: string): Promise<OviDetail> {
+  const { data, error } = await supabase.from("outward_vehicle_inspections").select(OVI_DETAIL_SELECT).eq("id", id).single();
+  if (error || !data) throw new ApiError(404, "Outward Vehicle Inspection record not found");
+  return flattenOviDetail(data as unknown as RawOviDetail);
+}
+
+// -- Machine Downtime: full CRUD via Supabase --------------------------------
+// Fully independent of the shipment workflow. No FastAPI at all -- RLS
+// (migration 0021) gates Create/Delete to Admin and Edit to any user with
+// edit permission, exactly like sku_codes/vendors/machines already do.
+
+type RawMdRecord = {
+  id: string; machine_id: string | null; machine_snapshot: string | null; shift: string | null;
+  start_time: string | null; end_time: string | null; duration_minutes: number | null;
+  reason: string | null; status: string; created_at: string;
+};
+
+const MD_SELECT = "id,machine_id,machine_snapshot,shift,start_time,end_time,duration_minutes,reason,status,created_at";
+
+function flattenMd(raw: RawMdRecord): MachineDowntimeRecord {
+  return {
+    id: raw.id, machine_id: raw.machine_id, machine: raw.machine_snapshot, shift: raw.shift,
+    start_time: raw.start_time, end_time: raw.end_time, duration_minutes: raw.duration_minutes,
+    reason: raw.reason, status: raw.status, created_at: raw.created_at,
+  };
+}
+
+async function listMachineDowntimeSb(
+  params: { search?: string; date?: string; machine?: string; shift?: string; page?: number } = {}
+): Promise<{ items: MachineDowntimeRecord[]; matched_count: number }> {
+  const page = params.page && params.page > 0 ? params.page : 1;
+  let q = supabase.from("machine_downtime_records").select(MD_SELECT, { count: "exact" }).order("created_at", { ascending: false });
+  if (params.machine) q = q.eq("machine_snapshot", params.machine);
+  if (params.shift) q = q.eq("shift", params.shift);
+  if (params.search) {
+    const like = ilikeTerm(params.search);
+    q = q.or(`machine_snapshot.ilike.${like},reason.ilike.${like}`);
+  }
+  if (params.date) {
+    q = q.gte("created_at", `${params.date}T00:00:00`).lte("created_at", `${params.date}T23:59:59`);
+  }
+  const { data, error, count } = await q.range((page - 1) * LIST_PAGE_SIZE, page * LIST_PAGE_SIZE - 1);
+  if (error) throw new ApiError(500, error.message);
+  const rows = ((data || []) as unknown as RawMdRecord[]).map(flattenMd);
+  return { items: rows, matched_count: count ?? rows.length };
+}
+
+async function getMachineDowntimeSb(id: string): Promise<MachineDowntimeRecord> {
+  const { data, error } = await supabase.from("machine_downtime_records").select(MD_SELECT).eq("id", id).single();
+  if (error || !data) throw new ApiError(404, "Machine Downtime record not found");
+  return flattenMd(data as unknown as RawMdRecord);
 }
 
 // Sku_codes rows always come back with their versions embedded via
@@ -1820,7 +1927,7 @@ export const api = {
   listCustomerShipments: (params: { search?: string; date?: string; page?: number } = {}) =>
     cachedList(listCacheKey("customer-shipment", params), () => listCustomerShipmentsSb(params)),
   getCustomerShipment: (id: string) => getCustomerShipmentSb(id),
-  peekNextCsNumbers: () => peekNextCsNumbers(),
+  peekNextContainerNumber: () => peekNextContainerNumber(),
   createCustomerShipment: async (payload: CustomerShipmentCreatePayload) => {
     const res = await request<CustomerShipmentCreateResult>("/api/v1/customer-shipments", {
       method: "POST",
@@ -1852,5 +1959,69 @@ export const api = {
   removePick: async (requestId: string, pickId: string) => {
     await request<void>(`/api/v1/shipment-picking/${requestId}/picks/${pickId}`, { method: "DELETE" });
     invalidateListCache("shipment-picking");
+  },
+
+  // -- Outward Vehicle Inspection ------------------------------------------
+  // Auto-created from Customer Shipment -- no create call here. List/detail
+  // are direct-Supabase; save/delete go through FastAPI.
+  listOvi: (params: { search?: string; status?: string; date?: string; page?: number } = {}) =>
+    cachedList(listCacheKey("ovi", params), () => listOviSb(params)),
+  getOvi: (id: string) => getOviSb(id),
+  saveOvi: async (id: string, payload: OviSavePayload) => {
+    const res = await request<{ id: string; status: string }>(`/api/v1/outward-vehicle-inspections/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+    invalidateListCache("ovi");
+    return res;
+  },
+  deleteOvi: async (id: string) => {
+    await request<void>(`/api/v1/outward-vehicle-inspections/${id}`, { method: "DELETE" });
+    invalidateListCache("ovi");
+  },
+
+  // -- Machine Downtime -----------------------------------------------------
+  // Fully independent, full CRUD direct-Supabase (RLS-gated) -- no FastAPI.
+  listMachineDowntime: (params: { search?: string; date?: string; machine?: string; shift?: string; page?: number } = {}) =>
+    cachedList(listCacheKey("machine-downtime", params), () => listMachineDowntimeSb(params)),
+  getMachineDowntime: (id: string) => getMachineDowntimeSb(id),
+  createMachineDowntime: async (payload: MachineDowntimeSavePayload) => {
+    const res = await sbRequest<RawMdRecord>(() =>
+      supabase
+        .from("machine_downtime_records")
+        .insert({
+          machine_id: payload.machine_id, machine_snapshot: payload.machine,
+          shift: payload.shift, start_time: payload.start_time, end_time: payload.end_time,
+          duration_minutes: payload.duration_minutes, reason: payload.reason, status: payload.status,
+        })
+        .select(MD_SELECT)
+        .single() as unknown as Promise<{ data: RawMdRecord | null; error: { message: string; code?: string } | null }>,
+      { denied: "Only Admins can create Machine Downtime records." }
+    ).then(flattenMd);
+    invalidateListCache("machine-downtime");
+    return res;
+  },
+  updateMachineDowntime: async (id: string, payload: MachineDowntimeSavePayload) => {
+    const res = await sbRequest<RawMdRecord>(() =>
+      supabase
+        .from("machine_downtime_records")
+        .update({
+          machine_id: payload.machine_id, machine_snapshot: payload.machine,
+          shift: payload.shift, start_time: payload.start_time, end_time: payload.end_time,
+          duration_minutes: payload.duration_minutes, reason: payload.reason, status: payload.status,
+        })
+        .eq("id", id)
+        .select(MD_SELECT)
+        .single() as unknown as Promise<{ data: RawMdRecord | null; error: { message: string; code?: string } | null }>
+    ).then(flattenMd);
+    invalidateListCache("machine-downtime");
+    return res;
+  },
+  deleteMachineDowntime: async (id: string) => {
+    await sbRequest<null>(() =>
+      supabase.from("machine_downtime_records").delete().eq("id", id) as unknown as Promise<{ data: null; error: { message: string; code?: string } | null }>,
+      { denied: "Only Admins can delete Machine Downtime records." }
+    );
+    invalidateListCache("machine-downtime");
   },
 };

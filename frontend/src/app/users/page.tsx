@@ -18,6 +18,8 @@ const MODULE_LABELS: Record<ModuleKey, string> = {
   fg_storage: "FG Storage",
   customer_shipment: "Customer Shipment",
   shipment_picking: "Shipment Picking",
+  outward_vehicle_inspection: "Outward Vehicle Inspection",
+  machine_downtime: "Machine Downtime",
 };
 
 const ACTIONS: { key: keyof Permissions; label: string }[] = [

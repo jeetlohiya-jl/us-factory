@@ -948,3 +948,82 @@ class ShipmentPickingPick(Base):
     request = relationship("ShipmentPickingRequest", back_populates="picks")
     pallet = relationship("Pallet")
     location = relationship("Location")
+
+
+class OutwardVehicleInspection(Base):
+    """
+    Auto-created (never manually) the instant a Customer Shipment is
+    recorded -- one per Customer Shipment (unique constraint on
+    customer_shipment_id backstops idempotency). NOT linked to RQC --
+    per explicit clarification, the real chain here is Customer Shipment
+    -> Shipment Picking -> Outward Vehicle Inspection, not RQC. Starts
+    'pending'; only its own save route (api/outward_vehicle_inspection.py)
+    moves it to draft/hold/approved.
+    """
+    __tablename__ = "outward_vehicle_inspections"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    customer_shipment_id = Column(UUID(as_uuid=True), ForeignKey("customer_shipments.id"), nullable=False, unique=True)
+    shipment_number = Column(Text, nullable=True)
+    customer_name = Column(Text, nullable=True)
+    quantity = Column(Text, nullable=True)
+    truck_number = Column(Text, nullable=True)
+    invoice_number = Column(Text, nullable=True)
+    transporter_name = Column(Text, nullable=True)
+    seal_number = Column(Text, nullable=True)
+    remarks = Column(Text, nullable=True)
+    status = Column(Text, nullable=False, default="pending")  # 'pending' | 'draft' | 'approved' | 'hold'
+    created_by = Column(UUID(as_uuid=True), ForeignKey("app_users.id"), nullable=True)
+    updated_by = Column(UUID(as_uuid=True), ForeignKey("app_users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    customer_shipment = relationship("CustomerShipment")
+    answers = relationship(
+        "OutwardVehicleInspectionAnswer", back_populates="inspection",
+        cascade="all, delete-orphan",
+    )
+
+
+class OutwardVehicleInspectionAnswer(Base):
+    """
+    Per-record answers to the 7 fixed vehicle-condition checks
+    (OVI_QUESTIONS in ovi_service.py) -- keyed by plain integer question_sr,
+    same shape as rqc_defect_results.defect_sr, not a checklist_item_id FK
+    (see migration 0021's header notes on why inward_vehicle_inspection_
+    checklist_items wasn't reused: different, unrelated question content).
+    """
+    __tablename__ = "outward_vehicle_inspection_answers"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    inspection_id = Column(UUID(as_uuid=True), ForeignKey("outward_vehicle_inspections.id", ondelete="CASCADE"), nullable=False)
+    question_sr = Column(Integer, nullable=False)
+    answer = Column(Text, nullable=True)  # 'ok' | 'not_ok' | null
+
+    inspection = relationship("OutwardVehicleInspection", back_populates="answers")
+
+    __table_args__ = (UniqueConstraint("inspection_id", "question_sr"),)
+
+
+class MachineDowntimeRecord(Base):
+    """
+    Fully independent of the shipment workflow (Customer Shipment/Shipment
+    Picking/RQC/OVI) -- written directly by the browser via Supabase (RLS-
+    gated, see migration 0021), same convention as sku_codes/vendors/
+    machines. duration_minutes is computed and stored at save time (handles
+    the overnight-wrap case, e.g. 23:30 -> 00:15 = 45m) so list/search/sort
+    never have to recompute it from start/end on every read.
+    """
+    __tablename__ = "machine_downtime_records"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    machine_id = Column(UUID(as_uuid=True), ForeignKey("machines.id"), nullable=True)
+    machine_snapshot = Column(Text, nullable=True)
+    shift = Column(Text, nullable=True)
+    start_time = Column(Text, nullable=True)
+    end_time = Column(Text, nullable=True)
+    duration_minutes = Column(Integer, nullable=True)
+    reason = Column(Text, nullable=True)
+    status = Column(Text, nullable=False, default="draft")  # 'draft' | 'saved'
+    created_by = Column(UUID(as_uuid=True), ForeignKey("app_users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    machine = relationship("Machine")

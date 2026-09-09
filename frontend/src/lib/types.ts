@@ -130,6 +130,8 @@ export interface ModulePermissionsMap {
   fg_storage: Permissions;
   customer_shipment: Permissions;
   shipment_picking: Permissions;
+  outward_vehicle_inspection: Permissions;
+  machine_downtime: Permissions;
 }
 
 export interface MeResponse {
@@ -149,7 +151,7 @@ export type ModuleKey = keyof ModulePermissionsMap;
 export const USER_MODULES: ModuleKey[] = [
   "inward_vehicle_inspection", "inward_qc",
   "rm_qr_generation", "rm_storage", "material_consumption", "production", "ipqc", "rqc", "fg_qr_generation", "fg_storage",
-  "customer_shipment", "shipment_picking",
+  "customer_shipment", "shipment_picking", "outward_vehicle_inspection", "machine_downtime",
 ];
 
 export interface AppUser {
@@ -858,6 +860,7 @@ export interface CustomerShipmentLineItemDraft {
 
 export interface CustomerShipmentCreatePayload {
   customer: string;
+  shipment_number: string; // user-entered, not system-generated
   line_items: { sku_code_id: string; sku_version_id: string; pallets_required: number }[];
 }
 
@@ -898,4 +901,91 @@ export interface ShipmentPickingDetail {
   pallets_required: number;
   status: string;
   picks: ShipmentPickingPick[];
+}
+
+// ---------------------------------------------------------------------------
+// Outward Vehicle Inspection -- auto-created (never manually) the instant a
+// Customer Shipment is recorded. NOT linked to RQC. List/detail reads are
+// direct-Supabase; the one editable-fields save (Truck/Invoice/Transporter/
+// Seal/Quantity + the 7-question checklist + Remarks) goes through FastAPI,
+// same split as RQC/IPQC.
+// ---------------------------------------------------------------------------
+
+export const OVI_QUESTIONS: { sr: number; label: string }[] = [
+  { sr: 1, label: "Clean, dry & dust free" },
+  { sr: 2, label: "No objectionable odour" },
+  { sr: 3, label: "No insects/rodents" },
+  { sr: 4, label: "No floor damage or contamination risk" },
+  { sr: 5, label: "No water leakage" },
+  { sr: 6, label: "No rust inside the container" },
+  { sr: 7, label: "Boxes are in intact condition (no damages)" },
+];
+
+export interface OviListItem {
+  id: string;
+  shipment_number: string | null;
+  invoice_number: string | null;
+  status: string;
+  date: string | null;
+}
+
+export interface OviAnswer {
+  question_sr: number;
+  answer: "ok" | "not_ok" | null;
+}
+
+export interface OviDetail {
+  id: string;
+  customer_shipment_id: string;
+  shipment_number: string | null;
+  customer_name: string | null;
+  quantity: string | null;
+  truck_number: string | null;
+  invoice_number: string | null;
+  transporter_name: string | null;
+  seal_number: string | null;
+  remarks: string | null;
+  status: string;
+  answers: OviAnswer[];
+}
+
+export interface OviSavePayload {
+  truck_number: string | null;
+  invoice_number: string | null;
+  transporter_name: string | null;
+  seal_number: string | null;
+  quantity: string | null;
+  remarks: string | null;
+  save_mode: "draft" | "final";
+  answers: OviAnswer[];
+}
+
+// ---------------------------------------------------------------------------
+// Machine Downtime -- fully independent of the shipment workflow. Full CRUD
+// direct-Supabase (RLS-gated: Create/Delete Admin-only, Edit open to any
+// user with edit permission), no FastAPI at all.
+// ---------------------------------------------------------------------------
+
+export interface MachineDowntimeRecord {
+  id: string;
+  machine_id: string | null;
+  machine: string | null;
+  shift: string | null;
+  start_time: string | null;
+  end_time: string | null;
+  duration_minutes: number | null;
+  reason: string | null;
+  status: string;
+  created_at: string;
+}
+
+export interface MachineDowntimeSavePayload {
+  machine_id: string | null;
+  machine: string | null;
+  shift: string | null;
+  start_time: string | null;
+  end_time: string | null;
+  duration_minutes: number | null;
+  reason: string | null;
+  status: "draft" | "saved";
 }

@@ -98,6 +98,20 @@ const NAV_ITEMS = [
       <path d="M20 12V8a2 2 0 00-1-1.73l-6-3.46a2 2 0 00-2 0l-6 3.46A2 2 0 004 8v8a2 2 0 001 1.73l6 3.46a2 2 0 002 0l1.5-.87M16 17l2 2 4-4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
     ),
   },
+  {
+    href: "/outward-vehicle-inspection",
+    label: "Outward Vehicle Inspection",
+    icon: (
+      <path d="M3 16V8a1 1 0 011-1h9v9M3 16h1m0 0a2 2 0 104 0m-4 0h9m0 0a2 2 0 104 0m0 0h2a1 1 0 001-1v-3l-2-3h-5v7" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    ),
+  },
+  {
+    href: "/machine-downtime",
+    label: "Machine Downtime",
+    icon: (
+      <path d="M12 8v4l3 2M12 21a9 9 0 100-18 9 9 0 000 18z" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    ),
+  },
 ];
 
 const SETUP_NAV_ITEMS = [
