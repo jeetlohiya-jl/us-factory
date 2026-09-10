@@ -348,16 +348,19 @@ def find_or_create_production_run(db: Session, mc: models.MaterialConsumption, a
         )
         db.add(run)
         db.flush()
-    for entry in mc.machine_entries:
-        if not entry.machine_id:
-            continue
-        has_machine = (
-            db.query(models.ProductionRunMachine)
-            .filter(models.ProductionRunMachine.production_run_id == run.id, models.ProductionRunMachine.machine_id == entry.machine_id)
-            .first()
-        )
-        if not has_machine:
-            db.add(models.ProductionRunMachine(production_run_id=run.id, machine_id=entry.machine_id))
+    # Batched instead of one existence-check query + one conditional
+    # flush per machine entry (N+1 on every finalize -- the exact save
+    # path users report as slow, and the one that immediately precedes
+    # opening the just-created IPQC/RQC record).
+    wanted_machine_ids = {entry.machine_id for entry in mc.machine_entries if entry.machine_id}
+    if wanted_machine_ids:
+        existing_machine_ids = {
+            m.machine_id for m in db.query(models.ProductionRunMachine.machine_id)
+            .filter(models.ProductionRunMachine.production_run_id == run.id, models.ProductionRunMachine.machine_id.in_(wanted_machine_ids))
+        }
+        for machine_id in wanted_machine_ids - existing_machine_ids:
+            db.add(models.ProductionRunMachine(production_run_id=run.id, machine_id=machine_id))
+        if wanted_machine_ids - existing_machine_ids:
             db.flush()
     return run
 

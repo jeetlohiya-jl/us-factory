@@ -14,7 +14,7 @@ from app.adapters.storage.factory import get_storage_adapter
 from app.domain import inward_qc_service as svc
 from app.domain import coa_parsing_service
 from app.domain.vendor_lookup import resolve_vendor_id
-from app.api.inward_vehicle_inspections import _serialize_detail as _serialize_vehicle_inspection, _get_or_404 as _get_vehicle_inspection_or_404
+from app.api.inward_vehicle_inspections import _serialize_detail as _serialize_vehicle_inspection
 
 router = APIRouter(prefix="/api/v1/inward-qc", tags=["inward-qc"])
 
@@ -51,7 +51,21 @@ def _get_or_404(db: Session, qc_id: uuid.UUID) -> models.InwardQcRecord:
             joinedload(models.InwardQcRecord.line_item_snapshots),
             joinedload(models.InwardQcRecord.sku_code),
             joinedload(models.InwardQcRecord.sku_version),
-            joinedload(models.InwardQcRecord.vehicle_inspection),
+            # Loaded deep enough for _serialize_vehicle_inspection to run
+            # entirely off this object below -- _serialize_detail used to
+            # throw this away and re-fetch the linked inspection from
+            # scratch via its own 4-way-joinedload query (a full duplicate
+            # detail query on every fgtray QC open/save), see git history.
+            joinedload(models.InwardQcRecord.vehicle_inspection)
+            .joinedload(models.InwardVehicleInspection.line_items)
+            .joinedload(models.InwardVehicleInspectionLineItem.sku_code),
+            joinedload(models.InwardQcRecord.vehicle_inspection)
+            .joinedload(models.InwardVehicleInspection.line_items)
+            .joinedload(models.InwardVehicleInspectionLineItem.sku_version),
+            joinedload(models.InwardQcRecord.vehicle_inspection).joinedload(models.InwardVehicleInspection.images),
+            joinedload(models.InwardQcRecord.vehicle_inspection)
+            .joinedload(models.InwardVehicleInspection.checklist_answers)
+            .joinedload(models.InwardVehicleInspectionChecklistAnswer.checklist_item),
         )
         .filter(models.InwardQcRecord.id == qc_id)
         .first()
@@ -100,9 +114,12 @@ def _serialize_detail(db: Session, qc: models.InwardQcRecord) -> dict:
     ]
 
     vehicle_inspection_dict = None
-    if qc.category == "fgtray" and qc.linked_vehicle_inspection_id:
-        vi = _get_vehicle_inspection_or_404(db, qc.linked_vehicle_inspection_id)
-        vehicle_inspection_dict = _serialize_vehicle_inspection(db, vi)
+    if qc.category == "fgtray" and qc.linked_vehicle_inspection_id and qc.vehicle_inspection:
+        # Reuses the joinedload from _get_or_404 above instead of
+        # re-querying the linked inspection from scratch (that used to be
+        # a full second detail query -- 4 extra joins -- on every fgtray
+        # QC open/save; see _get_or_404's comment).
+        vehicle_inspection_dict = _serialize_vehicle_inspection(db, qc.vehicle_inspection)
 
     return schemas.QcDetailOut(
         id=qc.id, shipment_number=qc.shipment_number, is_auto_shipment_number=qc.is_auto_shipment_number,

@@ -23,12 +23,10 @@ FIELD_BY_IMAGE_TYPE = {"container": "container_number", "truck": "truck_number",
 
 
 def _serialize_detail(db: Session, inspection: models.InwardVehicleInspection) -> dict:
-    checklist_items = (
-        db.query(models.ChecklistItem)
-        .filter(models.ChecklistItem.is_active.is_(True))
-        .order_by(models.ChecklistItem.sort_order)
-        .all()
-    )
+    # Cached (see svc.get_active_checklist_items) -- this used to be a
+    # fresh query on every single call to _serialize_detail, i.e. on every
+    # draft-create/get/update/submit/save-checklist/save-draft round trip.
+    checklist_items = svc.get_active_checklist_items(db)
     answers_by_item = {str(a.checklist_item_id): a.answer for a in inspection.checklist_answers}
     checklist_out = [
         schemas.ChecklistAnswerOut(checklist_item_id=ci.id, label=ci.label, answer=answers_by_item.get(str(ci.id)))

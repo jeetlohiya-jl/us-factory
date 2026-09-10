@@ -48,6 +48,23 @@ def _upsert_permissions(db: Session, user: models.AppUser, permissions: dict[str
         row.can_fill_section = flags.can_fill_section
 
 
+FULL_ACCESS = schemas.PermissionFlags(
+    can_view=True, can_create=True, can_edit=True, can_delete=True, can_approve=True, can_fill_section=True,
+)
+
+
+def _seed_full_permissions(db: Session, user: models.AppUser) -> None:
+    """"Admin should start with full access across all modules" -- called
+    whenever a user becomes admin (create_user with is_admin=True, or
+    update_user turning is_admin on) and by migration 0027's one-time
+    backfill for admins that predate this. Writes real, editable
+    module_permissions rows (every module, every action True) rather than
+    relying on a runtime is_admin override, so the rows shown in the Users
+    screen match reality and unchecking one afterward actually restricts
+    that admin -- see effective_permission()'s docstring in deps.py."""
+    _upsert_permissions(db, user, {module: FULL_ACCESS for module in schemas.USER_MODULES})
+
+
 @router.get("", response_model=list[schemas.UserOut])
 def list_users(
     db: Session = Depends(get_db),
@@ -78,17 +95,33 @@ def create_user(
         db.rollback()
         raise HTTPException(status_code=409, detail=f'"{email}" already has an account.')
 
-    # New user: seed every module explicitly (rather than only the ones the
-    # caller passed) so the resulting row set always matches what /me
-    # would report for them -- no module silently left un-rowed just
-    # because the add-user form didn't send it.
-    for module in schemas.USER_MODULES:
-        flags = payload.permissions.get(module, schemas.PermissionFlags())
-        db.add(models.ModulePermission(
-            user_id=user.id, module=module,
-            can_view=flags.can_view, can_create=flags.can_create, can_edit=flags.can_edit,
-            can_delete=flags.can_delete, can_approve=flags.can_approve, can_fill_section=flags.can_fill_section,
-        ))
+    if payload.is_admin:
+        # "Admin should start with full access across all modules" -- the
+        # Add User form's checkbox matrix defaults every box to view-only
+        # (see BLANK_PERMS in users/page.tsx) and checking "Admin" doesn't
+        # itself touch those boxes, so trusting payload.permissions here
+        # would create an admin with mostly-unchecked permissions. Full
+        # access can still be narrowed afterward via Edit Permissions
+        # (Select All then uncheck individual boxes) -- see
+        # effective_permission()'s docstring in deps.py for why that now
+        # actually takes effect for admins too.
+        for module in schemas.USER_MODULES:
+            db.add(models.ModulePermission(
+                user_id=user.id, module=module,
+                can_view=True, can_create=True, can_edit=True, can_delete=True, can_approve=True, can_fill_section=True,
+            ))
+    else:
+        # New non-admin user: seed every module explicitly (rather than
+        # only the ones the caller passed) so the resulting row set always
+        # matches what /me would report for them -- no module silently
+        # left un-rowed just because the add-user form didn't send it.
+        for module in schemas.USER_MODULES:
+            flags = payload.permissions.get(module, schemas.PermissionFlags())
+            db.add(models.ModulePermission(
+                user_id=user.id, module=module,
+                can_view=flags.can_view, can_create=flags.can_create, can_edit=flags.can_edit,
+                can_delete=flags.can_delete, can_approve=flags.can_approve, can_fill_section=flags.can_fill_section,
+            ))
     db.commit()
     db.refresh(user)
     return _user_out(user)
@@ -117,7 +150,16 @@ def update_user(
     if payload.is_admin is not None:
         if user.id == admin.id and not payload.is_admin:
             raise HTTPException(status_code=422, detail="You can't remove your own admin access.")
+        becoming_admin = payload.is_admin and not user.is_admin
         user.is_admin = payload.is_admin
+        # "Admin should start with full access across all modules" -- newly
+        # granted here (e.g. the Users list's Yes/No admin toggle, which
+        # sends only is_admin, no permissions). Skipped when this same
+        # request also carries an explicit permissions payload below --
+        # that's a deliberate, more specific choice from the caller and
+        # should win over the blanket seed.
+        if becoming_admin and payload.permissions is None:
+            _seed_full_permissions(db, user)
     if payload.permissions is not None:
         _upsert_permissions(db, user, payload.permissions)
 

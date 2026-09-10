@@ -34,26 +34,24 @@ def effective_permission(db: Session, user_id, module: str) -> models.ModulePerm
     module", used by every router's own get_perms() (all of which used to
     duplicate this exact lookup+default). Reuses the existing
     module_permissions structure -- this is not a second permission system,
-    just where the "no explicit row => view-only" default AND the "Admin
-    has full access to everything, not just View" rule both live, so every
-    module gets both consistently instead of each router re-implementing
+    just where the "no explicit row => view-only" default lives, so every
+    module gets it consistently instead of each router re-implementing
     (and potentially drifting on) its own copy.
 
-    is_admin (app_users.is_admin) grants every permission in every module,
-    unconditionally overriding whatever module_permissions rows exist --
-    matches the same "Admin must have full access" rule already applied to
-    Supabase-direct reads/writes via the app_can() SQL function (migration
-    0011, updated by 0022... see there for the RLS-side mirror of this).
-    The returned object is transient (never persisted) when there is no
-    real row or when overridden for an admin -- exactly like the previous
-    per-router default already was.
+    Deliberately does NOT special-case is_admin here (a previous version of
+    this function unconditionally overrode every module to full access for
+    admins, which meant unchecking an individual permission for an admin
+    user in the Users screen had no real effect -- the override ignored
+    whatever module_permissions rows existed). "Admin has full access" is
+    now a data fact, not a runtime override: admin users get every module's
+    permissions row seeded to full access at admin-grant time (see
+    users.py's _seed_full_permissions, called from create_user/update_user)
+    and via a one-time backfill (migration 0027), so this function can
+    treat admins exactly like anyone else -- read the real row, and let an
+    admin's own explicit unchecking actually take effect. Same change
+    mirrored on the RLS side: app_can() (migration 0027) no longer
+    short-circuits on is_admin either.
     """
-    app_user = db.query(models.AppUser).filter(models.AppUser.id == user_id).first()
-    if app_user and app_user.is_admin:
-        return models.ModulePermission(
-            user_id=user_id, module=module,
-            can_view=True, can_create=True, can_edit=True, can_delete=True, can_approve=True, can_fill_section=True,
-        )
     perm = (
         db.query(models.ModulePermission)
         .filter(models.ModulePermission.user_id == user_id, models.ModulePermission.module == module)

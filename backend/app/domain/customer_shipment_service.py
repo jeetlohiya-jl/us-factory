@@ -90,18 +90,29 @@ def create_customer_shipment(
     db.add(shipment)
     db.flush()
 
-    for li in line_items:
+    # Batch the snapshot lookups up front (one query per table, not one per
+    # line item -- this used to be up to 2 queries per line item inside the
+    # loop, i.e. an N+1 on every Customer Shipment create/save).
+    valid_line_items = [
+        li for li in line_items
+        if li.get("sku_code_id") and int(li.get("pallets_required") or 0) > 0
+    ]
+    sku_code_ids = {li["sku_code_id"] for li in valid_line_items}
+    sku_version_ids = {li["sku_version_id"] for li in valid_line_items if li.get("sku_version_id")}
+    sku_codes_by_id = {
+        s.id: s for s in db.query(models.SkuCode).filter(models.SkuCode.id.in_(sku_code_ids))
+    } if sku_code_ids else {}
+    sku_versions_by_id = {
+        v.id: v for v in db.query(models.SkuVersion).filter(models.SkuVersion.id.in_(sku_version_ids))
+    } if sku_version_ids else {}
+
+    for li in valid_line_items:
         sku_code_id = li.get("sku_code_id")
         pallets_required = int(li.get("pallets_required") or 0)
-        if not sku_code_id or pallets_required <= 0:
-            continue
         sku_version_id = li.get("sku_version_id")
 
-        sku_code = db.query(models.SkuCode).filter(models.SkuCode.id == sku_code_id).first()
-        sku_version = (
-            db.query(models.SkuVersion).filter(models.SkuVersion.id == sku_version_id).first()
-            if sku_version_id else None
-        )
+        sku_code = sku_codes_by_id.get(sku_code_id)
+        sku_version = sku_versions_by_id.get(sku_version_id) if sku_version_id else None
 
         line_item = models.CustomerShipmentLineItem(
             customer_shipment_id=shipment.id,

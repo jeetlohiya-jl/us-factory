@@ -37,19 +37,42 @@ def recompute_total_quantity(inspection: models.InwardVehicleInspection):
     inspection.total_quantity = total
 
 
+# Process-lifetime cache for the active checklist items -- this is fixed
+# reference data with no admin UI or API route that ever mutates it (only
+# migrations seed/edit inward_vehicle_inspection_checklist_items), so it's
+# safe to query once per worker process instead of on every single
+# inspection open/save (previously re-queried inside _serialize_detail on
+# every draft-create/get/update/submit/save-checklist call -- see
+# api/inward_vehicle_inspections.py). Rows are expunged from the session
+# immediately so they're safe to hand back across unrelated DB sessions --
+# every field the callers below read (id, label, sort_order, affects_status)
+# is already loaded by the query itself, nothing lazy-loads afterward. A
+# fresh deploy/restart naturally picks up any future migration change.
+_active_checklist_items_cache: list[models.ChecklistItem] | None = None
+
+
+def get_active_checklist_items(db: Session) -> list[models.ChecklistItem]:
+    global _active_checklist_items_cache
+    if _active_checklist_items_cache is None:
+        items = (
+            db.query(models.ChecklistItem)
+            .filter(models.ChecklistItem.is_active.is_(True))
+            .order_by(models.ChecklistItem.sort_order)
+            .all()
+        )
+        for i in items:
+            db.expunge(i)
+        _active_checklist_items_cache = items
+    return _active_checklist_items_cache
+
+
 def required_checklist_ids(db: Session) -> list[uuid.UUID]:
     """Only checklist items that actually affect status/completion are
     "required" here. "Vehicle arrived within scheduled time window" is
     informational only (affects_status=False, set in migration 0022) --
     it's still shown and still answerable in the UI, but its answer must
     never gate submission or factor into Approved/Hold."""
-    items = (
-        db.query(models.ChecklistItem)
-        .filter(models.ChecklistItem.is_active.is_(True))
-        .filter(models.ChecklistItem.affects_status.is_(True))
-        .all()
-    )
-    return [i.id for i in items]
+    return [i.id for i in get_active_checklist_items(db) if i.affects_status]
 
 
 def checklist_is_complete(db: Session, inspection: models.InwardVehicleInspection) -> bool:

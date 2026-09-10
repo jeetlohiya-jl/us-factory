@@ -82,22 +82,47 @@ def compute_sampling_plan(db: Session, category: str, qty: float | None) -> dict
     }
 
 
+# Process-lifetime caches -- both of these are fixed reference data with no
+# admin UI or API route that ever mutates them (only migrations seed
+# attribute definitions/fgtray criteria), yet _serialize_detail re-queried
+# one of them on every single inward-qc read/write (basic update, COA
+# upload, attribute save, submit, save-draft -- every round trip). Rows are
+# expunged so they're safe to reuse across unrelated DB sessions; nothing
+# lazy-loads on them afterward (callers only read plain columns already
+# selected by the query). A fresh deploy/restart naturally picks up any
+# future migration change.
+_attribute_definitions_cache: dict[str, list[models.InwardQcAttributeDefinition]] = {}
+_fgtray_criteria_cache: list[models.InwardQcFgtrayCriterion] | None = None
+
+
 def get_attribute_definitions(db: Session, category: str) -> list[models.InwardQcAttributeDefinition]:
-    return (
-        db.query(models.InwardQcAttributeDefinition)
-        .filter(models.InwardQcAttributeDefinition.category == category, models.InwardQcAttributeDefinition.is_active.is_(True))
-        .order_by(models.InwardQcAttributeDefinition.sort_order)
-        .all()
-    )
+    cached = _attribute_definitions_cache.get(category)
+    if cached is None:
+        cached = (
+            db.query(models.InwardQcAttributeDefinition)
+            .filter(models.InwardQcAttributeDefinition.category == category, models.InwardQcAttributeDefinition.is_active.is_(True))
+            .order_by(models.InwardQcAttributeDefinition.sort_order)
+            .all()
+        )
+        for d in cached:
+            db.expunge(d)
+        _attribute_definitions_cache[category] = cached
+    return cached
 
 
 def get_fgtray_criteria(db: Session) -> list[models.InwardQcFgtrayCriterion]:
-    return (
-        db.query(models.InwardQcFgtrayCriterion)
-        .filter(models.InwardQcFgtrayCriterion.is_active.is_(True))
-        .order_by(models.InwardQcFgtrayCriterion.sort_order)
-        .all()
-    )
+    global _fgtray_criteria_cache
+    if _fgtray_criteria_cache is None:
+        items = (
+            db.query(models.InwardQcFgtrayCriterion)
+            .filter(models.InwardQcFgtrayCriterion.is_active.is_(True))
+            .order_by(models.InwardQcFgtrayCriterion.sort_order)
+            .all()
+        )
+        for i in items:
+            db.expunge(i)
+        _fgtray_criteria_cache = items
+    return _fgtray_criteria_cache
 
 
 def compute_fgtray_status(db: Session, qc: models.InwardQcRecord) -> str:
