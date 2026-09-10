@@ -9,6 +9,7 @@ import MoreMenu from "@/components/inward-vehicle-inspection/MoreMenu";
 import Wizard from "@/components/inward-vehicle-inspection/Wizard";
 import RecordDetail from "@/components/inward-vehicle-inspection/RecordDetail";
 import ConfirmDialog from "@/components/inward-vehicle-inspection/ConfirmDialog";
+import Pagination from "@/components/Pagination";
 
 const MODULE = "inward-vehicle-inspection";
 const REFERENCE_STALE_MS = 5 * 60_000;
@@ -32,8 +33,9 @@ export default function InwardVehicleInspectionPage() {
   const [fDate, setFDate] = useState("");
   const [fCategory, setFCategory] = useState("");
   const [fStatus, setFStatus] = useState("");
+  const [page, setPage] = useState(1);
 
-  const [wizardState, setWizardState] = useState<{ id: string; detail: InspectionDetail } | null>(null);
+  const [wizardState, setWizardState] = useState<{ id: string; detail: InspectionDetail; isNew: boolean } | null>(null);
   const [detailState, setDetailState] = useState<InspectionDetail | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<InspectionListItem | null>(null);
   const [deleteBlockedMsg, setDeleteBlockedMsg] = useState<string | null>(null);
@@ -45,8 +47,8 @@ export default function InwardVehicleInspectionPage() {
     setLoading(true);
     setLoadError(null);
     try {
-      const key = listCacheKey(MODULE, { search, status: fStatus, category: fCategory, date: fDate });
-      const res = await cachedList(key, () => api.listInspections({ search, status: fStatus, category: fCategory, date: fDate }));
+      const key = listCacheKey(MODULE, { search, status: fStatus, category: fCategory, date: fDate, page });
+      const res = await cachedList(key, () => api.listInspections({ search, status: fStatus, category: fCategory, date: fDate, page }));
       setItems(res.items);
       setMatchedCount(res.matched_count);
       setTotalCount(res.total_count);
@@ -55,13 +57,15 @@ export default function InwardVehicleInspectionPage() {
     } finally {
       setLoading(false);
     }
-  }, [search, fStatus, fCategory, fDate]);
+  }, [search, fStatus, fCategory, fDate, page]);
 
   useEffect(() => {
     cachedList("inward-vehicle-inspection-meta:skuCodes", () => api.skuCodes(), REFERENCE_STALE_MS).then(setSkuCodes).catch(() => setSkuCodes([]));
   }, []);
 
   useImmediateThenDebounced(refresh, [refresh]);
+
+  useEffect(() => setPage(1), [search, fStatus, fCategory, fDate]);
 
   const refreshAfterMutation = useCallback(() => {
     invalidateListCache(MODULE);
@@ -71,7 +75,7 @@ export default function InwardVehicleInspectionPage() {
   async function handleNewRecord() {
     try {
       const detail = await api.createDraft("tray" as Category);
-      setWizardState({ id: detail.id, detail });
+      setWizardState({ id: detail.id, detail, isNew: true });
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : "Failed to create record");
     }
@@ -90,7 +94,7 @@ export default function InwardVehicleInspectionPage() {
     try {
       const detail = await api.getInspection(id);
       setDetailState(null);
-      setWizardState({ id: detail.id, detail });
+      setWizardState({ id: detail.id, detail, isNew: false });
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : "Failed to load record");
     }
@@ -200,6 +204,7 @@ export default function InwardVehicleInspectionPage() {
             )}
           </tbody>
         </table>
+        <Pagination page={page} pageSize={50} matchedCount={matchedCount} onPageChange={setPage} loading={loading} />
       </div>
 
       {wizardState && perms && (
@@ -210,6 +215,7 @@ export default function InwardVehicleInspectionPage() {
           permissions={perms}
           onClose={() => { setWizardState(null); refreshAfterMutation(); }}
           onSaved={refreshAfterMutation}
+          isNew={wizardState.isNew}
         />
       )}
 

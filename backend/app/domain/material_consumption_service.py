@@ -25,7 +25,6 @@ from sqlalchemy.orm import Session
 
 from app.db import models
 from app.domain import pallet_service
-from app.domain import rqc_service
 from app.domain.id_counters import next_seq
 
 PRIMARY_CATEGORIES = ("tray", "fgtray")
@@ -475,16 +474,11 @@ def finalize(db: Session, mc: models.MaterialConsumption, actor_user_id=None) ->
         )
 
     run = find_or_create_production_run(db, mc, actor_user_id=actor_user_id)
-    ipqc = find_or_create_ipqc(db, run, mc)
-    # RQC's creation trigger is Material Consumption, not IPQC approval --
-    # it exists as a Pending record from the moment Material Consumption is
-    # finalized (reusing the IPQC record just found-or-created above for its
-    # own upstream snapshot fields), and stays Pending until its own
-    # inspection is completed and saved as Approved/Hold via api/rqc.py.
-    # This extends the existing Material Consumption -> Production -> IPQC
-    # relationship one step further rather than creating an unrelated
-    # direct link.
-    rqc_service.find_or_create_rqc(db, ipqc)
+    find_or_create_ipqc(db, run, mc)
+    # RQC is no longer auto-created here -- it is created manually only,
+    # via "+ New Record" on the RQC screen (see app/api/rqc.py's POST route
+    # / rqc_service.create_rqc), keyed on Shipment Number rather than this
+    # Production Run's id.
     mc.production_run_id = run.id
     mc.status = "saved"
     mc.updated_by = actor_user_id

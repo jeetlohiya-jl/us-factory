@@ -19,7 +19,7 @@ function toLineItems(detail: InspectionDetail): EditableLineItem[] {
 }
 
 export default function Wizard({
-  inspectionId, initialDetail, skuCodes, permissions, onClose, onSaved,
+  inspectionId, initialDetail, skuCodes, permissions, onClose, onSaved, isNew = false,
 }: {
   inspectionId: string;
   initialDetail: InspectionDetail;
@@ -27,6 +27,11 @@ export default function Wizard({
   permissions: Permissions;
   onClose: (deleted: boolean) => void;
   onSaved: () => void;
+  // True only for a record just created this session via "+ New Record"
+  // (never yet explicitly Saved/Submitted by the user) -- see handleCancel.
+  // False when reopening an existing record (including an existing Draft
+  // saved in an earlier session) for editing.
+  isNew?: boolean;
 }) {
   const [detail, setDetail] = useState<InspectionDetail>(initialDetail);
   const [step, setStep] = useState<1 | 2>(1);
@@ -185,14 +190,23 @@ export default function Wizard({
   }
 
   async function handleCancel() {
-    // Always defer to the backend's own is_inspection_blank check rather
-    // than gating on the `touched` flag: typing into a field (even one you
-    // then cleared again) permanently set touched=true for the rest of this
-    // session, which meant Cancel stopped asking the backend at all -- so a
-    // genuinely blank draft (all fields empty, no photos, no line items, no
-    // checklist answers) never got cleaned up. The backend already knows
-    // how to tell a truly blank record from one with real data; the
-    // frontend just needs to always ask it, every time, on a draft.
+    if (isNew) {
+      // Creating a NEW record: Cancel must discard the unsaved form state
+      // completely, whether no fields were entered, some were, or all were
+      // -- this record was never explicitly Saved/Submitted by the user in
+      // this session (Step 1's autosave only exists so a Save Draft/Submit
+      // doesn't lose typed data; it must never be what makes Cancel keep a
+      // record the user asked to discard). Always hard-delete, regardless
+      // of whether the debounced autosave already wrote data to it.
+      if (detail.status === "draft") {
+        try { await api.discardNewInspection(inspectionId); } catch { /* best-effort */ }
+      }
+      onClose(true);
+      return;
+    }
+    // Editing an existing record (including a Draft saved in an earlier
+    // session): Cancel only cleans up if the record is genuinely blank --
+    // unchanged prior behavior, since this is not "creating a new record".
     if (detail.status === "draft") {
       try { await api.discardIfBlank(inspectionId); } catch { /* best-effort */ }
     }

@@ -3,6 +3,7 @@ import { useState } from "react";
 import { api } from "@/lib/api";
 import type { OviDetail, OviAnswer } from "@/lib/types";
 import { OVI_QUESTIONS } from "@/lib/types";
+import HoldReleaseSection from "@/components/HoldReleaseSection";
 
 function Kv({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -99,6 +100,9 @@ export default function OviPanel({
             <button className="sp-close" onClick={onClose}>×</button>
           </div>
           <div className="sp-body">
+            {record.status === "hold" && (
+              <HoldReleaseSection module="outward_vehicle_inspection" recordId={record.id} canFill={canFill} />
+            )}
             <div className="detail-card">
               <h3>Shipment Details</h3>
               <div className="detail-grid">
@@ -151,6 +155,9 @@ export default function OviPanel({
           <button className="sp-close" onClick={onClose}>×</button>
         </div>
         <div className="sp-body">
+          {record.status === "hold" && (
+            <HoldReleaseSection module="outward_vehicle_inspection" recordId={record.id} canFill={canFill} />
+          )}
           {error && <div className="error-banner">{error}</div>}
 
           {step === 1 && (

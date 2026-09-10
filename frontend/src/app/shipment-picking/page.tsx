@@ -1,11 +1,12 @@
 "use client";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { useMe } from "@/lib/useMe";
 import { cachedList, invalidateListCache, listCacheKey } from "@/lib/listCache";
 import { useImmediateThenDebounced } from "@/lib/useImmediateThenDebounced";
 import type { ShipmentPickingDetail, ShipmentPickingListItem } from "@/lib/types";
 import ShipmentPickingPanel from "@/components/shipment-picking/ShipmentPickingPanel";
+import Pagination from "@/components/Pagination";
 
 const MODULE = "shipment-picking";
 
@@ -32,6 +33,7 @@ export default function ShipmentPickingPage() {
   const [search, setSearch] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [fStatus, setFStatus] = useState("");
+  const [page, setPage] = useState(1);
 
   const [openRequest, setOpenRequest] = useState<ShipmentPickingDetail | null>(null);
 
@@ -41,8 +43,8 @@ export default function ShipmentPickingPage() {
     setLoading(true);
     setError(null);
     try {
-      const key = listCacheKey(MODULE, { search, status: fStatus });
-      const res = await cachedList(key, () => api.listShipmentPicking({ search, status: fStatus }));
+      const key = listCacheKey(MODULE, { search, status: fStatus, page });
+      const res = await cachedList(key, () => api.listShipmentPicking({ search, status: fStatus, page }));
       setItems(res.items);
       setMatchedCount(res.matched_count);
     } catch (e) {
@@ -50,9 +52,11 @@ export default function ShipmentPickingPage() {
     } finally {
       setLoading(false);
     }
-  }, [search, fStatus]);
+  }, [search, fStatus, page]);
 
   useImmediateThenDebounced(refresh, [refresh]);
+
+  useEffect(() => setPage(1), [search, fStatus]);
 
   const refreshAfterMutation = useCallback(() => {
     invalidateListCache(MODULE);
@@ -142,6 +146,7 @@ export default function ShipmentPickingPage() {
             )}
           </tbody>
         </table>
+        <Pagination page={page} pageSize={50} matchedCount={matchedCount} onPageChange={setPage} loading={loading} />
       </div>
 
       {openRequest && (

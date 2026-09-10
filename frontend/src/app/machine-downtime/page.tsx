@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import { useMe } from "@/lib/useMe";
 import { cachedList, invalidateListCache, listCacheKey } from "@/lib/listCache";
@@ -9,6 +9,7 @@ import MoreMenu from "@/components/inward-vehicle-inspection/MoreMenu";
 import ConfirmDialog from "@/components/inward-vehicle-inspection/ConfirmDialog";
 import MachineDowntimePanel, { formatDuration } from "@/components/machine-downtime/MachineDowntimePanel";
 import MachineDowntimeDetailPanel from "@/components/machine-downtime/MachineDowntimeDetailPanel";
+import Pagination from "@/components/Pagination";
 
 const MODULE = "machine-downtime";
 const REFERENCE_STALE_MS = 5 * 60_000;
@@ -28,6 +29,7 @@ export default function MachineDowntimePage() {
   const [fDate, setFDate] = useState("");
   const [fMachine, setFMachine] = useState("");
   const [fShift, setFShift] = useState("");
+  const [page, setPage] = useState(1);
 
   const [panelState, setPanelState] = useState<{ record: MachineDowntimeRecord | null } | null>(null);
   const [detailRecord, setDetailRecord] = useState<MachineDowntimeRecord | null>(null);
@@ -39,8 +41,8 @@ export default function MachineDowntimePage() {
     setLoading(true);
     setError(null);
     try {
-      const key = listCacheKey(MODULE, { search, date: fDate, machine: fMachine, shift: fShift });
-      const res = await cachedList(key, () => api.listMachineDowntime({ search, date: fDate, machine: fMachine, shift: fShift }));
+      const key = listCacheKey(MODULE, { search, date: fDate, machine: fMachine, shift: fShift, page });
+      const res = await cachedList(key, () => api.listMachineDowntime({ search, date: fDate, machine: fMachine, shift: fShift, page }));
       setItems(res.items);
       setMatchedCount(res.matched_count);
     } catch (e) {
@@ -48,9 +50,11 @@ export default function MachineDowntimePage() {
     } finally {
       setLoading(false);
     }
-  }, [search, fDate, fMachine, fShift]);
+  }, [search, fDate, fMachine, fShift, page]);
 
   useImmediateThenDebounced(refresh, [refresh]);
+
+  useEffect(() => setPage(1), [search, fDate, fMachine, fShift]);
 
   const refreshAfterMutation = useCallback(() => {
     invalidateListCache(MODULE);
@@ -170,6 +174,7 @@ export default function MachineDowntimePage() {
             )}
           </tbody>
         </table>
+        <Pagination page={page} pageSize={50} matchedCount={matchedCount} onPageChange={setPage} loading={loading} />
       </div>
 
       {panelState && (

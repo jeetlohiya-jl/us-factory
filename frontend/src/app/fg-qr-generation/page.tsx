@@ -9,6 +9,7 @@ import type { QrGenerationDetail, QrGenerationListItem } from "@/lib/types";
 import QrGenerationPanel from "@/components/qr-generation/QrGenerationPanel";
 import ConfirmDialog from "@/components/inward-vehicle-inspection/ConfirmDialog";
 import MoreMenu from "@/components/inward-vehicle-inspection/MoreMenu";
+import Pagination from "@/components/Pagination";
 
 const MODULE = "fg-qr-generation";
 
@@ -25,9 +26,11 @@ function FgQrGenerationPageContent() {
   const searchParams = useSearchParams();
   const me = useMe();
   const [items, setItems] = useState<QrGenerationListItem[]>([]);
+  const [matchedCount, setMatchedCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
 
   const [detail, setDetail] = useState<QrGenerationDetail | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<QrGenerationListItem | null>(null);
@@ -39,17 +42,20 @@ function FgQrGenerationPageContent() {
     setLoading(true);
     setLoadError(null);
     try {
-      const key = listCacheKey(MODULE, { search });
-      const qrRes = await cachedList(key, () => api.listFgQr({ search }));
+      const key = listCacheKey(MODULE, { search, page });
+      const qrRes = await cachedList(key, () => api.listFgQr({ search, page }));
       setItems(qrRes.items);
+      setMatchedCount(qrRes.matched_count);
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : "Failed to load records");
     } finally {
       setLoading(false);
     }
-  }, [search]);
+  }, [search, page]);
 
   useImmediateThenDebounced(refresh, [refresh]);
+
+  useEffect(() => setPage(1), [search]);
 
   const refreshAfterMutation = useCallback(() => {
     invalidateListCache(MODULE);
@@ -111,7 +117,7 @@ function FgQrGenerationPageContent() {
             <input type="text" placeholder="Search shipment no., SKU…" value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
         </div>
-        <div className="showing-count">{loading ? "Loading…" : `Showing ${items.length} record${items.length === 1 ? "" : "s"}`}</div>
+        <div className="showing-count">{loading ? "Loading…" : `Showing ${matchedCount} record${matchedCount === 1 ? "" : "s"}`}</div>
       </div>
 
       {loadError && <div className="error-banner">{loadError}</div>}
@@ -139,6 +145,7 @@ function FgQrGenerationPageContent() {
             )}
           </tbody>
         </table>
+        <Pagination page={page} pageSize={50} matchedCount={matchedCount} onPageChange={setPage} loading={loading} />
       </div>
 
       {detail && (

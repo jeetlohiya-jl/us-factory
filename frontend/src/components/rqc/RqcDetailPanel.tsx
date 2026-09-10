@@ -5,6 +5,7 @@ import type { RqcDetail, RqcDefectResult, RqcCoaObservation } from "@/lib/types"
 import { RQC_DEFECT_GROUPS, RQC_COA_BASE, RQC_COA_FUNCTIONAL, RQC_COA_PACKING, RQC_COA_PRINTING } from "@/lib/types";
 import type { RqcCoaParamDef } from "@/lib/types";
 import { api } from "@/lib/api";
+import HoldReleaseSection from "@/components/HoldReleaseSection";
 
 function Kv({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -136,7 +137,12 @@ export default function RqcDetailPanel({
   const editable = mode === "edit" && canEdit;
   // Nothing autopopulated is worth showing yet on an untouched record --
   // hide the context card until there's actually something in it.
-  const showContextCards = record.status !== "pending";
+  // Shipment Number is now the user-entered key filled in at creation (not
+  // something the record only "earns" once IPQC/Production auto-populate
+  // it), so the context cards always have something real to show, even on
+  // a fresh Pending record -- unlike the old auto-created-from-IPQC flow,
+  // there is no "nothing filled in yet" state to hide it during.
+  const showContextCards = true;
 
   function setFound(sr: number, value: string) {
     setDefects((prev) => {
@@ -183,6 +189,9 @@ export default function RqcDetailPanel({
           <button className="sp-close" onClick={onClose}>×</button>
         </div>
         <div className="sp-body">
+          {record.status === "hold" && (
+            <HoldReleaseSection module="rqc" recordId={record.id} canFill={canEdit} />
+          )}
           {showContextCards && (
             <div className="detail-card">
               <h3>Product and Shipment Details</h3>

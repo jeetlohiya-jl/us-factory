@@ -3,6 +3,7 @@ import { useState } from "react";
 import { api } from "@/lib/api";
 import type { QcDetail } from "@/lib/types";
 import VehicleInspectionDetailContent from "@/components/inward-vehicle-inspection/VehicleInspectionDetailContent";
+import HoldReleaseSection from "@/components/HoldReleaseSection";
 
 const CATEGORY_LABELS: Record<string, string> = {
   fgtray: "FG Non-Padded Tray", pad: "Soaker Pad", polybag: "Polybag", cfb: "CFB", glue: "Glue",
@@ -35,6 +36,12 @@ export default function RecordDetail({ detail, onClose, onEdit, canEdit }: {
           <button className="sp-close" onClick={onClose}>×</button>
         </div>
         <div className="sp-body">
+          {/* Inward QC's Hold-equivalent status string is "onhold" (see
+              inward_qc_service.py), not "hold" like every other gated
+              module -- same condition, different literal. */}
+          {detail.status === "onhold" && (
+            <HoldReleaseSection module="inward_qc" recordId={detail.id} canFill={canEdit} />
+          )}
           {isTray && (
             <div className="tab-bar">
               <button className={`tab-btn ${tab === "qc" ? "active" : ""}`} onClick={() => setTab("qc")}>QC Details</button>

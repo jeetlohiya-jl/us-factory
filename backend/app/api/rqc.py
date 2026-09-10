@@ -1,32 +1,28 @@
 """
 RQC (Final Quality Control) -- the quality gate between IPQC and FG QR
-Generation. Records are auto-created (never manually) the moment the
-relevant Material Consumption record is finalized -- see
-rqc_service.find_or_create_rqc, called from
-material_consumption_service.finalize() immediately after
-find_or_create_ipqc -- so there is no POST/create route here, matching "do
-not create unnecessary CRUD endpoints" (same convention as ipqc.py). RQC's
-creation is independent of IPQC's status: it exists as Pending from the
-moment Material Consumption is saved and only becomes Approved/Hold via
-this router's own save route, once its own inspection requirements are
-completed. List/detail reads are
-Supabase-direct (see frontend/src/lib/api.ts); this router exists solely
-for the one atomic save: Manufacturer, the full 15-item defect grid
-(Found/Remarks), the 4 COA observation tables, and Overall Result -- and,
-when that save results in 'approved', triggering the existing (unchanged)
-FG QR Generation find-or-create for this run's Production Run -- the exact
-mechanism that used to run unconditionally from Production's own save
-route, now correctly gated on RQC instead.
+Generation. Records are created MANUALLY ONLY, via "+ New Record" (the POST
+route below, backed by rqc_service.create_rqc) -- there is no auto-creation
+from Material Consumption/IPQC. Shipment Number is the required, unique,
+user-entered key used to resolve the Production Run / IPQC link (see
+rqc_service.create_rqc). List/detail reads are Supabase-direct (see
+frontend/src/lib/api.ts); this router handles the one create route plus the
+one atomic save: Manufacturer, the full 15-item defect grid (Found/
+Remarks), the 4 COA observation tables, and Overall Result -- and, when
+that save results in 'approved', triggering the existing (unchanged) FG QR
+Generation find-or-create for this run's Production Run (only possible when
+one is actually linked).
 """
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from app.db.session import get_db
 from app.db import models
 from app.api import schemas
 from app.api.deps import get_current_user
+from app.api import deps
 from app.adapters.auth.base import AuthenticatedUser
 from app.domain import rqc_service
 from app.domain import qr_generation_service
@@ -37,10 +33,8 @@ MODULE = "rqc"
 
 
 def get_perms(current_user: AuthenticatedUser = Depends(get_current_user), db: Session = Depends(get_db)) -> models.ModulePermission:
-    perm = db.query(models.ModulePermission).filter(models.ModulePermission.user_id == current_user.user_id, models.ModulePermission.module == MODULE).first()
-    if not perm:
-        perm = models.ModulePermission(user_id=current_user.user_id, module=MODULE, can_view=True)
-    return perm
+    # Admin gets full access to every module -- see deps.effective_permission.
+    return deps.effective_permission(db, current_user.user_id, MODULE)
 
 
 def require(action: str):
@@ -63,6 +57,35 @@ def _serialize_save(rec: models.RqcRecord) -> schemas.RqcSaveOut:
             for o in sorted(rec.coa_observations, key=lambda o: (o.coa_group, o.sr))
         ],
     )
+
+
+@router.post("", response_model=schemas.RqcCreateOut, status_code=status.HTTP_201_CREATED)
+def create_rqc_record(
+    payload: schemas.RqcCreateIn,
+    db: Session = Depends(get_db),
+    _current_user: AuthenticatedUser = Depends(get_current_user),
+    _perm: models.ModulePermission = Depends(require("create")),
+):
+    """Manual "+ New Record" creation -- see rqc_service.create_rqc for the
+    Shipment Number -> IPQC/Production lookup. Cancel on the frontend never
+    calls this route at all (no draft is created just by opening the
+    panel), so there is nothing to discard on Cancel here."""
+    shipment_number = (payload.shipment_number or "").strip()
+    if not shipment_number:
+        raise HTTPException(status_code=422, detail="Shipment Number is required.")
+    try:
+        rec = rqc_service.create_rqc(db, shipment_number, payload.manufacturer)
+        db.commit()
+    except rqc_service.RqcError as e:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    except IntegrityError as e:
+        db.rollback()
+        if "rqc_records_shipment_number_key" in str(e.orig):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f'Shipment Number "{shipment_number}" already exists.')
+        raise
+    db.refresh(rec)
+    return schemas.RqcCreateOut(id=rec.id, shipment_number=rec.shipment_number, status=rec.status)
 
 
 @router.put("/{record_id}", response_model=schemas.RqcSaveOut)

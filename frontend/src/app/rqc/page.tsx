@@ -7,7 +7,9 @@ import { cachedList, invalidateListCache, listCacheKey } from "@/lib/listCache";
 import { useImmediateThenDebounced } from "@/lib/useImmediateThenDebounced";
 import type { RqcListItem, RqcDetail } from "@/lib/types";
 import RqcDetailPanel from "@/components/rqc/RqcDetailPanel";
+import NewRqcPanel from "@/components/rqc/NewRqcPanel";
 import MoreMenu from "@/components/inward-vehicle-inspection/MoreMenu";
+import Pagination from "@/components/Pagination";
 
 const MODULE = "rqc";
 
@@ -40,9 +42,11 @@ function RqcPageContent() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
   const [showFilters, setShowFilters] = useState(false);
+  const [page, setPage] = useState(1);
 
   const [openRecord, setOpenRecord] = useState<RqcDetail | null>(null);
   const [panelMode, setPanelMode] = useState<"view" | "edit">("edit");
+  const [showNewPanel, setShowNewPanel] = useState(false);
 
   // "View" only makes sense once there's something finished to review --
   // Pending/Draft records have nothing filled in yet, so the pencil (fill
@@ -53,8 +57,8 @@ function RqcPageContent() {
     setLoading(true);
     setError(null);
     try {
-      const key = listCacheKey(MODULE, { search, status });
-      const { items, matched_count } = await cachedList(key, () => api.listRqc({ search, status }));
+      const key = listCacheKey(MODULE, { search, status, page });
+      const { items, matched_count } = await cachedList(key, () => api.listRqc({ search, status, page }));
       setRecords(items);
       setMatchedCount(matched_count);
     } catch (e) {
@@ -62,9 +66,11 @@ function RqcPageContent() {
     } finally {
       setLoading(false);
     }
-  }, [search, status]);
+  }, [search, status, page]);
 
   useImmediateThenDebounced(refresh, [refresh]);
+
+  useEffect(() => setPage(1), [search, status]);
 
   const refreshAfterMutation = useCallback(() => {
     invalidateListCache(MODULE);
@@ -104,9 +110,16 @@ function RqcPageContent() {
       <div className="page-head2">
         <div>
           <h1>RQC</h1>
-          <div className="desc">Final Quality Control -- every record created to date, auto-identified against the current production run&apos;s IPQC result.</div>
+          <div className="desc">Final Quality Control -- every record created to date. Search, filter, or open a record to view it in full.</div>
         </div>
-        <span className="auto-note">Records are created automatically from IPQC.</span>
+        <button
+          className="btn btn-primary"
+          disabled={!perms || !perms.can_create}
+          title={perms && !perms.can_create ? "You don't have permission to create RQC records." : ""}
+          onClick={() => setShowNewPanel(true)}
+        >
+          + New Record
+        </button>
       </div>
 
       <div className="toolbar">
@@ -185,6 +198,7 @@ function RqcPageContent() {
             )}
           </tbody>
         </table>
+        <Pagination page={page} pageSize={50} matchedCount={matchedCount} onPageChange={setPage} loading={loading} />
       </div>
 
       {openRecord && (
@@ -195,6 +209,17 @@ function RqcPageContent() {
           onSaved={refreshAfterMutation}
           mode={panelMode}
           onEdit={() => setPanelMode("edit")}
+        />
+      )}
+
+      {showNewPanel && (
+        <NewRqcPanel
+          onClose={() => setShowNewPanel(false)}
+          onCreated={(id) => {
+            setShowNewPanel(false);
+            refreshAfterMutation();
+            openDetail(id, "edit");
+          }}
         />
       )}
 

@@ -415,11 +415,31 @@ def submit_qc(
 
 @router.delete("/{qc_id}/if-blank", status_code=204)
 def discard_if_blank(qc_id: uuid.UUID, db: Session = Depends(get_db)):
-    """Cleans up an untouched manually-created draft on Cancel. Never applies
-    to an auto-created Tray QC (linked_vehicle_inspection_id is set) — those
-    must stay in the list as Pending even if untouched."""
+    """Cancel while re-editing an EXISTING record: cleans up only if it's
+    genuinely blank. Never applies to an auto-created Tray QC
+    (linked_vehicle_inspection_id is set) — those must stay in the list as
+    Pending even if untouched. See discard_new below for the "just created
+    this record this session" case."""
     qc = db.query(models.InwardQcRecord).filter(models.InwardQcRecord.id == qc_id).first()
     if qc and qc.linked_vehicle_inspection_id is None and svc.is_qc_blank(qc):
+        db.delete(qc)
+        db.commit()
+    return None
+
+
+@router.delete("/{qc_id}/discard-new", status_code=204)
+def discard_new(
+    qc_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    _perm=Depends(require_qc_permission("create")),
+):
+    """Cancel on a record just created this session via "+ New Record" --
+    unconditionally discards it regardless of whether fields were
+    filled/autosaved (per "Cancel must discard new-record data
+    completely"). Gated on can_create, not can_delete. Never applies to an
+    auto-created Tray QC, and only ever removes a still-draft record."""
+    qc = db.query(models.InwardQcRecord).filter(models.InwardQcRecord.id == qc_id).first()
+    if qc and qc.linked_vehicle_inspection_id is None and qc.status == "draft":
         db.delete(qc)
         db.commit()
     return None

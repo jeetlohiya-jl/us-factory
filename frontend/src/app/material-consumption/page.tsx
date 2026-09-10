@@ -9,6 +9,7 @@ import type { MaterialConsumptionListItem, MaterialConsumptionDetail, Machine } 
 import MaterialConsumptionWizard, { formatTime12h } from "@/components/material-consumption/Wizard";
 import MoreMenu from "@/components/inward-vehicle-inspection/MoreMenu";
 import ConfirmDialog from "@/components/inward-vehicle-inspection/ConfirmDialog";
+import Pagination from "@/components/Pagination";
 
 const CATEGORY_LABELS: Record<string, string> = { tray: "Base Tray", fgtray: "FG Non-Padded Tray" };
 const MODULE = "material-consumption";
@@ -43,8 +44,10 @@ function MaterialConsumptionPageContent() {
   const [category, setCategory] = useState("");
   const [date, setDate] = useState("");
   const [showFilters, setShowFilters] = useState(false);
+  const [page, setPage] = useState(1);
 
   const [openMc, setOpenMc] = useState<MaterialConsumptionDetail | null>(null);
+  const [openMcIsNew, setOpenMcIsNew] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<MaterialConsumptionListItem | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
@@ -52,10 +55,10 @@ function MaterialConsumptionPageContent() {
     setLoading(true);
     setError(null);
     try {
-      const key = listCacheKey(MODULE, { search, category, date });
+      const key = listCacheKey(MODULE, { search, category, date, page });
       const [recs, machineList] = await cachedList(key, () =>
         Promise.all([
-          api.listMaterialConsumption({ search, category, date }),
+          api.listMaterialConsumption({ search, category, date, page }),
           api.machines(),
         ])
       );
@@ -67,9 +70,14 @@ function MaterialConsumptionPageContent() {
     } finally {
       setLoading(false);
     }
-  }, [search, category, date]);
+  }, [search, category, date, page]);
 
   useImmediateThenDebounced(refresh, [refresh]);
+
+  // Any change to search/filters invalidates the current page of results --
+  // jump back to page 1 rather than stranding the viewer on a page number
+  // that may no longer exist for the new filter set.
+  useEffect(() => setPage(1), [search, category, date]);
 
   const refreshAfterMutation = useCallback(() => {
     invalidateListCache(MODULE);
@@ -80,6 +88,7 @@ function MaterialConsumptionPageContent() {
     setError(null);
     try {
       const mc = await api.createMaterialConsumptionDraft();
+      setOpenMcIsNew(true);
       setOpenMc(mc);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to create record");
@@ -89,6 +98,7 @@ function MaterialConsumptionPageContent() {
   async function openRecord(id: string) {
     try {
       const mc = await api.getMaterialConsumption(id);
+      setOpenMcIsNew(false);
       setOpenMc(mc);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load record");
@@ -209,6 +219,7 @@ function MaterialConsumptionPageContent() {
             )}
           </tbody>
         </table>
+        <Pagination page={page} pageSize={50} matchedCount={matchedCount} onPageChange={setPage} loading={loading} />
       </div>
 
       {openMc && (
@@ -220,6 +231,7 @@ function MaterialConsumptionPageContent() {
           permissions={perms || { can_view: true, can_create: false, can_edit: false, can_delete: false, can_approve: false, can_fill_section: false }}
           onClose={() => setOpenMc(null)}
           onSaved={refreshAfterMutation}
+          isNew={openMcIsNew}
         />
       )}
 

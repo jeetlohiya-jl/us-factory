@@ -215,6 +215,11 @@ class ChecklistItem(Base):
     label = Column(Text, nullable=False)
     sort_order = Column(Integer, nullable=False, default=0)
     is_active = Column(Boolean, nullable=False, default=True)
+    # False only for "Vehicle arrived within scheduled time window"
+    # (migration 0022) -- an informational-only question whose answer must
+    # never affect Approved/Hold status or block submission. True for every
+    # other item, which keep behaving exactly as before.
+    affects_status = Column(Boolean, nullable=False, default=True)
 
 
 class InwardVehicleInspectionChecklistAnswer(Base):
@@ -533,42 +538,47 @@ class IpqcBlockDefect(Base):
 
 class RqcRecord(Base):
     """
-    RQC (Final Quality Control) -- auto-created (never duplicated) the
-    moment the relevant Material Consumption record is finalized (see
-    rqc_service.find_or_create_rqc, called from
-    material_consumption_service.finalize() immediately after
-    find_or_create_ipqc). Creation is independent of IPQC's status: this
-    record exists as Pending from Material Consumption save onward.
+    RQC (Final Quality Control) -- created MANUALLY only, via "+ New Record"
+    (see app/api/rqc.py's POST route / rqc_service.create_rqc). Shipment
+    Number is the user-entered business key (unique at the DB level --
+    rqc_records_shipment_number_key below) that links this record to
+    Production and IPQC: at creation, rqc_service.create_rqc looks up the
+    IPQC record already carrying this same shipment_number (IPQC's own
+    shipment_number is itself a locked-in snapshot from Material
+    Consumption) and, when one exists, reuses its real UUID relationships
+    (production_run_id, ipqc_record_id) and SKU snapshot -- never creating a
+    duplicate Production/IPQC record, and never required to find a match
+    (a shipment number entered before its IPQC record exists is still a
+    valid, linkable-later RQC record).
+
+    production_run_id is therefore nullable and no longer unique -- RQC is
+    no longer "one record per Production Run" auto-derived from it; it is
+    "one record per Shipment Number", manually created.
 
     The quality gate between IPQC and FG QR Generation: only once *this*
     record's own status is 'approved' -- via its own save route, after its
-    own inspection requirements are completed, never automatically -- does
-    the existing FG QR Generation record get created for the run
-    (get_or_create_fg_qr_for_production_run, called from rqc.py's save
-    route instead of Production's, per the corrected workflow).
+    own inspection requirements are completed -- does the existing FG QR
+    Generation record get created for the run (only possible when a
+    Production Run was actually linked).
 
-    One RQC record per Production Run (unique constraint on
-    production_run_id) is the dedup mechanism, exactly mirroring
-    IpqcRecord's own production_run_id uniqueness.
-
-    sku_code/version/shipment_number are autopopulated at creation from the
-    Production Run and never re-entered. Manufacturer has no upstream
-    source in this app (same as the HTML prototype's own plain-text field)
-    so it's seeded with a placeholder and left genuinely user-editable.
-    The FG pallet count shown alongside this record is read live from
-    production_runs.total_fg_pallets via the FK -- never duplicated onto
-    this table, so there is exactly one source of truth for "how many FG
-    pallets this run produced."
+    sku_code/version are autopopulated at creation from the matched IPQC
+    record when one exists, and never re-entered. Manufacturer has no
+    upstream source in this app (same as the HTML prototype's own
+    plain-text field) so it's seeded with a placeholder and left genuinely
+    user-editable. The FG pallet count shown alongside this record is read
+    live from production_runs.total_fg_pallets via the FK -- never
+    duplicated onto this table, so there is exactly one source of truth for
+    "how many FG pallets this run produced."
     """
     __tablename__ = "rqc_records"
     id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
-    production_run_id = Column(UUID(as_uuid=True), ForeignKey("production_runs.id", ondelete="CASCADE"), nullable=False, unique=True)
+    production_run_id = Column(UUID(as_uuid=True), ForeignKey("production_runs.id", ondelete="SET NULL"), nullable=True)
     ipqc_record_id = Column(UUID(as_uuid=True), ForeignKey("ipqc_records.id"), nullable=True)
     sku_code_id = Column(UUID(as_uuid=True), ForeignKey("sku_codes.id"), nullable=True)
     sku_version_id = Column(UUID(as_uuid=True), ForeignKey("sku_versions.id"), nullable=True)
     sku_code_snapshot = Column(Text, nullable=True)
     sku_version_snapshot = Column(Text, nullable=True)
-    shipment_number = Column(Text, nullable=True)
+    shipment_number = Column(Text, nullable=False)
     manufacturer = Column(Text, nullable=True)
     # Free-text summary field, genuinely user-entered -- never computed,
     # matching the prototype's #rqc-f-overall-result exactly (separate from
@@ -1027,3 +1037,41 @@ class MachineDowntimeRecord(Base):
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
     machine = relationship("Machine")
+
+
+class HoldReleaseRecord(Base):
+    """
+    Hold & Release -- one row per (module, record_id), created (find-or-
+    create, idempotent via the unique constraint) the moment a user opens a
+    'hold'-status record in one of the five gated modules (Inward Vehicle
+    Inspection, Inward QC, IPQC, RQC, Outward Vehicle Inspection). Written
+    directly by the browser via Supabase (RLS-gated, see migration 0024),
+    same convention as Machine Downtime / sku_codes / vendors / machines --
+    there is no FastAPI router for this table, it's a plain form with no
+    privileged/transactional logic.
+
+    record_id is NOT a real foreign key (see migration 0024's comment) --
+    it points into whichever of the five modules' own tables `module`
+    names. This table only ever adds to a Hold record; it never overwrites
+    or duplicates the original inspection's own data.
+    """
+    __tablename__ = "hold_release_records"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    module = Column(Text, nullable=False)
+    record_id = Column(UUID(as_uuid=True), nullable=False)
+    date_of_hold = Column(Text, nullable=True)
+    product_name = Column(Text, nullable=True)
+    batch_code = Column(Text, nullable=True)
+    point_of_detection = Column(Text, nullable=True)
+    qty_of_hold = Column(Text, nullable=True)
+    reason_for_hold = Column(Text, nullable=True)
+    record_filled_by = Column(Text, nullable=True)
+    date_of_decision = Column(Text, nullable=True)
+    disposition = Column(Text, nullable=True)
+    reason_of_disposition = Column(Text, nullable=True)
+    qty_decided = Column(Text, nullable=True)
+    done_by = Column(Text, nullable=True)
+    approved_by = Column(Text, nullable=True)
+    status = Column(Text, nullable=False, default="draft")  # 'draft' | 'completed'
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)

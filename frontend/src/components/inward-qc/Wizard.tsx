@@ -22,7 +22,7 @@ function computeClientSamplingPlan(meta: QcMeta, category: string, qty: number |
 }
 
 export default function Wizard({
-  qcId, initialDetail, meta, skuCodes, permissions, onClose, onSaved,
+  qcId, initialDetail, meta, skuCodes, permissions, onClose, onSaved, isNew = false,
 }: {
   qcId: string;
   initialDetail: QcDetail;
@@ -31,6 +31,9 @@ export default function Wizard({
   permissions: Permissions;
   onClose: (deleted: boolean) => void;
   onSaved: () => void;
+  // True only for a record just created this session via "+ New Record"
+  // (never yet explicitly Saved/Submitted) -- see handleCancel.
+  isNew?: boolean;
 }) {
   const isTray = initialDetail.category === "fgtray";
   const [detail, setDetail] = useState<QcDetail>(initialDetail);
@@ -173,6 +176,17 @@ export default function Wizard({
   }
 
   async function handleCancel() {
+    if (isNew) {
+      // Creating a NEW record: Cancel must discard the unsaved form state
+      // completely regardless of whether any fields were touched/autosaved
+      // -- this record was never explicitly Saved/Submitted in this
+      // session. Always hard-delete rather than the blank-only check.
+      if (detail.status === "draft" && !isTray) {
+        try { await api.discardNewQc(qcId); } catch { /* best-effort */ }
+      }
+      onClose(true);
+      return;
+    }
     if (!touched && detail.status === "draft" && !isTray) {
       try { await api.discardQcIfBlank(qcId); } catch { /* best-effort */ }
     }

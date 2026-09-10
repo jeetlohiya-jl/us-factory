@@ -1,6 +1,7 @@
 "use client";
 import type { InspectionDetail } from "@/lib/types";
 import VehicleInspectionDetailContent from "./VehicleInspectionDetailContent";
+import HoldReleaseSection from "@/components/HoldReleaseSection";
 
 export default function RecordDetail({ detail, onClose, onEdit, canEdit }: {
   detail: InspectionDetail; onClose: () => void; onEdit: () => void; canEdit: boolean;
@@ -17,6 +18,9 @@ export default function RecordDetail({ detail, onClose, onEdit, canEdit }: {
           <button className="sp-close" onClick={onClose}>×</button>
         </div>
         <div className="sp-body">
+          {detail.status === "hold" && (
+            <HoldReleaseSection module="inward_vehicle_inspection" recordId={detail.id} canFill={canEdit} />
+          )}
           <VehicleInspectionDetailContent detail={detail} />
         </div>
         <div className="sp-foot">

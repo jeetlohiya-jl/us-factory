@@ -9,6 +9,7 @@ import type { OviDetail, OviListItem } from "@/lib/types";
 import OviPanel from "@/components/outward-vehicle-inspection/OviPanel";
 import MoreMenu from "@/components/inward-vehicle-inspection/MoreMenu";
 import ConfirmDialog from "@/components/inward-vehicle-inspection/ConfirmDialog";
+import Pagination from "@/components/Pagination";
 
 const MODULE = "ovi";
 
@@ -41,6 +42,7 @@ function OviPageContent() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [fDate, setFDate] = useState("");
   const [fStatus, setFStatus] = useState("");
+  const [page, setPage] = useState(1);
 
   const [openRecord, setOpenRecord] = useState<OviDetail | null>(null);
   const [panelMode, setPanelMode] = useState<"view" | "edit">("edit");
@@ -53,8 +55,8 @@ function OviPageContent() {
     setLoading(true);
     setError(null);
     try {
-      const key = listCacheKey(MODULE, { search, status: fStatus, date: fDate });
-      const res = await cachedList(key, () => api.listOvi({ search, status: fStatus, date: fDate }));
+      const key = listCacheKey(MODULE, { search, status: fStatus, date: fDate, page });
+      const res = await cachedList(key, () => api.listOvi({ search, status: fStatus, date: fDate, page }));
       setItems(res.items);
       setMatchedCount(res.matched_count);
     } catch (e) {
@@ -62,9 +64,11 @@ function OviPageContent() {
     } finally {
       setLoading(false);
     }
-  }, [search, fStatus, fDate]);
+  }, [search, fStatus, fDate, page]);
 
   useImmediateThenDebounced(refresh, [refresh]);
+
+  useEffect(() => setPage(1), [search, fStatus, fDate]);
 
   const refreshAfterMutation = useCallback(() => {
     invalidateListCache(MODULE);
@@ -176,6 +180,7 @@ function OviPageContent() {
             )}
           </tbody>
         </table>
+        <Pagination page={page} pageSize={50} matchedCount={matchedCount} onPageChange={setPage} loading={loading} />
       </div>
 
       {openRecord && (

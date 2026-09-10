@@ -49,6 +49,14 @@ function PermissionMatrix({
   onChange: (module: ModuleKey, key: keyof Permissions, checked: boolean) => void;
   disabled?: boolean;
 }) {
+  // Module master checkbox: checked when every permission for that module
+  // is already on, indeterminate when only some are -- checking it turns
+  // every action on, unchecking clears every action, and each individual
+  // checkbox still works independently afterward (spec point 3).
+  function toggleModule(module: ModuleKey, checked: boolean) {
+    for (const a of ACTIONS) onChange(module, a.key, checked);
+  }
+
   return (
     <div className="card card-flush" style={{ overflowX: "auto" }}>
       <table className="data">
@@ -59,21 +67,38 @@ function PermissionMatrix({
           </tr>
         </thead>
         <tbody>
-          {USER_MODULES.map((module) => (
-            <tr key={module}>
-              <td>{MODULE_LABELS[module]}</td>
-              {ACTIONS.map((a) => (
-                <td key={a.key} style={{ textAlign: "center" }}>
-                  <input
-                    type="checkbox"
-                    disabled={disabled}
-                    checked={value[module][a.key]}
-                    onChange={(e) => onChange(module, a.key, e.target.checked)}
-                  />
+          {USER_MODULES.map((module) => {
+            const perms = value[module];
+            const allOn = ACTIONS.every((a) => perms[a.key]);
+            const someOn = ACTIONS.some((a) => perms[a.key]);
+            return (
+              <tr key={module}>
+                <td>
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: disabled ? "default" : "pointer" }}>
+                    <input
+                      type="checkbox"
+                      disabled={disabled}
+                      checked={allOn}
+                      ref={(el) => { if (el) el.indeterminate = !allOn && someOn; }}
+                      onChange={(e) => toggleModule(module, e.target.checked)}
+                      title="Select/clear all permissions for this module"
+                    />
+                    {MODULE_LABELS[module]}
+                  </label>
                 </td>
-              ))}
-            </tr>
-          ))}
+                {ACTIONS.map((a) => (
+                  <td key={a.key} style={{ textAlign: "center" }}>
+                    <input
+                      type="checkbox"
+                      disabled={disabled}
+                      checked={perms[a.key]}
+                      onChange={(e) => onChange(module, a.key, e.target.checked)}
+                    />
+                  </td>
+                ))}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

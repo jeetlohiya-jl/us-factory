@@ -210,7 +210,7 @@ function MachineEntryPanel({
 }
 
 export default function MaterialConsumptionWizard({
-  mcId, initialDetail, machines, shifts, permissions, onClose, onSaved,
+  mcId, initialDetail, machines, shifts, permissions, onClose, onSaved, isNew = false,
 }: {
   mcId: string;
   initialDetail: MaterialConsumptionDetail;
@@ -219,6 +219,9 @@ export default function MaterialConsumptionWizard({
   permissions: Permissions;
   onClose: (deleted: boolean) => void;
   onSaved: () => void;
+  // True only for a record just created this session via "+ New Record"
+  // (never yet explicitly Saved/Submitted) -- see handleCancel.
+  isNew?: boolean;
 }) {
   const [detail, setDetail] = useState<MaterialConsumptionDetail>(initialDetail);
   const [error, setError] = useState<string | null>(null);
@@ -374,8 +377,21 @@ export default function MaterialConsumptionWizard({
   }
 
   async function handleCancel() {
-    // Always defer to the backend's own is_blank check rather than gating on
-    // `touched` -- see the same fix applied to Inward Vehicle Inspection.
+    if (isNew) {
+      // Creating a NEW record: Cancel must discard the unsaved form state
+      // completely -- whether no fields/pallets were entered, some were,
+      // or all were. Unlike Edit-an-existing-record, this never depends on
+      // whether the record is "blank" (child machine-entry/pallet rows
+      // cascade-delete with it; nothing was ever marked consumed pre-
+      // finalize, so there's no inventory to release).
+      if (detail.status === "draft") {
+        try { await api.discardNewMaterialConsumption(mcId); } catch { /* best-effort */ }
+      }
+      onClose(true);
+      return;
+    }
+    // Editing an existing record: only clean up if genuinely blank --
+    // unchanged prior behavior.
     if (detail.status === "draft") {
       try { await api.discardMaterialConsumptionIfBlank(mcId); } catch { /* best-effort */ }
     }

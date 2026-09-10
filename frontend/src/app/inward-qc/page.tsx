@@ -11,6 +11,7 @@ import ConfirmDialog from "@/components/inward-vehicle-inspection/ConfirmDialog"
 import CategoryPicker from "@/components/inward-qc/CategoryPicker";
 import Wizard from "@/components/inward-qc/Wizard";
 import RecordDetail from "@/components/inward-qc/RecordDetail";
+import Pagination from "@/components/Pagination";
 
 const MODULE = "inward-qc";
 // Reference data (checklist/sampling meta, SKU codes) barely ever changes --
@@ -51,9 +52,10 @@ function InwardQcPageContent() {
   const [fDate, setFDate] = useState("");
   const [fCategory, setFCategory] = useState("");
   const [fStatus, setFStatus] = useState("");
+  const [page, setPage] = useState(1);
 
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
-  const [wizardState, setWizardState] = useState<{ id: string; detail: QcDetail } | null>(null);
+  const [wizardState, setWizardState] = useState<{ id: string; detail: QcDetail; isNew: boolean } | null>(null);
   const [detailState, setDetailState] = useState<QcDetail | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<QcListItem | null>(null);
   const [deleteBlockedMsg, setDeleteBlockedMsg] = useState<string | null>(null);
@@ -65,8 +67,8 @@ function InwardQcPageContent() {
     setLoading(true);
     setLoadError(null);
     try {
-      const key = listCacheKey(MODULE, { search, status: fStatus, category: fCategory, date: fDate });
-      const res = await cachedList(key, () => api.listQc({ search, status: fStatus, category: fCategory, date: fDate }));
+      const key = listCacheKey(MODULE, { search, status: fStatus, category: fCategory, date: fDate, page });
+      const res = await cachedList(key, () => api.listQc({ search, status: fStatus, category: fCategory, date: fDate, page }));
       setItems(res.items);
       setMatchedCount(res.matched_count);
       setTotalCount(res.total_count);
@@ -75,7 +77,7 @@ function InwardQcPageContent() {
     } finally {
       setLoading(false);
     }
-  }, [search, fStatus, fCategory, fDate]);
+  }, [search, fStatus, fCategory, fDate, page]);
 
   useEffect(() => {
     cachedList("inward-qc-meta:meta", () => api.qcMeta(), REFERENCE_STALE_MS).then(setMeta).catch(() => setMeta(null));
@@ -83,6 +85,8 @@ function InwardQcPageContent() {
   }, []);
 
   useImmediateThenDebounced(refresh, [refresh]);
+
+  useEffect(() => setPage(1), [search, fStatus, fCategory, fDate]);
 
   const refreshAfterMutation = useCallback(() => {
     invalidateListCache(MODULE);
@@ -93,7 +97,7 @@ function InwardQcPageContent() {
     try {
       const detail = await api.createQcDraft(category);
       setShowCategoryPicker(false);
-      setWizardState({ id: detail.id, detail });
+      setWizardState({ id: detail.id, detail, isNew: true });
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : "Failed to create record");
     }
@@ -124,7 +128,7 @@ function InwardQcPageContent() {
     try {
       const detail = await api.getQc(id);
       setDetailState(null);
-      setWizardState({ id: detail.id, detail });
+      setWizardState({ id: detail.id, detail, isNew: false });
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : "Failed to load record");
     }
@@ -246,6 +250,7 @@ function InwardQcPageContent() {
             )}
           </tbody>
         </table>
+        <Pagination page={page} pageSize={50} matchedCount={matchedCount} onPageChange={setPage} loading={loading} />
       </div>
 
       {showCategoryPicker && (
@@ -261,6 +266,7 @@ function InwardQcPageContent() {
           permissions={perms}
           onClose={() => { setWizardState(null); refreshAfterMutation(); }}
           onSaved={refreshAfterMutation}
+          isNew={wizardState.isNew}
         />
       )}
 

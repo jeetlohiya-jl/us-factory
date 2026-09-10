@@ -13,6 +13,7 @@ import type {
   ShipmentPickingListItem, ShipmentPickingDetail,
   OviListItem, OviDetail, OviSavePayload,
   MachineDowntimeRecord, MachineDowntimeSavePayload,
+  HoldReleaseModule, HoldReleaseRecord, HoldReleaseSavePayload,
   AppUser, UserCreateInput, UserUpdateInput,
 } from "./types";
 
@@ -999,7 +1000,7 @@ async function listRqcSb(
 type RawRqcDefectResult = { defect_sr: number; found: number | string | null; remarks: string | null };
 type RawRqcCoaObservation = { coa_group: string; sr: number; observation: string | null };
 type RawRqcRecordDetail = {
-  id: string; production_run_id: string; shipment_number: string | null; manufacturer: string | null;
+  id: string; production_run_id: string | null; shipment_number: string | null; manufacturer: string | null;
   sku_code_snapshot: string | null; sku_version_snapshot: string | null; overall_result: string | null; status: string;
   ipqc_record_id: string | null;
   production_run: { run_number: string; total_fg_pallets: number; shift: string | null; production_date: string | null } |
@@ -1323,6 +1324,51 @@ async function getMachineDowntimeSb(id: string): Promise<MachineDowntimeRecord> 
   return flattenMd(data as unknown as RawMdRecord);
 }
 
+// -- Hold & Release ------------------------------------------------------
+// One row per (module, record_id) -- see migration 0024. Full CRUD is
+// direct-Supabase, RLS-gated on the row's own `module` column (same
+// convention as Machine Downtime): there's no privileged/transactional
+// logic here, just a form attached to whichever record went on Hold.
+const HOLD_RELEASE_SELECT =
+  "id,module,record_id,date_of_hold,product_name,batch_code,point_of_detection,qty_of_hold,reason_for_hold,record_filled_by," +
+  "date_of_decision,disposition,reason_of_disposition,qty_decided,done_by,approved_by,status";
+
+async function getOrCreateHoldReleaseSb(module: HoldReleaseModule, recordId: string): Promise<HoldReleaseRecord> {
+  const { data: existing, error: selectError } = await supabase
+    .from("hold_release_records").select(HOLD_RELEASE_SELECT)
+    .eq("module", module).eq("record_id", recordId).maybeSingle();
+  if (selectError) throw new ApiError(500, selectError.message);
+  if (existing) return existing as unknown as HoldReleaseRecord;
+  // Idempotent find-or-create: the unique(module, record_id) constraint is
+  // the hard backstop against a duplicate row (e.g. two people opening the
+  // same Hold record at once) -- a 23505 here just means someone else's
+  // insert won the race, so re-select rather than treating it as an error.
+  const { data: created, error: insertError } = await supabase
+    .from("hold_release_records")
+    .insert({ module, record_id: recordId, status: "draft" })
+    .select(HOLD_RELEASE_SELECT)
+    .single();
+  if (insertError) {
+    if ((insertError as { code?: string }).code === "23505") {
+      const { data: raced, error: racedError } = await supabase
+        .from("hold_release_records").select(HOLD_RELEASE_SELECT)
+        .eq("module", module).eq("record_id", recordId).single();
+      if (racedError || !raced) throw new ApiError(500, racedError?.message || "Failed to load Hold & Release record");
+      return raced as unknown as HoldReleaseRecord;
+    }
+    throw new ApiError(403, insertError.message);
+  }
+  return created as unknown as HoldReleaseRecord;
+}
+
+async function saveHoldReleaseSb(id: string, payload: HoldReleaseSavePayload): Promise<HoldReleaseRecord> {
+  const { data, error } = await supabase
+    .from("hold_release_records").update(payload).eq("id", id)
+    .select(HOLD_RELEASE_SELECT).single();
+  if (error) throw new ApiError(403, error.message);
+  return data as unknown as HoldReleaseRecord;
+}
+
 // Sku_codes rows always come back with their versions embedded via
 // PostgREST's nested-resource select -- matches the joinedload(versions)
 // every FastAPI /skus and /reference/sku-codes route already did, with the
@@ -1511,12 +1557,13 @@ export const api = {
     ).then(() => invalidateListCache("ref:vendors")),
 
   // -- Phase 2: Inward Vehicle Inspection list/detail, direct Supabase ----
-  listInspections: async (params: { search?: string; status?: string; category?: string; date?: string }) => {
+  listInspections: async (params: { search?: string; status?: string; category?: string; date?: string; page?: number }) => {
+    const page = params.page && params.page > 0 ? params.page : 1;
     const base = supabase
       .from("inward_vehicle_inspections")
       .select("id,shipment_number,invoice_number,container_number,status,category,created_at", { count: "exact" });
     const filtered = applyIviFilters(base as unknown as PgQuery, params);
-    const ordered = (filtered as unknown as typeof base).order("created_at", { ascending: false }).range(0, 49);
+    const ordered = (filtered as unknown as typeof base).order("created_at", { ascending: false }).range((page - 1) * LIST_PAGE_SIZE, page * LIST_PAGE_SIZE - 1);
     const { data, error, count } = await ordered;
     if (error) throw new ApiError(500, error.message);
     // total_count is the GRAND total regardless of filters, while
@@ -1603,6 +1650,12 @@ export const api = {
   discardIfBlank: (id: string) =>
     request<void>(`/api/v1/inward-vehicle-inspections/${id}/if-blank`, { method: "DELETE" }),
 
+  // Cancel on a record just created this session via "+ New Record" --
+  // discards it unconditionally (not just when blank), gated on can_create
+  // rather than can_delete. See discard_new in the backend router.
+  discardNewInspection: (id: string) =>
+    request<void>(`/api/v1/inward-vehicle-inspections/${id}/discard-new`, { method: "DELETE" }),
+
   deleteInspection: (id: string) =>
     request<{ deleted: boolean }>(`/api/v1/inward-vehicle-inspections/${id}`, { method: "DELETE" }),
 
@@ -1644,12 +1697,13 @@ export const api = {
   // only the initial read risks a URL-shape mismatch FastAPI itself
   // hasn't resolved yet; listQc has no coa_url field at all, so it's free
   // of that ambiguity.
-  listQc: async (params: { search?: string; status?: string; category?: string; date?: string }) => {
+  listQc: async (params: { search?: string; status?: string; category?: string; date?: string; page?: number }) => {
+    const page = params.page && params.page > 0 ? params.page : 1;
     const base = supabase
       .from("inward_qc_records")
       .select("id,shipment_number,category,coa_filename,status,created_at", { count: "exact" });
     const filtered = applyListFilters(base as unknown as PgQuery, params, ["shipment_number"]);
-    const ordered = (filtered as unknown as typeof base).order("created_at", { ascending: false }).range(0, 49);
+    const ordered = (filtered as unknown as typeof base).order("created_at", { ascending: false }).range((page - 1) * LIST_PAGE_SIZE, page * LIST_PAGE_SIZE - 1);
     const { data, error, count } = await ordered;
     if (error) throw new ApiError(500, error.message);
     const total_count = await countAll("inward_qc_records");
@@ -1690,6 +1744,9 @@ export const api = {
   submitQc: (id: string) => request<QcDetail>(`/api/v1/inward-qc/${id}/submit`, { method: "POST" }),
 
   discardQcIfBlank: (id: string) => request<void>(`/api/v1/inward-qc/${id}/if-blank`, { method: "DELETE" }),
+  // See discardNewInspection -- same "Cancel on a just-created record"
+  // unconditional discard, gated on can_create not can_delete.
+  discardNewQc: (id: string) => request<void>(`/api/v1/inward-qc/${id}/discard-new`, { method: "DELETE" }),
 
   deleteQc: (id: string) => request<{ deleted: boolean }>(`/api/v1/inward-qc/${id}`, { method: "DELETE" }),
 
@@ -1738,8 +1795,8 @@ export const api = {
   // -- RM Storage ----------------------------------------------------------
   listRmPending: (params: { search?: string; sku?: string; page?: number } = {}) =>
     cachedList(listCacheKey("rm-storage-pending", params), () => pendingPalletsQuery("rm", params)),
-  listRmStorageRecords: (search = "") =>
-    cachedList(listCacheKey("rm-storage-records", { search }), () => storageRecordsQuery("rm", search)),
+  listRmStorageRecords: (search = "", page = 1) =>
+    cachedList(listCacheKey("rm-storage-records", { search, page }), () => storageRecordsQuery("rm", search, page)),
   getRmStorageRecord: (id: string) => storageRecordDetail("rm", id),
   scanRmPallet: (payload: string) => request<Pallet>("/api/v1/rm-storage/scan-pallet", { method: "POST", body: JSON.stringify({ payload }) }),
   scanRmLocation: (payload: string) => request<{ id: string; display_id: string; zone: string }>("/api/v1/rm-storage/scan-location", { method: "POST", body: JSON.stringify({ payload }) }),
@@ -1753,8 +1810,8 @@ export const api = {
   // -- FG Storage ------------------------------------------------------------
   listFgPending: (params: { search?: string; sku?: string; page?: number } = {}) =>
     cachedList(listCacheKey("fg-storage-pending", params), () => pendingPalletsQuery("fg", params)),
-  listFgStorageRecords: (search = "") =>
-    cachedList(listCacheKey("fg-storage-records", { search }), () => storageRecordsQuery("fg", search)),
+  listFgStorageRecords: (search = "", page = 1) =>
+    cachedList(listCacheKey("fg-storage-records", { search, page }), () => storageRecordsQuery("fg", search, page)),
   getFgStorageRecord: (id: string) => storageRecordDetail("fg", id),
   scanFgPallet: (payload: string) => request<Pallet>("/api/v1/fg-storage/scan-pallet", { method: "POST", body: JSON.stringify({ payload }) }),
   scanFgLocation: (payload: string) => request<{ id: string; display_id: string; zone: string }>("/api/v1/fg-storage/scan-location", { method: "POST", body: JSON.stringify({ payload }) }),
@@ -1854,6 +1911,13 @@ export const api = {
     invalidateListCache("material-consumption");
     return res;
   },
+  // See discardNewInspection -- same "Cancel on a just-created record"
+  // unconditional discard, gated on can_create not can_delete.
+  discardNewMaterialConsumption: async (id: string) => {
+    const res = await request<void>(`/api/v1/material-consumption/${id}/discard-new`, { method: "DELETE" });
+    invalidateListCache("material-consumption");
+    return res;
+  },
   deleteMaterialConsumption: async (id: string) => {
     const res = await request<{ ok: boolean }>(`/api/v1/material-consumption/${id}`, { method: "DELETE" });
     invalidateListCache("material-consumption");
@@ -1899,13 +1963,21 @@ export const api = {
   },
 
   // -- RQC (Final Quality Control) --------------------------------------
-  // Same split as IPQC: list/detail reads Supabase-direct (every record is
-  // auto-created the moment its Production Run's IPQC reaches Approved),
-  // the one editable-fields save (Manufacturer + defect grid + COA
-  // observations) through FastAPI.
+  // Same split as IPQC: list/detail reads Supabase-direct, create + the one
+  // editable-fields save (Manufacturer + defect grid + COA observations)
+  // through FastAPI. Records are created manually only ("+ New Record"),
+  // keyed on Shipment Number -- see rqc_service.create_rqc.
   listRqc: (params: { search?: string; status?: string; page?: number } = {}) =>
     cachedList(listCacheKey("rqc", params), () => listRqcSb(params)),
   getRqc: (id: string) => getRqcSb(id),
+  createRqc: async (payload: { shipment_number: string; manufacturer?: string | null }) => {
+    const res = await request<{ id: string; shipment_number: string; status: string }>("/api/v1/rqc-records", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    invalidateListCache("rqc");
+    return res;
+  },
   saveRqc: async (id: string, payload: RqcSavePayload) => {
     const res = await request<{ id: string; status: string }>(`/api/v1/rqc-records/${id}`, {
       method: "PUT",
@@ -2024,4 +2096,12 @@ export const api = {
     );
     invalidateListCache("machine-downtime");
   },
+
+  // -- Hold & Release --------------------------------------------------
+  // Attached to a 'hold'-status record in any of the five gated modules.
+  // Full CRUD direct-Supabase (RLS-gated on the row's own module column) --
+  // no FastAPI. getOrCreateHoldRelease is the idempotent find-or-create
+  // called the moment a Hold record's detail view is opened.
+  getOrCreateHoldRelease: (module: HoldReleaseModule, recordId: string) => getOrCreateHoldReleaseSb(module, recordId),
+  saveHoldRelease: (id: string, payload: HoldReleaseSavePayload) => saveHoldReleaseSb(id, payload),
 };

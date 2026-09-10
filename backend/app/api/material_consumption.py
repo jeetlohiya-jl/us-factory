@@ -9,6 +9,7 @@ from app.db.session import get_db
 from app.db import models
 from app.api import schemas
 from app.api.deps import get_current_user
+from app.api import deps
 from app.adapters.auth.base import AuthenticatedUser
 from app.domain import material_consumption_service as svc
 from app.domain.pallet_serialization import serialize_mc_detail, serialize_mc_list_item
@@ -21,10 +22,8 @@ SHIFTS = ["Shift A", "Shift B", "Shift C"]
 
 
 def get_perms(current_user: AuthenticatedUser = Depends(get_current_user), db: Session = Depends(get_db)) -> models.ModulePermission:
-    perm = db.query(models.ModulePermission).filter(models.ModulePermission.user_id == current_user.user_id, models.ModulePermission.module == MODULE).first()
-    if not perm:
-        perm = models.ModulePermission(user_id=current_user.user_id, module=MODULE, can_view=True)
-    return perm
+    # Admin gets full access to every module -- see deps.effective_permission.
+    return deps.effective_permission(db, current_user.user_id, MODULE)
 
 
 def require(action: str):
@@ -331,6 +330,9 @@ def finalize(
 
 @router.delete("/{mc_id}/if-blank", status_code=204)
 def discard_if_blank(mc_id: uuid.UUID, db: Session = Depends(get_db)):
+    """Cancel while re-editing an EXISTING record: cleans up only if it's
+    genuinely blank. See discard_new below for the "just created this
+    record this session" Cancel case, which discards unconditionally."""
     mc = (
         db.query(models.MaterialConsumption)
         .options(
@@ -340,6 +342,23 @@ def discard_if_blank(mc_id: uuid.UUID, db: Session = Depends(get_db)):
         .first()
     )
     if mc and mc.status == "draft" and svc.is_blank(mc):
+        db.delete(mc)
+        db.commit()
+    return None
+
+
+@router.delete("/{mc_id}/discard-new", status_code=204)
+def discard_new(mc_id: uuid.UUID, db: Session = Depends(get_db), _perm=Depends(require("create"))):
+    """Cancel on a record just created this session via "+ New Record" --
+    unconditionally discards it regardless of whether pallets were already
+    scanned in / fields autosaved (per "Cancel must discard new-record data
+    completely", including any child machine-entry/pallet-attachment rows,
+    which cascade-delete with the parent record). Gated on can_create, not
+    can_delete. Only ever removes a still-draft record -- no pallet is
+    marked 'consumed' until Final Save (finalize()), so nothing here needs
+    to release inventory that was never actually consumed."""
+    mc = db.query(models.MaterialConsumption).filter(models.MaterialConsumption.id == mc_id).first()
+    if mc and mc.status == "draft":
         db.delete(mc)
         db.commit()
     return None

@@ -7,17 +7,24 @@ import { useImmediateThenDebounced } from "@/lib/useImmediateThenDebounced";
 import type { Pallet, StorageRecordDetail } from "@/lib/types";
 import StorageScanPanel from "@/components/storage/StorageScanPanel";
 import StorageRecordDetailPanel from "@/components/storage/StorageRecordDetailPanel";
+import Pagination from "@/components/Pagination";
 
 const MODULE = "rm-storage";
 
 export default function RmStoragePage() {
   const me = useMe();
   const [pending, setPending] = useState<Pallet[]>([]);
+  const [pendingMatchedCount, setPendingMatchedCount] = useState(0);
   const [records, setRecords] = useState<StorageRecordDetail[]>([]);
+  const [recordsMatchedCount, setRecordsMatchedCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [recordsSearch, setRecordsSearch] = useState("");
+  // Two independent tables on this page (pending pallets, storage records)
+  // each need their own page number -- paging one must not disturb the other.
+  const [pendingPage, setPendingPage] = useState(1);
+  const [recordsPage, setRecordsPage] = useState(1);
 
   const [showScan, setShowScan] = useState(false);
   const [openRecord, setOpenRecord] = useState<StorageRecordDetail | null>(null);
@@ -28,20 +35,25 @@ export default function RmStoragePage() {
     setLoading(true);
     setLoadError(null);
     try {
-      const key = listCacheKey(MODULE, { search, recordsSearch });
+      const key = listCacheKey(MODULE, { search, recordsSearch, pendingPage, recordsPage });
       const [pendingRes, recordsRes] = await cachedList(key, () =>
-        Promise.all([api.listRmPending({ search }), api.listRmStorageRecords(recordsSearch)])
+        Promise.all([api.listRmPending({ search, page: pendingPage }), api.listRmStorageRecords(recordsSearch, recordsPage)])
       );
       setPending(pendingRes.items);
+      setPendingMatchedCount(pendingRes.matched_count);
       setRecords(recordsRes.items);
+      setRecordsMatchedCount(recordsRes.matched_count);
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : "Failed to load records");
     } finally {
       setLoading(false);
     }
-  }, [search, recordsSearch]);
+  }, [search, recordsSearch, pendingPage, recordsPage]);
 
   useImmediateThenDebounced(refresh, [refresh]);
+
+  useEffect(() => setPendingPage(1), [search]);
+  useEffect(() => setRecordsPage(1), [recordsSearch]);
 
   const refreshAfterMutation = useCallback(() => {
     invalidateListCache(MODULE);
@@ -74,7 +86,7 @@ export default function RmStoragePage() {
             <input type="text" placeholder="Search pallet, SKU…" value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
         </div>
-        <div className="showing-count">{loading ? "Loading…" : `Showing ${pending.length} pending pallet${pending.length === 1 ? "" : "s"}`}</div>
+        <div className="showing-count">{loading ? "Loading…" : `Showing ${pendingMatchedCount} pending pallet${pendingMatchedCount === 1 ? "" : "s"}`}</div>
       </div>
 
       {loadError && <div className="error-banner">{loadError}</div>}
@@ -96,6 +108,7 @@ export default function RmStoragePage() {
             )}
           </tbody>
         </table>
+        <Pagination page={pendingPage} pageSize={50} matchedCount={pendingMatchedCount} onPageChange={setPendingPage} loading={loading} />
       </div>
 
       <div className="page-head2" style={{ marginTop: 34 }}>
@@ -111,7 +124,7 @@ export default function RmStoragePage() {
             <input type="text" placeholder="Search pallet, SKU…" value={recordsSearch} onChange={(e) => setRecordsSearch(e.target.value)} />
           </div>
         </div>
-        <div className="showing-count">{`Showing ${records.length} storage record${records.length === 1 ? "" : "s"}`}</div>
+        <div className="showing-count">{`Showing ${recordsMatchedCount} storage record${recordsMatchedCount === 1 ? "" : "s"}`}</div>
       </div>
       <div className="card card-flush">
         <table className="data">
@@ -131,6 +144,7 @@ export default function RmStoragePage() {
             )}
           </tbody>
         </table>
+        <Pagination page={recordsPage} pageSize={50} matchedCount={recordsMatchedCount} onPageChange={setRecordsPage} loading={loading} />
       </div>
 
       {showScan && (

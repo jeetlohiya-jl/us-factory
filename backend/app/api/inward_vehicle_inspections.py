@@ -74,7 +74,7 @@ def _get_or_404(db: Session, inspection_id: uuid.UUID) -> models.InwardVehicleIn
             joinedload(models.InwardVehicleInspection.line_items).joinedload(models.InwardVehicleInspectionLineItem.sku_code),
             joinedload(models.InwardVehicleInspection.line_items).joinedload(models.InwardVehicleInspectionLineItem.sku_version),
             joinedload(models.InwardVehicleInspection.images),
-            joinedload(models.InwardVehicleInspection.checklist_answers),
+            joinedload(models.InwardVehicleInspection.checklist_answers).joinedload(models.InwardVehicleInspectionChecklistAnswer.checklist_item),
         )
         .filter(models.InwardVehicleInspection.id == inspection_id)
         .first()
@@ -283,11 +283,35 @@ def save_draft(
 
 @router.delete("/{inspection_id}/if-blank", status_code=204)
 def discard_if_blank(inspection_id: uuid.UUID, db: Session = Depends(get_db)):
-    """Called when the user hits Cancel on a brand-new record: silently
-    removes the auto-created draft if nothing was ever entered, so the
-    landing page isn't littered with empty rows."""
+    """Called when Cancel is hit while re-editing an EXISTING record:
+    silently removes it only if it's genuinely blank, so the landing page
+    isn't littered with empty rows. See discard_new below for the "just
+    created this record this session" Cancel case, which must discard
+    unconditionally."""
     inspection = db.query(models.InwardVehicleInspection).filter(models.InwardVehicleInspection.id == inspection_id).first()
     if inspection and svc.is_inspection_blank(inspection):
+        db.delete(inspection)
+        db.commit()
+    return None
+
+
+@router.delete("/{inspection_id}/discard-new", status_code=204)
+def discard_new(
+    inspection_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    _perm=Depends(require_permission("create")),
+):
+    """Called when the user hits Cancel on a record they just created this
+    session via "+ New Record" (never explicitly Saved/Submitted) --
+    unconditionally discards it regardless of whether any fields were
+    filled in / autosaved, per "Cancel must discard new-record data
+    completely". Gated on can_create (the same permission needed to have
+    created it in the first place), not can_delete -- this is undoing your
+    own uncommitted creation, not a real delete. Only ever removes a still-
+    draft record; a no-op otherwise (e.g. called twice, or on an already
+    Submitted record)."""
+    inspection = db.query(models.InwardVehicleInspection).filter(models.InwardVehicleInspection.id == inspection_id).first()
+    if inspection and inspection.status == "draft":
         db.delete(inspection)
         db.commit()
     return None

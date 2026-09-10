@@ -8,12 +8,14 @@ import type { QrGenerationDetail, QrGenerationListItem } from "@/lib/types";
 import QrGenerationPanel from "@/components/qr-generation/QrGenerationPanel";
 import ConfirmDialog from "@/components/inward-vehicle-inspection/ConfirmDialog";
 import MoreMenu from "@/components/inward-vehicle-inspection/MoreMenu";
+import Pagination from "@/components/Pagination";
 
 const MODULE = "rm-qr-generation";
 
 export default function RmQrGenerationPage() {
   const me = useMe();
   const [items, setItems] = useState<QrGenerationListItem[]>([]);
+  const [matchedCount, setMatchedCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -21,6 +23,7 @@ export default function RmQrGenerationPage() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [fDate, setFDate] = useState("");
   const [fSku, setFSku] = useState("");
+  const [page, setPage] = useState(1);
 
   const [detail, setDetail] = useState<QrGenerationDetail | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<QrGenerationListItem | null>(null);
@@ -33,17 +36,20 @@ export default function RmQrGenerationPage() {
     setLoading(true);
     setLoadError(null);
     try {
-      const key = listCacheKey(MODULE, { search, date: fDate, sku: fSku });
-      const res = await cachedList(key, () => api.listRmQr({ search, date: fDate, sku: fSku }));
+      const key = listCacheKey(MODULE, { search, date: fDate, sku: fSku, page });
+      const res = await cachedList(key, () => api.listRmQr({ search, date: fDate, sku: fSku, page }));
       setItems(res.items);
+      setMatchedCount(res.matched_count);
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : "Failed to load records");
     } finally {
       setLoading(false);
     }
-  }, [search, fDate, fSku]);
+  }, [search, fDate, fSku, page]);
 
   useImmediateThenDebounced(refresh, [refresh]);
+
+  useEffect(() => setPage(1), [search, fDate, fSku]);
 
   const refreshAfterMutation = useCallback(() => {
     invalidateListCache(MODULE);
@@ -104,7 +110,7 @@ export default function RmQrGenerationPage() {
             </div>
           </div>
         </div>
-        <div className="showing-count">{loading ? "Loading…" : `Showing ${items.length} record${items.length === 1 ? "" : "s"}`}</div>
+        <div className="showing-count">{loading ? "Loading…" : `Showing ${matchedCount} record${matchedCount === 1 ? "" : "s"}`}</div>
       </div>
 
       {loadError && <div className="error-banner">{loadError}</div>}
@@ -133,6 +139,7 @@ export default function RmQrGenerationPage() {
             )}
           </tbody>
         </table>
+        <Pagination page={page} pageSize={50} matchedCount={matchedCount} onPageChange={setPage} loading={loading} />
       </div>
 
       {detail && (

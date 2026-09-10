@@ -1,17 +1,18 @@
 """
 RQC (Final Quality Control) -- the quality gate between IPQC and FG QR
-Generation, per the corrected workflow:
-  Material Consumption -> Production -> IPQC -> RQC -> FG QR Generation -> FG Storage
+Generation.
 
-Auto-created (never duplicated) the moment the relevant Material Consumption
-record is finalized -- see find_or_create_rqc, called from
-material_consumption_service.finalize() immediately after find_or_create_ipqc
--- extending the existing Material Consumption -> Production -> IPQC
-relationship one step further rather than inventing an unrelated trigger.
-RQC's *creation* is therefore independent of IPQC's status: it exists as
-Pending the moment Material Consumption is saved, and stays Pending until
-its own inspection is completed and saved via api/rqc.py -- IPQC reaching
-'approved' is never what creates or approves an RQC record.
+RQC is created MANUALLY ONLY -- via "+ New Record" (see create_rqc below,
+called from app/api/rqc.py's POST route). It is explicitly NOT auto-created
+from Material Consumption/IPQC (an earlier design did this; that trigger has
+been removed per updated requirements). Shipment Number is the required,
+unique, user-entered key: create_rqc uses it to look up the IPQC record
+already carrying that same shipment_number (IPQC's own shipment_number is
+itself a locked-in snapshot from Material Consumption) and, when a match
+exists, links to its real Production Run / IPQC UUIDs and snapshots its
+SKU -- never creating a duplicate Production or IPQC record. No match is not
+an error: the RQC record is still created (Pending, unlinked), since the
+matching upstream record may not exist yet.
 
 RQC does not touch pallets at all: it reuses Production's own
 total_fg_pallets count. Once an RQC record is saved as Approved,
@@ -144,47 +145,59 @@ def has_any_reject(defect_results) -> bool:
     return False
 
 
-def find_or_create_rqc(db: Session, ipqc: models.IpqcRecord) -> models.RqcRecord:
-    """One RQC record per Production Run (unique constraint on
-    production_run_id backstops this), auto-created the moment the relevant
-    Material Consumption record is finalized -- called from
-    material_consumption_service.finalize() immediately after
-    find_or_create_ipqc, passing it the IPQC record just found-or-created
-    (so ipqc_record_id and every upstream snapshot field are always
-    available, regardless of that IPQC record's own status).
+class RqcError(Exception):
+    pass
 
-    Deliberately takes the *IpqcRecord*, not just the Production Run: this
-    is what reuses the existing Material Consumption -> Production -> IPQC
-    relationship (and its already-resolved UUID FKs / snapshot fields)
-    instead of re-deriving Shipment Number / SKU Code / SKU Version from
-    scratch a second time.
 
-    IMPORTANT: this only ever creates RQC as Pending. It does not depend on,
-    and must never be gated on, ipqc.status -- IPQC being 'approved' plays
-    no role in RQC's creation, and it certainly does not approve RQC.
-    RQC's own status only ever changes via its own save route
-    (api/rqc.py), when its own inspection requirements are completed.
+def find_linked_ipqc_by_shipment_number(db: Session, shipment_number: str) -> models.IpqcRecord | None:
+    """The Shipment Number -> Production -> IPQC lookup used both at RQC
+    creation and (read-only) whenever an RQC record is opened, so the same
+    "what does this shipment number resolve to" logic is never duplicated.
+    Most-recent match wins on the rare chance more than one IPQC record
+    shares a shipment_number (IPQC has no uniqueness constraint on it,
+    unlike Inward QC / Inward Vehicle Inspection)."""
+    return (
+        db.query(models.IpqcRecord)
+        .filter(models.IpqcRecord.shipment_number == shipment_number)
+        .order_by(models.IpqcRecord.created_at.desc())
+        .first()
+    )
 
-    Every upstream field (SKU Code/Version, Shipment Number) is copied from
-    the IPQC record -- itself already a locked-in snapshot from Material
-    Consumption -- so RQC never re-derives or re-queries further upstream.
-    Manufacturer has no real upstream source (same as IPQC) so it's seeded
-    with a placeholder and left genuinely user-editable.
+
+def create_rqc(db: Session, shipment_number: str, manufacturer: str | None = None) -> models.RqcRecord:
+    """Manual creation (the "+ New Record" flow) -- the only way an RQC
+    record is created; there is no auto-creation from Material Consumption
+    or IPQC anymore.
+
+    shipment_number is required and must be unique (enforced at the DB
+    level by rqc_records_shipment_number_key -- this find-first is a
+    friendly pre-check, not the actual guarantee). It is the business key
+    used to identify the linked Production Run / IPQC record, via the
+    already-existing IPQC.shipment_number snapshot (never re-deriving
+    Shipment Number / SKU Code / SKU Version from scratch, and never
+    creating a duplicate Production/IPQC record) -- see
+    find_linked_ipqc_by_shipment_number. No match is not an error: the RQC
+    record still gets created, simply unlinked (Production Run / IPQC UUIDs
+    null) until a matching upstream record exists.
     """
-    existing = db.query(models.RqcRecord).filter(
-        models.RqcRecord.production_run_id == ipqc.production_run_id
-    ).first()
+    shipment_number = (shipment_number or "").strip()
+    if not shipment_number:
+        raise RqcError("Shipment Number is required.")
+
+    existing = db.query(models.RqcRecord).filter(models.RqcRecord.shipment_number == shipment_number).first()
     if existing:
-        return existing
+        raise RqcError(f'Shipment Number "{shipment_number}" already exists.')
+
+    ipqc = find_linked_ipqc_by_shipment_number(db, shipment_number)
     rec = models.RqcRecord(
-        production_run_id=ipqc.production_run_id,
-        ipqc_record_id=ipqc.id,
-        sku_code_id=ipqc.sku_code_id,
-        sku_version_id=ipqc.sku_version_id,
-        sku_code_snapshot=ipqc.sku_code_snapshot,
-        sku_version_snapshot=ipqc.sku_version_snapshot,
-        shipment_number=ipqc.shipment_number,
-        manufacturer=RQC_MANUFACTURER_PLACEHOLDER,
+        shipment_number=shipment_number,
+        production_run_id=ipqc.production_run_id if ipqc else None,
+        ipqc_record_id=ipqc.id if ipqc else None,
+        sku_code_id=ipqc.sku_code_id if ipqc else None,
+        sku_version_id=ipqc.sku_version_id if ipqc else None,
+        sku_code_snapshot=ipqc.sku_code_snapshot if ipqc else None,
+        sku_version_snapshot=ipqc.sku_version_snapshot if ipqc else None,
+        manufacturer=manufacturer or RQC_MANUFACTURER_PLACEHOLDER,
         status="pending",
     )
     db.add(rec)

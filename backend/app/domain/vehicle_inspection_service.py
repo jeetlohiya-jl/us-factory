@@ -38,7 +38,17 @@ def recompute_total_quantity(inspection: models.InwardVehicleInspection):
 
 
 def required_checklist_ids(db: Session) -> list[uuid.UUID]:
-    items = db.query(models.ChecklistItem).filter(models.ChecklistItem.is_active.is_(True)).all()
+    """Only checklist items that actually affect status/completion are
+    "required" here. "Vehicle arrived within scheduled time window" is
+    informational only (affects_status=False, set in migration 0022) --
+    it's still shown and still answerable in the UI, but its answer must
+    never gate submission or factor into Approved/Hold."""
+    items = (
+        db.query(models.ChecklistItem)
+        .filter(models.ChecklistItem.is_active.is_(True))
+        .filter(models.ChecklistItem.affects_status.is_(True))
+        .all()
+    )
     return [i.id for i in items]
 
 
@@ -60,8 +70,14 @@ def checklist_is_complete(db: Session, inspection: models.InwardVehicleInspectio
 def compute_status(db: Session, inspection: models.InwardVehicleInspection) -> str:
     """Same note as checklist_is_complete: reads the already-loaded
     `inspection.checklist_answers` instead of issuing a fresh query for rows
-    the caller already has in memory."""
-    if any(a.answer == "not_ok" for a in inspection.checklist_answers):
+    the caller already has in memory. Answers to informational-only items
+    (affects_status=False -- "Vehicle arrived within scheduled time
+    window") are excluded from this computation entirely: a "Not OK" there
+    must never put the record on Hold."""
+    if any(
+        a.answer == "not_ok" and a.checklist_item is not None and a.checklist_item.affects_status
+        for a in inspection.checklist_answers
+    ):
         return "hold"
     return "approved"
 

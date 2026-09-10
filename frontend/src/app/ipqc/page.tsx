@@ -8,6 +8,7 @@ import { useImmediateThenDebounced } from "@/lib/useImmediateThenDebounced";
 import type { IpqcListItem, IpqcDetail } from "@/lib/types";
 import IpqcDetailPanel from "@/components/ipqc/IpqcDetailPanel";
 import MoreMenu from "@/components/inward-vehicle-inspection/MoreMenu";
+import Pagination from "@/components/Pagination";
 
 const MODULE = "ipqc";
 
@@ -43,6 +44,7 @@ function IpqcPageContent() {
   const [shift, setShift] = useState("");
   const [status, setStatus] = useState("");
   const [showFilters, setShowFilters] = useState(false);
+  const [page, setPage] = useState(1);
 
   const [openRecord, setOpenRecord] = useState<IpqcDetail | null>(null);
   const [panelMode, setPanelMode] = useState<"view" | "edit">("edit");
@@ -56,8 +58,8 @@ function IpqcPageContent() {
     setLoading(true);
     setError(null);
     try {
-      const key = listCacheKey(MODULE, { search, date, shift, status });
-      const { items, matched_count } = await cachedList(key, () => api.listIpqc({ search, date, shift, status }));
+      const key = listCacheKey(MODULE, { search, date, shift, status, page });
+      const { items, matched_count } = await cachedList(key, () => api.listIpqc({ search, date, shift, status, page }));
       setRecords(items);
       setMatchedCount(matched_count);
     } catch (e) {
@@ -65,9 +67,11 @@ function IpqcPageContent() {
     } finally {
       setLoading(false);
     }
-  }, [search, date, shift, status]);
+  }, [search, date, shift, status, page]);
 
   useImmediateThenDebounced(refresh, [refresh]);
+
+  useEffect(() => setPage(1), [search, date, shift, status]);
 
   const refreshAfterMutation = useCallback(() => {
     invalidateListCache(MODULE);
@@ -199,6 +203,7 @@ function IpqcPageContent() {
             )}
           </tbody>
         </table>
+        <Pagination page={page} pageSize={50} matchedCount={matchedCount} onPageChange={setPage} loading={loading} />
       </div>
 
       {openRecord && (

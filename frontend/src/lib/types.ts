@@ -778,7 +778,7 @@ export interface RqcCoaObservation {
 
 export interface RqcDetail {
   id: string;
-  production_run_id: string;
+  production_run_id: string | null;
   production_run_number: string | null;
   ipqc_id: string | null;
   shipment_number: string | null;
@@ -989,3 +989,30 @@ export interface MachineDowntimeSavePayload {
   reason: string | null;
   status: "draft" | "saved";
 }
+
+// -- Hold & Release ----------------------------------------------------
+// The five modules a "hold" status can occur in -- each with its own
+// existing module_permissions scope, reused here (see migration 0024).
+export type HoldReleaseModule = "inward_vehicle_inspection" | "inward_qc" | "ipqc" | "rqc" | "outward_vehicle_inspection";
+
+export interface HoldReleaseRecord {
+  id: string;
+  module: HoldReleaseModule;
+  record_id: string;
+  date_of_hold: string | null;
+  product_name: string | null;
+  batch_code: string | null;
+  point_of_detection: string | null;
+  qty_of_hold: string | null;
+  reason_for_hold: string | null;
+  record_filled_by: string | null;
+  date_of_decision: string | null;
+  disposition: string | null;
+  reason_of_disposition: string | null;
+  qty_decided: string | null;
+  done_by: string | null;
+  approved_by: string | null;
+  status: "draft" | "completed";
+}
+
+export type HoldReleaseSavePayload = Omit<HoldReleaseRecord, "id" | "module" | "record_id">;

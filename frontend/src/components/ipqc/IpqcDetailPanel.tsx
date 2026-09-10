@@ -5,6 +5,7 @@ import type { IpqcDetail, IpqcBlockDefect } from "@/lib/types";
 import { IPQC_DEFECTS } from "@/lib/types";
 import { nowHHMM, formatTime12h } from "@/components/material-consumption/Wizard";
 import { api } from "@/lib/api";
+import HoldReleaseSection from "@/components/HoldReleaseSection";
 
 function Kv({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -142,6 +143,9 @@ export default function IpqcDetailPanel({
           <button className="sp-close" onClick={onClose}>×</button>
         </div>
         <div className="sp-body">
+          {record.status === "hold" && (
+            <HoldReleaseSection module="ipqc" recordId={record.id} canFill={canEdit} />
+          )}
           {showContextCards && (
             <div className="detail-card">
               <h3>Product and Shipment Details</h3>

@@ -531,6 +531,19 @@ class RqcSaveOut(BaseModel):
     coa_observations: list[RqcCoaObservationOut] = []
 
 
+class RqcCreateIn(BaseModel):
+    # Manual "+ New Record" creation -- the only way an RQC record is
+    # created. Shipment Number is required and must be unique.
+    shipment_number: str
+    manufacturer: Optional[str] = None
+
+
+class RqcCreateOut(BaseModel):
+    id: uuid.UUID
+    shipment_number: str
+    status: str
+
+
 # ---------------------------------------------------------------------------
 # Machines (master data for Material Consumption / Production)
 # ---------------------------------------------------------------------------

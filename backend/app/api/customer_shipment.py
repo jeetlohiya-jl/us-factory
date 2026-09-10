@@ -15,6 +15,7 @@ from app.db.session import get_db
 from app.db import models
 from app.api import schemas
 from app.api.deps import get_current_user
+from app.api import deps
 from app.adapters.auth.base import AuthenticatedUser
 from app.domain import customer_shipment_service
 from sqlalchemy.exc import IntegrityError
@@ -25,10 +26,8 @@ MODULE = "customer_shipment"
 
 
 def get_perms(current_user: AuthenticatedUser = Depends(get_current_user), db: Session = Depends(get_db)) -> models.ModulePermission:
-    perm = db.query(models.ModulePermission).filter(models.ModulePermission.user_id == current_user.user_id, models.ModulePermission.module == MODULE).first()
-    if not perm:
-        perm = models.ModulePermission(user_id=current_user.user_id, module=MODULE, can_view=True)
-    return perm
+    # Admin gets full access to every module -- see deps.effective_permission.
+    return deps.effective_permission(db, current_user.user_id, MODULE)
 
 
 def require(action: str):

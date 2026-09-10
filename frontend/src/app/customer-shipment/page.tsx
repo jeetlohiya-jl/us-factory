@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import { useMe } from "@/lib/useMe";
 import { cachedList, invalidateListCache, listCacheKey } from "@/lib/listCache";
@@ -9,6 +9,7 @@ import MoreMenu from "@/components/inward-vehicle-inspection/MoreMenu";
 import ConfirmDialog from "@/components/inward-vehicle-inspection/ConfirmDialog";
 import NewCustomerShipmentPanel from "@/components/customer-shipment/NewCustomerShipmentPanel";
 import CustomerShipmentDetailPanel from "@/components/customer-shipment/CustomerShipmentDetailPanel";
+import Pagination from "@/components/Pagination";
 
 const MODULE = "customer-shipment";
 const REFERENCE_STALE_MS = 5 * 60_000;
@@ -26,6 +27,7 @@ export default function CustomerShipmentPage() {
   const [search, setSearch] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [fDate, setFDate] = useState("");
+  const [page, setPage] = useState(1);
 
   const [newPanelOpen, setNewPanelOpen] = useState(false);
   const [detail, setDetail] = useState<CustomerShipmentDetail | null>(null);
@@ -38,8 +40,8 @@ export default function CustomerShipmentPage() {
     setLoading(true);
     setError(null);
     try {
-      const key = listCacheKey(MODULE, { search, date: fDate });
-      const res = await cachedList(key, () => api.listCustomerShipments({ search, date: fDate }));
+      const key = listCacheKey(MODULE, { search, date: fDate, page });
+      const res = await cachedList(key, () => api.listCustomerShipments({ search, date: fDate, page }));
       setItems(res.items);
       setMatchedCount(res.matched_count);
     } catch (e) {
@@ -47,9 +49,11 @@ export default function CustomerShipmentPage() {
     } finally {
       setLoading(false);
     }
-  }, [search, fDate]);
+  }, [search, fDate, page]);
 
   useImmediateThenDebounced(refresh, [refresh]);
+
+  useEffect(() => setPage(1), [search, fDate]);
 
   const refreshAfterMutation = useCallback(() => {
     invalidateListCache(MODULE);
@@ -154,6 +158,7 @@ export default function CustomerShipmentPage() {
             )}
           </tbody>
         </table>
+        <Pagination page={page} pageSize={50} matchedCount={matchedCount} onPageChange={setPage} loading={loading} />
       </div>
 
       {newPanelOpen && (

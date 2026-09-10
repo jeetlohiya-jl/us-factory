@@ -8,6 +8,7 @@ import { useImmediateThenDebounced } from "@/lib/useImmediateThenDebounced";
 import type { ProductionListItem, ProductionDetail, Machine } from "@/lib/types";
 import ProductionDetailPanel from "@/components/production/ProductionDetailPanel";
 import MoreMenu from "@/components/inward-vehicle-inspection/MoreMenu";
+import Pagination from "@/components/Pagination";
 
 const MODULE = "production";
 
@@ -38,6 +39,7 @@ function ProductionPageContent() {
   const [shift, setShift] = useState("");
   const [machine, setMachine] = useState("");
   const [showFilters, setShowFilters] = useState(false);
+  const [page, setPage] = useState(1);
 
   const [openRecord, setOpenRecord] = useState<ProductionDetail | null>(null);
   const [panelMode, setPanelMode] = useState<"view" | "edit">("view");
@@ -46,9 +48,9 @@ function ProductionPageContent() {
     setLoading(true);
     setError(null);
     try {
-      const key = listCacheKey(MODULE, { search, date, shift, machine });
+      const key = listCacheKey(MODULE, { search, date, shift, machine, page });
       const [recs, machineList] = await cachedList(key, () =>
-        Promise.all([api.listProduction({ search, date, shift, machine }), api.machines()])
+        Promise.all([api.listProduction({ search, date, shift, machine, page }), api.machines()])
       );
       setRecords(recs.items);
       setMatchedCount(recs.matched_count);
@@ -58,9 +60,11 @@ function ProductionPageContent() {
     } finally {
       setLoading(false);
     }
-  }, [search, date, shift, machine]);
+  }, [search, date, shift, machine, page]);
 
   useImmediateThenDebounced(refresh, [refresh]);
+
+  useEffect(() => setPage(1), [search, date, shift, machine]);
 
   const refreshAfterMutation = useCallback(() => {
     invalidateListCache(MODULE);
@@ -191,6 +195,7 @@ function ProductionPageContent() {
             )}
           </tbody>
         </table>
+        <Pagination page={page} pageSize={50} matchedCount={matchedCount} onPageChange={setPage} loading={loading} />
       </div>
 
       {openRecord && (
