@@ -1,9 +1,10 @@
 "use client";
 import { useState } from "react";
 import { api } from "@/lib/api";
-import type { OviDetail, OviAnswer } from "@/lib/types";
-import { OVI_QUESTIONS } from "@/lib/types";
+import type { OviDetail, OviAnswer, OviImage } from "@/lib/types";
+import { OVI_QUESTIONS, OVI_IMAGE_TYPES } from "@/lib/types";
 import HoldReleaseSection from "@/components/HoldReleaseSection";
+import OviImageField from "./OviImageField";
 
 function Kv({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -55,8 +56,10 @@ export default function OviPanel({
   const [answers, setAnswers] = useState<Record<number, "ok" | "not_ok" | null>>(
     Object.fromEntries(OVI_QUESTIONS.map((q) => [q.sr, record.answers.find((a) => a.question_sr === q.sr)?.answer ?? null]))
   );
+  const [images, setImages] = useState<OviImage[]>(record.images);
   const [saving, setSaving] = useState<"draft" | "final" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const imageOf = (type: string) => images.find((i) => i.image_type === type);
 
   const editable = mode === "edit" && canFill;
   const hasNotOk = Object.values(answers).some((a) => a === "not_ok");
@@ -134,6 +137,29 @@ export default function OviPanel({
               </table>
             </div>
             <div className="detail-card">
+              <h3>Loading Photos</h3>
+              {images.length === 0 ? (
+                <div className="hint-text">No photos uploaded.</div>
+              ) : (
+                <div className="img-thumb-row">
+                  {OVI_IMAGE_TYPES.filter((t) => imageOf(t.key)).map((t) => {
+                    const img = imageOf(t.key)!;
+                    return (
+                      <div key={img.id}>
+                        <div className="img-thumb" style={{ marginBottom: 6 }}>
+                          {img.public_url && (
+                            /* eslint-disable-next-line @next/next/no-img-element */
+                            <img src={api.mediaUrl(img.public_url)} alt={t.label} />
+                          )}
+                        </div>
+                        <div className="hint-text" style={{ margin: 0, maxWidth: 92 }}>{t.label}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            <div className="detail-card">
               <h3>Remarks</h3>
               <div className="detail-kv-value">{record.remarks || "No remarks"}</div>
             </div>
@@ -178,6 +204,21 @@ export default function OviPanel({
                 <div className="field"><label>Invoice No.</label><input type="text" placeholder="e.g. INV-88213" value={invoice} disabled={!editable} onChange={(e) => setInvoice(e.target.value)} /></div>
                 <div className="field"><label>Name of Transporter</label><input type="text" placeholder="e.g. ABC Logistics" value={transporter} disabled={!editable} onChange={(e) => setTransporter(e.target.value)} /></div>
                 <div className="field"><label>Seal No.</label><input type="text" placeholder="e.g. SL-44210" value={seal} disabled={!editable} onChange={(e) => setSeal(e.target.value)} /></div>
+              </div>
+
+              <div className="section-label">Loading Photos</div>
+              <div className="form-grid">
+                {OVI_IMAGE_TYPES.map((t) => (
+                  <OviImageField
+                    key={t.key}
+                    recordId={record.id}
+                    imageType={t.key}
+                    label={t.label}
+                    image={imageOf(t.key)}
+                    disabled={!editable}
+                    onChange={setImages}
+                  />
+                ))}
               </div>
             </div>
           )}

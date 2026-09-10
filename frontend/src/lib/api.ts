@@ -11,7 +11,7 @@ import type {
   RqcListItem, RqcDetail, RqcSavePayload,
   CustomerShipmentListItem, CustomerShipmentDetail, CustomerShipmentCreatePayload, CustomerShipmentCreateResult,
   ShipmentPickingListItem, ShipmentPickingDetail,
-  OviListItem, OviDetail, OviSavePayload,
+  OviListItem, OviDetail, OviSavePayload, OviImageType, OviImage,
   MachineDowntimeRecord, MachineDowntimeSavePayload,
   HoldReleaseModule, HoldReleaseRecord, HoldReleaseSavePayload,
   AppUser, UserCreateInput, UserUpdateInput,
@@ -1255,11 +1255,13 @@ type RawOviDetail = {
   truck_number: string | null; invoice_number: string | null; transporter_name: string | null; seal_number: string | null;
   remarks: string | null; status: string;
   answers: { question_sr: number; answer: string | null }[];
+  images: { id: string; image_type: string; public_url: string | null; sort_order: number }[];
 };
 
 const OVI_DETAIL_SELECT =
   "id,customer_shipment_id,shipment_number,customer_name,quantity,truck_number,invoice_number,transporter_name,seal_number,remarks,status," +
-  "answers:outward_vehicle_inspection_answers(question_sr,answer)";
+  "answers:outward_vehicle_inspection_answers(question_sr,answer)," +
+  "images:outward_vehicle_inspection_images(id,image_type,public_url,sort_order)";
 
 function flattenOviDetail(raw: RawOviDetail): OviDetail {
   return {
@@ -1268,6 +1270,9 @@ function flattenOviDetail(raw: RawOviDetail): OviDetail {
     invoice_number: raw.invoice_number, transporter_name: raw.transporter_name, seal_number: raw.seal_number,
     remarks: raw.remarks, status: raw.status,
     answers: (raw.answers || []).map((a) => ({ question_sr: a.question_sr, answer: (a.answer as "ok" | "not_ok" | null) })),
+    images: (raw.images || [])
+      .map((i) => ({ id: i.id, image_type: i.image_type as OviImageType, public_url: i.public_url, sort_order: i.sort_order }))
+      .sort((a, b) => a.sort_order - b.sort_order),
   };
 }
 
@@ -2051,6 +2056,29 @@ export const api = {
     await request<void>(`/api/v1/outward-vehicle-inspections/${id}`, { method: "DELETE" });
     invalidateListCache("ovi");
   },
+
+  // Loading-process photos -- same FastAPI-owned upload/replace/delete
+  // pattern as Inward Vehicle Inspection's images (storage adapter, no
+  // OCR here). Each endpoint returns the record's full current image list.
+  uploadOviImage: (id: string, imageType: OviImageType, file: File) => {
+    const form = new FormData();
+    form.append("image_type", imageType);
+    form.append("file", file);
+    return request<OviImage[]>(`/api/v1/outward-vehicle-inspections/${id}/images`, {
+      method: "POST",
+      body: form,
+    });
+  },
+  replaceOviImage: (id: string, imageId: string, file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return request<OviImage[]>(`/api/v1/outward-vehicle-inspections/${id}/images/${imageId}`, {
+      method: "PUT",
+      body: form,
+    });
+  },
+  deleteOviImage: (id: string, imageId: string) =>
+    request<OviImage[]>(`/api/v1/outward-vehicle-inspections/${id}/images/${imageId}`, { method: "DELETE" }),
 
   // -- Machine Downtime -----------------------------------------------------
   // Fully independent, full CRUD direct-Supabase (RLS-gated) -- no FastAPI.

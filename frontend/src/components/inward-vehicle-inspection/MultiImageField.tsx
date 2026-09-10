@@ -1,14 +1,20 @@
 "use client";
 import { useState } from "react";
 import { api } from "@/lib/api";
-import type { InspectionDetail, InspectionImage } from "@/lib/types";
+import type { ImageType, InspectionDetail, InspectionImage } from "@/lib/types";
 import Lightbox from "./Lightbox";
 import CameraCapture from "./CameraCapture";
 
 export default function MultiImageField({
-  inspectionId, images, disabled, onChange, label = "Damage Pictures",
+  inspectionId, imageType, images, disabled, onChange, label = "Damage Pictures",
 }: {
   inspectionId: string;
+  // Which image_type new/replacement uploads are tagged with -- defaults
+  // to "damage" (this field's original single use) so existing callers
+  // don't need to change; Container Photo now passes imageType="container"
+  // to reuse this exact add/replace/delete gallery instead of the
+  // single-photo ImageField.
+  imageType?: ImageType;
   images: InspectionImage[];
   disabled?: boolean;
   onChange: (detail: InspectionDetail) => void;
@@ -26,7 +32,7 @@ export default function MultiImageField({
     setBusyId("new");
     setError(null);
     try {
-      const detail = await api.uploadImage(inspectionId, "damage", file);
+      const detail = await api.uploadImage(inspectionId, imageType || "damage", file);
       onChange(detail);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Upload failed");

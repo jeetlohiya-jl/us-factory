@@ -934,6 +934,44 @@ export interface OviAnswer {
   answer: "ok" | "not_ok" | null;
 }
 
+// Fixed loading-photo slots, transcribed from the "Loading Container
+// Process" template -- same list/order as OVI_IMAGE_TYPES in
+// ovi_service.py. Each slot holds at most one photo (replace, not
+// add-more), same convention as Inward Vehicle Inspection's single-image
+// fields (container/truck/seal/condition/empty_container).
+export type OviImageType =
+  | "license_plate" | "container_number" | "before_loading"
+  | "row_1" | "row_2" | "row_3" | "row_4" | "row_5" | "row_6" | "row_7" | "row_8" | "row_9" | "row_10" | "row_11"
+  | "seal_half" | "seal_entire" | "lead_seal" | "weighbridge_record";
+
+export const OVI_IMAGE_TYPES: { key: OviImageType; label: string }[] = [
+  { key: "license_plate", label: "License Plate" },
+  { key: "container_number", label: "Container Number" },
+  { key: "before_loading", label: "Before Loading" },
+  { key: "row_1", label: "First Row" },
+  { key: "row_2", label: "Second Row" },
+  { key: "row_3", label: "Third Row" },
+  { key: "row_4", label: "Fourth Row" },
+  { key: "row_5", label: "Fifth Row" },
+  { key: "row_6", label: "Sixth Row" },
+  { key: "row_7", label: "Seventh Row" },
+  { key: "row_8", label: "Eighth Row" },
+  { key: "row_9", label: "Ninth Row" },
+  { key: "row_10", label: "Tenth Row" },
+  { key: "row_11", label: "Eleventh Row" },
+  { key: "seal_half", label: "Seal Half of the Container" },
+  { key: "seal_entire", label: "Seal the Entire Container" },
+  { key: "lead_seal", label: "Lead Seal" },
+  { key: "weighbridge_record", label: "Weigh Bridge Record" },
+];
+
+export interface OviImage {
+  id: string;
+  image_type: OviImageType;
+  public_url: string | null;
+  sort_order: number;
+}
+
 export interface OviDetail {
   id: string;
   customer_shipment_id: string;
@@ -947,6 +985,7 @@ export interface OviDetail {
   remarks: string | null;
   status: string;
   answers: OviAnswer[];
+  images: OviImage[];
 }
 
 export interface OviSavePayload {

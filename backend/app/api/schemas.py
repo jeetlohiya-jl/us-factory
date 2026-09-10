@@ -95,6 +95,14 @@ class ImageOut(BaseModel):
     sort_order: int
 
 
+class OviImageOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    image_type: str
+    public_url: Optional[str]
+    sort_order: int
+
+
 class ChecklistAnswerOut(BaseModel):
     checklist_item_id: uuid.UUID
     label: str

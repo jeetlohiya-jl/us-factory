@@ -35,6 +35,37 @@ OVI_QUESTIONS = [
 
 _REQUIRED_SRS = {q["sr"] for q in OVI_QUESTIONS}
 
+# Fixed loading-photo slots, transcribed from the "Loading Container
+# Process" template (D69-1.7C) -- one named slot per row/photo, same
+# "hardcoded reference data" convention as OVI_QUESTIONS above rather than
+# a configurable checklist table (the row count/labels are a fixed company
+# form, not something operators define per-shipment). Each slot holds at
+# most one photo at a time (replace, not add-more) -- same UI convention as
+# Inward Vehicle Inspection's single-image fields (container/truck/seal/
+# condition/empty_container).
+OVI_IMAGE_TYPES: list[dict[str, str]] = [
+    {"key": "license_plate", "label": "License Plate"},
+    {"key": "container_number", "label": "Container Number"},
+    {"key": "before_loading", "label": "Before Loading"},
+    {"key": "row_1", "label": "First Row"},
+    {"key": "row_2", "label": "Second Row"},
+    {"key": "row_3", "label": "Third Row"},
+    {"key": "row_4", "label": "Fourth Row"},
+    {"key": "row_5", "label": "Fifth Row"},
+    {"key": "row_6", "label": "Sixth Row"},
+    {"key": "row_7", "label": "Seventh Row"},
+    {"key": "row_8", "label": "Eighth Row"},
+    {"key": "row_9", "label": "Ninth Row"},
+    {"key": "row_10", "label": "Tenth Row"},
+    {"key": "row_11", "label": "Eleventh Row"},
+    {"key": "seal_half", "label": "Seal Half of the Container"},
+    {"key": "seal_entire", "label": "Seal the Entire Container"},
+    {"key": "lead_seal", "label": "Lead Seal"},
+    {"key": "weighbridge_record", "label": "Weigh Bridge Record"},
+]
+
+ALL_OVI_IMAGE_TYPES = {t["key"] for t in OVI_IMAGE_TYPES}
+
 
 def create_pending_for_shipment(db: Session, shipment: models.CustomerShipment) -> models.OutwardVehicleInspection:
     """

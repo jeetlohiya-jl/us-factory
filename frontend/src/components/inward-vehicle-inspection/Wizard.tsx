@@ -215,6 +215,7 @@ export default function Wizard({
 
   const imageOf = (type: string) => detail.images.find((i) => i.image_type === type);
   const damageImages = detail.images.filter((i) => i.image_type === "damage");
+  const containerImages = detail.images.filter((i) => i.image_type === "container");
 
   return (
     <>
@@ -325,14 +326,23 @@ export default function Wizard({
 
               <div className="section-label">Photos</div>
               <div className="form-grid">
-                <ImageField inspectionId={inspectionId} imageType="container" label="Container Photo" image={imageOf("container")} disabled={!canFillSection} onChange={(d) => { setDetail(d); setContainer(d.container_number || ""); }} />
                 <ImageField inspectionId={inspectionId} imageType="truck" label="Truck Number Photo" image={imageOf("truck")} disabled={!canFillSection} onChange={(d) => { setDetail(d); setTruck(d.truck_number || ""); }} />
                 <ImageField inspectionId={inspectionId} imageType="seal" label="Seal Photo" image={imageOf("seal")} disabled={!canFillSection} onChange={(d) => { setDetail(d); setSeal(d.seal_number || ""); }} />
                 <ImageField inspectionId={inspectionId} imageType="condition" label="Physical Condition on First Opening" image={imageOf("condition")} disabled={!canFillSection} onChange={setDetail} />
                 <ImageField inspectionId={inspectionId} imageType="empty_container" label="Empty Container Photo" image={imageOf("empty_container")} disabled={!canFillSection} onChange={setDetail} />
               </div>
               <div style={{ marginTop: 16 }}>
-                <MultiImageField inspectionId={inspectionId} images={damageImages} disabled={!canFillSection} onChange={setDetail} />
+                {/* Container Photo now allows multiple images (spec: "add
+                    container to allow multiple images"), reusing the same
+                    add/replace/delete gallery as Damage Pictures below
+                    instead of a single-photo field. OCR still runs on each
+                    upload (imageType="container" is in OCR_FIELD_TYPES on
+                    the backend), so Container No. keeps auto-filling from
+                    whichever container photo was uploaded/replaced last. */}
+                <MultiImageField inspectionId={inspectionId} imageType="container" images={containerImages} label="Container Photo(s)" disabled={!canFillSection} onChange={(d) => { setDetail(d); setContainer(d.container_number || ""); }} />
+              </div>
+              <div style={{ marginTop: 16 }}>
+                <MultiImageField inspectionId={inspectionId} imageType="damage" images={damageImages} disabled={!canFillSection} onChange={setDetail} />
               </div>
             </div>
           )}

@@ -992,6 +992,10 @@ class OutwardVehicleInspection(Base):
         "OutwardVehicleInspectionAnswer", back_populates="inspection",
         cascade="all, delete-orphan",
     )
+    images = relationship(
+        "OutwardVehicleInspectionImage", back_populates="inspection",
+        cascade="all, delete-orphan", order_by="OutwardVehicleInspectionImage.sort_order",
+    )
 
 
 class OutwardVehicleInspectionAnswer(Base):
@@ -1011,6 +1015,29 @@ class OutwardVehicleInspectionAnswer(Base):
     inspection = relationship("OutwardVehicleInspection", back_populates="answers")
 
     __table_args__ = (UniqueConstraint("inspection_id", "question_sr"),)
+
+
+class OutwardVehicleInspectionImage(Base):
+    """
+    Loading-process photos for an Outward Vehicle Inspection record -- one
+    named slot per row/photo type from the "Loading Container Process"
+    template (License Plate, Container Number, Before Loading, First Row
+    .. Eleventh Row, Seal Half/Entire, Lead Seal, Weighbridge Record; see
+    OVI_IMAGE_TYPES in ovi_service.py for the fixed list). Same shape and
+    same FastAPI upload/replace/delete routes as inward_vehicle_inspection_
+    images (storage adapter, no OCR here -- these are loading-progress
+    photos, not identifier images to extract text from).
+    """
+    __tablename__ = "outward_vehicle_inspection_images"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    inspection_id = Column(UUID(as_uuid=True), ForeignKey("outward_vehicle_inspections.id", ondelete="CASCADE"), nullable=False)
+    image_type = Column(Text, nullable=False)
+    storage_path = Column(Text, nullable=False)
+    public_url = Column(Text, nullable=True)
+    sort_order = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+    inspection = relationship("OutwardVehicleInspection", back_populates="images")
 
 
 class MachineDowntimeRecord(Base):
