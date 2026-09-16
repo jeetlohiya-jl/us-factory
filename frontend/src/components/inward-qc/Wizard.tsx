@@ -2,18 +2,16 @@
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import type { QcDetail, QcMeta, Permissions, SkuCode, QcManualCategory, QuantityUnit } from "@/lib/types";
-import { QUANTITY_UNITS } from "@/lib/types";
+import { QUANTITY_UNITS, TRAY_FAMILY_QC_CATEGORIES, QC_CATEGORY_LABELS } from "@/lib/types";
 import CoaField from "./CoaField";
 import FgtrayObservations from "./FgtrayObservations";
 import AttributeObservations from "./AttributeObservations";
 
-const CATEGORY_LABELS: Record<string, string> = {
-  fgtray: "FG Non-Padded Tray", pad: "Soaker Pad", polybag: "Polybag", cfb: "CFB", glue: "Glue",
-};
+const CATEGORY_LABELS = QC_CATEGORY_LABELS;
 
 function computeClientSamplingPlan(meta: QcMeta, category: string, qty: number | null) {
   if (!category || !qty || qty <= 0) return null;
-  if (category === "fgtray") {
+  if (TRAY_FAMILY_QC_CATEGORIES.includes(category)) {
     return { sampleSize: "Full carton-box check", upperLimit: "0", note: null as string | null };
   }
   const tiers = meta.sampling_plan_tiers.filter((t) => t.category === category);
@@ -36,7 +34,7 @@ export default function Wizard({
   // (never yet explicitly Saved/Submitted) -- see handleCancel.
   isNew?: boolean;
 }) {
-  const isTray = initialDetail.category === "fgtray";
+  const isTray = TRAY_FAMILY_QC_CATEGORIES.includes(initialDetail.category);
   const [detail, setDetail] = useState<QcDetail>(initialDetail);
   const [step, setStep] = useState<2 | 3>(isTray ? 3 : 2);
   const [vendor, setVendor] = useState(initialDetail.vendor_name || "");

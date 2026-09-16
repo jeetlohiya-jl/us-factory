@@ -6,12 +6,13 @@ import { useMe } from "@/lib/useMe";
 import { cachedList, invalidateListCache, listCacheKey } from "@/lib/listCache";
 import { useImmediateThenDebounced } from "@/lib/useImmediateThenDebounced";
 import type { MaterialConsumptionListItem, MaterialConsumptionDetail, Machine } from "@/lib/types";
+import { QC_CATEGORY_LABELS } from "@/lib/types";
 import MaterialConsumptionWizard, { formatTime12h } from "@/components/material-consumption/Wizard";
 import MoreMenu from "@/components/inward-vehicle-inspection/MoreMenu";
 import ConfirmDialog from "@/components/inward-vehicle-inspection/ConfirmDialog";
 import Pagination from "@/components/Pagination";
 
-const CATEGORY_LABELS: Record<string, string> = { tray: "Base Tray", fgtray: "FG Non-Padded Tray" };
+const CATEGORY_LABELS = QC_CATEGORY_LABELS;
 const MODULE = "material-consumption";
 // A static, never-changing list -- same constant Production's and IPQC's own
 // pages already hardcode client-side (see app/production/page.tsx). It was
@@ -156,7 +157,7 @@ function MaterialConsumptionPageContent() {
                   <select value={category} onChange={(e) => setCategory(e.target.value)}>
                     <option value="">All</option>
                     <option value="tray">Base Tray</option>
-                    <option value="fgtray">FG Non-Padded Tray</option>
+                    <option value="fnp_tray">FNP Tray</option>
                   </select>
                 </div>
                 <div className="field">

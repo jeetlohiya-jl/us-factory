@@ -13,7 +13,19 @@ from app.db import models
 from app.domain.id_counters import next_seq
 
 MANUAL_CATEGORIES = {"pad", "polybag", "cfb", "glue"}
-ALL_CATEGORIES = MANUAL_CATEGORIES | {"fgtray"}
+# Tray-family categories are auto-created from an approved Inward Vehicle
+# Inspection (see vehicle_inspection_service.propagate_to_qc) rather than
+# created manually here, and skip the sampling-plan/attribute-definition
+# flow every MANUAL_CATEGORIES record goes through in favour of the fixed
+# fgtray_answers checklist -- "fgtray" was the only member of this set
+# historically (from the Tray/"Base Tray" IVI category); "fnp_tray" (FNP
+# Tray) is the same kind of downstream QC record for the FNP Tray IVI
+# category, added so its category is never silently remapped to something
+# else. Base Tray and FNP Tray are genuinely different materials (today
+# only FNP Tray is an active workflow; Base Tray is wired up for future
+# use), each producing its own correctly-labeled QC record.
+TRAY_FAMILY_CATEGORIES = {"tray", "fnp_tray", "fgtray"}
+ALL_CATEGORIES = MANUAL_CATEGORIES | TRAY_FAMILY_CATEGORIES
 
 QC_ID_PREFIX = {"pad": "US-PAD", "polybag": "US-PB", "cfb": "US-CFB", "glue": "US-GLUE"}
 
@@ -33,7 +45,7 @@ CONCLUSION_LABEL = {
 
 
 def next_shipment_number(db: Session, category: str) -> tuple[str, bool]:
-    if category == "fgtray":
+    if category in TRAY_FAMILY_CATEGORIES:
         return "", False  # fgtray shipment number always mirrors the source Vehicle Inspection
     prefix = QC_ID_PREFIX[category]
     yymm = datetime.now(timezone.utc).strftime("%y%m")
@@ -42,7 +54,7 @@ def next_shipment_number(db: Session, category: str) -> tuple[str, bool]:
 
 
 def quantity_label_for(db: Session, category: str) -> str:
-    if category == "fgtray":
+    if category in TRAY_FAMILY_CATEGORIES:
         return "No. of Pallets"
     tier = db.query(models.InwardQcSamplingPlanTier).filter(models.InwardQcSamplingPlanTier.category == category).first()
     return tier.qty_label if tier else "Quantity"
@@ -70,7 +82,7 @@ def compute_sampling_plan(db: Session, category: str, qty: float | None) -> dict
     are missing, exactly like the prototype leaves the callout blank."""
     if not category or qty is None or qty <= 0:
         return None
-    if category == "fgtray":
+    if category in TRAY_FAMILY_CATEGORIES:
         return {"sample_size": "Full carton-box check", "upper_limit": "0", "note": None, "sampling_approach": "Fixed 3-point box check"}
     tier = tier_for(db, category, qty)
     if not tier:
@@ -156,7 +168,7 @@ def compute_manual_status(db: Session, qc: models.InwardQcRecord) -> str:
 
 
 def compute_status(db: Session, qc: models.InwardQcRecord) -> str:
-    if qc.category == "fgtray":
+    if qc.category in TRAY_FAMILY_CATEGORIES:
         return compute_fgtray_status(db, qc)
     return compute_manual_status(db, qc)
 

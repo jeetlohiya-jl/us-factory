@@ -6,6 +6,7 @@ import { useMe } from "@/lib/useMe";
 import { cachedList, invalidateListCache, listCacheKey } from "@/lib/listCache";
 import { useImmediateThenDebounced } from "@/lib/useImmediateThenDebounced";
 import type { QcDetail, QcListItem, QcManualCategory, QcMeta, SkuCode } from "@/lib/types";
+import { TRAY_FAMILY_QC_CATEGORIES, QC_CATEGORY_LABELS } from "@/lib/types";
 import MoreMenu from "@/components/inward-vehicle-inspection/MoreMenu";
 import ConfirmDialog from "@/components/inward-vehicle-inspection/ConfirmDialog";
 import CategoryPicker from "@/components/inward-qc/CategoryPicker";
@@ -18,9 +19,7 @@ const MODULE = "inward-qc";
 // cache it much longer than the record list itself.
 const REFERENCE_STALE_MS = 5 * 60_000;
 
-const CATEGORY_LABELS: Record<string, string> = {
-  fgtray: "FG Non-Padded Tray", pad: "Soaker Pad", polybag: "Polybag", cfb: "CFB", glue: "Glue",
-};
+const CATEGORY_LABELS = QC_CATEGORY_LABELS;
 
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, string> = { draft: "Draft", pending: "Pending", accepted: "Approve", onhold: "Hold" };
@@ -139,7 +138,7 @@ function InwardQcPageContent() {
     // simply opens the existing Pending Tray QC" — a still-Pending Tray QC
     // opens straight into the observation form; anything else opens the
     // read-only Record Details view (with Edit available from there / More menu).
-    if (item.category === "fgtray" && item.status === "pending") {
+    if (TRAY_FAMILY_QC_CATEGORIES.includes(item.category) && item.status === "pending") {
       openEdit(item.id);
     } else {
       openDetail(item.id);
@@ -166,7 +165,7 @@ function InwardQcPageContent() {
       <div className="page-head2">
         <div>
           <h1>Inward QC</h1>
-          <div className="desc">Every Inward QC record created to date, across FG Non-Padded Tray, Soaker Pad, Polybag and CFB.</div>
+          <div className="desc">Every Inward QC record created to date, across FNP Tray, Soaker Pad, Polybag and CFB.</div>
         </div>
         <button
           className="btn btn-primary"
@@ -193,7 +192,7 @@ function InwardQcPageContent() {
               <div className="f-row"><label>Category</label>
                 <select value={fCategory} onChange={(e) => setFCategory(e.target.value)}>
                   <option value="">All</option>
-                  <option value="fgtray">FG Non-Padded Tray</option>
+                  <option value="fnp_tray">FNP Tray</option>
                   <option value="pad">Soaker Pad</option>
                   <option value="polybag">Polybag</option>
                   <option value="cfb">CFB</option>

@@ -8,9 +8,10 @@ const CATEGORY_LABELS: Record<QcManualCategory, string> = {
 
 /**
  * "+ New Record" step 1 from the prototype: a category picker with EXACTLY
- * the four manual categories. Tray / FG Non-Padded Tray is deliberately
- * never offered here — it is only ever auto-created from an approved
- * Vehicle Inspection (see the Inward QC page's row-click handling).
+ * the four manual categories. Base Tray / FNP Tray (the Tray-family
+ * categories) are deliberately never offered here — they are only ever
+ * auto-created from an approved Vehicle Inspection (see the Inward QC
+ * page's row-click handling).
  */
 export default function CategoryPicker({ onNext, onCancel }: { onNext: (category: QcManualCategory) => void; onCancel: () => void }) {
   const [selected, setSelected] = useState<QcManualCategory | null>(null);

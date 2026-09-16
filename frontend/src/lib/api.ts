@@ -117,6 +117,7 @@ async function sbRequestPage<T>(
 // before awaiting, same pattern already used elsewhere in this file.
 interface PgQuery {
   eq(col: string, val: unknown): PgQuery;
+  in(col: string, vals: unknown[]): PgQuery;
   or(expr: string): PgQuery;
   gte(col: string, val: unknown): PgQuery;
   lt(col: string, val: unknown): PgQuery;
@@ -522,7 +523,14 @@ async function listMaterialConsumptionSb(
     .select(needsEntryJoin ? MC_LIST_SELECT_INNER : MC_LIST_SELECT, { count: "exact" });
   if (params.status) q = q.eq("status", params.status);
   if (params.date) q = q.eq("consumption_date", params.date);
-  if (params.category) q = q.eq("material_consumption_machine_entries.category", params.category);
+  if (params.category === "fnp_tray") {
+    // Same legacy-value note as listQc above: older machine entries were
+    // written with category="fgtray" before FNP Tray became its own
+    // category, so filtering on "fnp_tray" alone would hide them.
+    q = q.in("material_consumption_machine_entries.category", ["fnp_tray", "fgtray"]);
+  } else if (params.category) {
+    q = q.eq("material_consumption_machine_entries.category", params.category);
+  }
   if (params.search) {
     const like = ilikeTerm(params.search);
     // Covers SKU code/version/category on the machine entry -- the primary
@@ -1433,7 +1441,7 @@ async function saveHoldReleaseSb(id: string, payload: HoldReleaseSavePayload): P
 // exact same "all versions, not just active ones" shape (see LineItemsEditor,
 // which itself does no active-filtering on the versions it's handed).
 const SKU_SELECT =
-  "id, code, category, is_active, batch_number, " +
+  "id, code, category, is_active, batch_number, sku_code, " +
   "versions:sku_versions(id, version, is_active, prod_weight, prod_pcs_per_sleeve, prod_sleeve_per_case, " +
   "prod_total_pcs_per_pallet, prod_total_pallets, prod_target_shots, prod_pad_type, prod_pad_color, prod_case_type, " +
   "prod_dimensions, prod_absorption_rate)";
@@ -1554,11 +1562,11 @@ export const api = {
   // every other module's cached dropdown data, sees the change immediately
   // instead of serving up to REFERENCE_STALE_MS of stale SKU data.
   createSku: (category: string, code: string) =>
-    sbVoid(
-      () => supabase.from("sku_codes").insert({ category, code, is_active: true }),
+    sbRequest<{ id: string }>(
+      () => supabase.from("sku_codes").insert({ category, code, is_active: true }).select("id").single() as unknown as Promise<{ data: { id: string } | null; error: { message: string; code?: string } | null }>,
       { conflict: `"${code}" already exists.` }
-    ).then(() => invalidateListCache("ref:skus")),
-  updateSku: (id: string, patch: { code?: string; is_active?: boolean; batch_number?: string | null }) =>
+    ).then((created) => { invalidateListCache("ref:skus"); return created; }),
+  updateSku: (id: string, patch: { code?: string; is_active?: boolean; batch_number?: string | null; sku_code?: string | null }) =>
     sbVoid(
       () => supabase.from("sku_codes").update(patch).eq("id", id),
       { conflict: `"${patch.code}" already exists.` }
@@ -1761,7 +1769,18 @@ export const api = {
     const base = supabase
       .from("inward_qc_records")
       .select("id,shipment_number,category,coa_filename,status,created_at", { count: "exact" });
-    const filtered = applyListFilters(base as unknown as PgQuery, params, ["shipment_number"]);
+    // Every current FNP Tray QC record is written with category="fnp_tray",
+    // but records auto-created before that passthrough existed still carry
+    // the old "fgtray" value (see inward_qc_service.TRAY_FAMILY_CATEGORIES)
+    // -- filtering on "fnp_tray" alone would silently hide that older data
+    // from this exact same view, so match both values for that one filter.
+    const categoryFilter = { ...params };
+    let filtered = applyListFilters(base as unknown as PgQuery, { ...categoryFilter, category: undefined }, ["shipment_number"]);
+    if (params.category === "fnp_tray") {
+      filtered = filtered.in("category", ["fnp_tray", "fgtray"]);
+    } else if (params.category) {
+      filtered = filtered.eq("category", params.category);
+    }
     const ordered = (filtered as unknown as typeof base).order("created_at", { ascending: false }).range((page - 1) * LIST_PAGE_SIZE, page * LIST_PAGE_SIZE - 1);
     const { data, error, count } = await ordered;
     if (error) throw new ApiError(500, error.message);

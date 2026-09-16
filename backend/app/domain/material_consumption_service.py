@@ -11,13 +11,14 @@ each machine has its own pallet set, its own Category/SKU/SKU Version, and
 its own start_time/end_time. Shift is shared across the whole record.
 
 Primary categories consumed into production: 'tray' (Base Tray) and
-'fgtray' (FG Non-Padded Tray) -- the same two RM categories the rest of the
+'fnp_tray' (FNP Tray) -- the same tray-family RM categories the rest of the
 app already treats as tray variants (see pallet_service.CATEGORY_SUFFIX,
-where both map to the "PLT" suffix). Pad / Polybag / CFB / Glue are the
-*secondary* materials for a machine entry even though they are ordinary RM
-pallets of their own, generated and stored exactly the same way -- so
-secondary materials are scanned and validated through this same service,
-never a free-text fallback.
+where both map to the "PLT" suffix; 'fgtray' is also kept here for RM
+pallets generated before the FNP Tray category existed). Pad / Polybag /
+CFB / Glue are the *secondary* materials for a machine entry even though
+they are ordinary RM pallets of their own, generated and stored exactly the
+same way -- so secondary materials are scanned and validated through this
+same service, never a free-text fallback.
 """
 from decimal import Decimal
 
@@ -27,7 +28,7 @@ from app.db import models
 from app.domain import pallet_service
 from app.domain.id_counters import next_seq
 
-PRIMARY_CATEGORIES = ("tray", "fgtray")
+PRIMARY_CATEGORIES = ("tray", "fnp_tray", "fgtray")
 SECONDARY_ROLES = ("cfb", "pad", "glue", "polybag")
 
 
