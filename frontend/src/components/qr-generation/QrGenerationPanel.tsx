@@ -85,7 +85,7 @@ export default function QrGenerationPanel({
             <div className="field"><label>SKU Name</label><div className="readonly-val mono">{detail.sku_code_snapshot || "—"}</div></div>
             <div className="field"><label>SKU Version</label><div className="readonly-val mono">{detail.sku_version_snapshot || "—"}</div></div>
             <div className="field"><label>Country</label><div className="readonly-val mono">{detail.country_code || "—"}</div></div>
-            <div className="field"><label>Quantity (Pallets)</label><div className="readonly-val mono">{detail.quantity}</div></div>
+            <div className="field"><label>Quantity</label><div className="readonly-val mono">{detail.quantity}</div></div>
           </div>
           <div className="hint-text" style={{ marginBottom: 6 }}>
             {detail.source_locked

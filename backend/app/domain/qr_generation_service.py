@@ -10,6 +10,7 @@ behaviour: one source record -> one QR batch (find-or-create, never
 duplicated), and generating a batch creates N individually-numbered
 pallets that immediately enter pending_storage.
 """
+import concurrent.futures
 import uuid
 from datetime import datetime, timezone
 
@@ -223,10 +224,15 @@ def get_or_create_fg_qr_for_production_run(
     return rec
 
 
-def _generate_one_pallet(
-    db: Session, rec: models.QrGenerationRecord, actor_user_id=None,
+def _create_pallet_row(
+    db: Session, rec: models.QrGenerationRecord,
     source_machine_id=None, batch_code: str | None = None,
 ) -> models.Pallet:
+    """DB-only, no network -- just the row. QR image generation/upload and
+    lifecycle events are handled separately by generate_pallets so the
+    (slow, network-bound) QR upload for every pallet in the batch can run
+    concurrently instead of one at a time -- see build_pallet_qr's
+    docstring."""
     display_id = pallet_service.next_pallet_display_id(db, rec.category, rec.country_code)
     pallet = models.Pallet(
         display_id=display_id,
@@ -246,15 +252,6 @@ def _generate_one_pallet(
     )
     db.add(pallet)
     db.flush()
-    pallet_service.generate_pallet_qr(db, pallet)
-    pallet_service.record_lifecycle_event(
-        db, pallet, "generated", actor_user_id=actor_user_id,
-        source_batch=rec.batch_display_id, sku=rec.sku_code_snapshot, version=rec.sku_version_snapshot,
-    )
-    # Immediately propagate to pending storage, per the prototype.
-    pallet_service.record_lifecycle_event(
-        db, pallet, "pending_storage", actor_user_id=actor_user_id, sku=rec.sku_code_snapshot,
-    )
     return pallet
 
 
@@ -270,11 +267,29 @@ def generate_pallets(db: Session, rec: models.QrGenerationRecord, actor_user_id=
     batch_code_service.resolve_machine_allocations — this is why FG pallets
     are generated machine-by-machine below instead of one flat loop.
     """
+    # Lock this row for the rest of the transaction before checking status.
+    # Without this, two overlapping "Generate QR" requests (a genuine
+    # double-click, a slow request the user retried, or a network hiccup
+    # that made the frontend re-send) can both read status="pending" before
+    # either has committed its own status="generated" write, and both then
+    # run the pallet-creation loop below -- silently doubling every pallet
+    # (and every physical QR label) for the batch. Locking here makes the
+    # second request's SELECT block until the first request's transaction
+    # commits (see the route's db.commit() right after this call returns),
+    # so by the time it re-reads status it correctly sees "generated" and
+    # returns early instead of generating a second time.
+    rec = (
+        db.query(models.QrGenerationRecord)
+        .filter(models.QrGenerationRecord.id == rec.id)
+        .with_for_update()
+        .one()
+    )
     if rec.status == "generated":
         return rec
     if rec.quantity <= 0:
         raise QrGenerationError("Enter a quantity greater than 0 before generating QR codes.")
 
+    pallets: list[models.Pallet] = []
     if rec.qr_type == "fg" and rec.source_production_run and rec.source_production_run.rqc_record:
         rqc = rec.source_production_run.rqc_record
         try:
@@ -292,13 +307,45 @@ def generate_pallets(db: Session, rec: models.QrGenerationRecord, actor_user_id=
                 machine_number=(machine.batch_number if machine else None),
             )
             for _ in range(count):
-                _generate_one_pallet(
-                    db, rec, actor_user_id=actor_user_id,
-                    source_machine_id=machine.id if machine else None, batch_code=batch_code,
-                )
+                pallets.append(_create_pallet_row(
+                    db, rec, source_machine_id=machine.id if machine else None, batch_code=batch_code,
+                ))
     else:
         for _ in range(rec.quantity):
-            _generate_one_pallet(db, rec, actor_user_id=actor_user_id)
+            pallets.append(_create_pallet_row(db, rec))
+
+    # Every pallet row now exists (fast -- local DB only). Building each
+    # QR PNG and uploading it to storage is the slow, network-bound part
+    # (one Supabase Storage round-trip per pallet -- this is what made a
+    # 44-pallet batch take ~8s when done one at a time, back to back).
+    # Do that concurrently across the whole batch instead: build_pallet_qr
+    # is pure (no DB/network), and storage.save() for different pallets is
+    # fully independent, so a small thread pool cuts wall-clock time
+    # roughly by the worker count. The SQLAlchemy Session itself is never
+    # touched from a worker thread -- only plain bytes go in/out.
+    storage = pallet_service.get_storage_adapter()
+    jobs = [(p, *pallet_service.build_pallet_qr(p)) for p in pallets]
+
+    def _upload(job):
+        pallet, path, payload, png = job
+        stored = storage.save(path, png, "image/png")
+        return pallet, payload, stored
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as pool:
+        uploaded = list(pool.map(_upload, jobs))
+
+    for pallet, payload, stored in uploaded:
+        pallet.qr_storage_path = stored.storage_path
+        pallet.qr_public_url = stored.public_url
+        pallet.qr_payload = payload
+        pallet_service.record_lifecycle_event(
+            db, pallet, "generated", actor_user_id=actor_user_id,
+            source_batch=rec.batch_display_id, sku=rec.sku_code_snapshot, version=rec.sku_version_snapshot,
+        )
+        # Immediately propagate to pending storage, per the prototype.
+        pallet_service.record_lifecycle_event(
+            db, pallet, "pending_storage", actor_user_id=actor_user_id, sku=rec.sku_code_snapshot,
+        )
 
     rec.status = "generated"
     rec.generated_at = datetime.now(timezone.utc)

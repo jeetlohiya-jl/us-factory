@@ -48,7 +48,7 @@ export default function NewCustomerShipmentPanel({
       return;
     }
     if (validItems.length === 0) {
-      setError("At least one line item with a SKU, Version and No. of Pallets is required.");
+      setError("At least one line item with a SKU, Version and Quantity is required.");
       return;
     }
     setSaving(true);

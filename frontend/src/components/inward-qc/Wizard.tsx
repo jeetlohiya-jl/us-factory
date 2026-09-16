@@ -217,7 +217,7 @@ export default function Wizard({
               <div className="detail-grid">
                 <div><div className="detail-kv-label">Shipment Number</div><div className="detail-kv-value">{detail.shipment_number}</div></div>
                 <div><div className="detail-kv-label">Vendor</div><div className="detail-kv-value">{detail.vendor_name || "—"}</div></div>
-                <div><div className="detail-kv-label">No. of Pallets</div><div className="detail-kv-value">{detail.quantity ?? "—"}</div></div>
+                <div><div className="detail-kv-label">Quantity</div><div className="detail-kv-value">{detail.quantity ?? "—"}</div></div>
               </div>
               {detail.line_item_snapshots.length > 0 && (
                 <table className="qc-obs-table" style={{ marginTop: 14 }}>

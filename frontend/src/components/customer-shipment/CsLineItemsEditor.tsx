@@ -8,9 +8,13 @@ import type { CustomerShipmentLineItemDraft } from "@/lib/types";
  * needs two behaviors that component doesn't have and IVI doesn't need:
  *   1. Removing the final row must leave the panel at true zero (IVI's
  *      removeRow always re-seeds one blank row) -- spec point 12.
- *   2. The quantity column is explicitly labeled "No. of Pallets", never
- *      "Qty Required" (spec point 11) and the add-button copy is the
- *      prototype's own "+ Add Line Item" (not IVI's "+ Add More Entry").
+ *   2. The add-button copy is the prototype's own "+ Add Line Item" (not
+ *      IVI's "+ Add More Entry"). The pallets-quantity column is labeled
+ *      "Quantity" -- was "No. of Pallets" (spec point 11's original
+ *      wording, never "Qty Required"), renamed for the same reason every
+ *      other module's pallet count is now labeled "Quantity" (Inward QC,
+ *      RM/FG QR Generation, RQC, Production, Sku master data), so the
+ *      label is uniform across the app instead of drifting per module.
  * Forking a small component here avoids changing IVI's already-shipped
  * behavior for an unrelated module.
  */
@@ -56,7 +60,7 @@ export default function CsLineItemsEditor({
     <div>
       <table className="qc-obs-table">
         <thead>
-          <tr><th>SKU Code</th><th>SKU Version</th><th>No. of Pallets</th><th>Pcs</th><th>Pcs/Sleeve</th><th /></tr>
+          <tr><th>SKU Code</th><th>SKU Version</th><th>Quantity</th><th>Pcs</th><th>Pcs/Sleeve</th><th /></tr>
         </thead>
         <tbody>
           {items.map((item, i) => (

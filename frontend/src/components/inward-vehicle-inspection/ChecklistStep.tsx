@@ -8,7 +8,11 @@ export default function ChecklistStep({
   onSetAnswer: (checklistItemId: string, val: "ok" | "not_ok") => void;
   disabled?: boolean;
 }) {
-  const hasNotOk = answers.some((a) => a.answer === "not_ok");
+  // "Vehicle arrived within scheduled time window" (affects_status=false)
+  // is informational only -- a NOT OK answer there must never imply Hold,
+  // here in the preview banner any more than it does in the real
+  // compute_status() the backend uses at submit time.
+  const hasNotOk = answers.some((a) => a.answer === "not_ok" && a.affects_status);
   const complete = answers.length > 0 && answers.every((a) => a.answer === "ok" || a.answer === "not_ok");
 
   return (
