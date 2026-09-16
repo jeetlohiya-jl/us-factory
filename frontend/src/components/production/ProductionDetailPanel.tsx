@@ -44,12 +44,17 @@ type EditableWastage = { machine_id: string | null; trays: number | null; reason
 // setAttrEdit/machine_entry_attributes) instead of a separate flow -- it's
 // the exact same shape (one value per machine entry per field).
 type AttrKey = "machine_no" | "auto_padding" | "container_order_no" | "weight" | "pcs_per_sleeve" | "sleeve_per_case" | "total_pcs_per_pallet" | "pad_type" | "pad_color" | "case_type"
-  | "rejection_damage" | "rejection_misplaced_glue" | "rejection_misplaced_pad" | "rejection_glue_on_pad" | "rejection_pad_placement_direction" | "rejection_adhesion_issue";
+  | "rejection_damage" | "rejection_misplaced_glue" | "rejection_misplaced_pad" | "rejection_glue_on_pad" | "rejection_pad_placement_direction" | "rejection_adhesion_issue"
+  | "pallets_produced";
 
 // Production Details rows, matching the prototype's PROD_ATTRIBUTES exactly
 // (label text included) -- one row per attribute, one column per machine.
 // Section 12 adds Machine No./Auto Padding/Container Order No. (brand new)
 // and makes every backend-populated attribute editable via `attrKey`.
+// Migration 0039, task section 1 adds Pallets Produced -- per shift + per
+// machine, same one-column-per-machine mechanism as everything else here;
+// this is the source of truth FG QR Generation's downstream RQC approval
+// step is compared against, never total_fg_pallets/Total Quantity above.
 const PROD_DETAIL_ROWS: { label: string; attrKey?: AttrKey; get: (e: ProductionDetail["machine_entries"][number]) => React.ReactNode }[] = [
   { label: "SKU Name", get: (e) => e.sku_code },
   { label: "Machine No.", attrKey: "machine_no", get: (e) => e.machine_no },
@@ -64,6 +69,7 @@ const PROD_DETAIL_ROWS: { label: string; attrKey?: AttrKey; get: (e: ProductionD
   { label: "Pad Type/Name/Code", attrKey: "pad_type", get: (e) => e.production_details?.prod_pad_type },
   { label: "Pad Color", attrKey: "pad_color", get: (e) => e.production_details?.prod_pad_color },
   { label: "Case Type (Combo/Regular)", attrKey: "case_type", get: (e) => e.production_details?.prod_case_type },
+  { label: "Pallets Produced", attrKey: "pallets_produced", get: (e) => e.pallets_produced },
 ];
 
 function sumProductionDetails(entries: ProductionDetail["machine_entries"], key: "prod_total_pcs_per_pallet"): number | null {
@@ -134,6 +140,7 @@ export default function ProductionDetailPanel({
           rejection_glue_on_pad: e.rejection_classification.glue_on_pad ? String(e.rejection_classification.glue_on_pad) : "",
           rejection_pad_placement_direction: e.rejection_classification.pad_placement_direction ? String(e.rejection_classification.pad_placement_direction) : "",
           rejection_adhesion_issue: e.rejection_classification.adhesion_issue ? String(e.rejection_classification.adhesion_issue) : "",
+          pallets_produced: e.pallets_produced ? String(e.pallets_produced) : "",
         },
       ])
     )
@@ -156,6 +163,7 @@ export default function ProductionDetailPanel({
   const editable = isEdit && canEdit;
   const totalPcsPerPallet = sumProductionDetails(record.machine_entries, "prod_total_pcs_per_pallet");
   const totalRejections = sumRejections(record.rejection_classification);
+  const totalPalletsProduced = record.total_pallets_produced;
 
   const runMachines = Array.from(new Set(record.machine_entries.map((e) => e.machine).filter((m): m is string => !!m)));
 
@@ -233,6 +241,7 @@ export default function ProductionDetailPanel({
                 <Kv label="Operator" value={record.operator} />
                 <Kv label="Status" value={<StatusBadge status={record.status} />} />
                 <Kv label="Total PCS/Pallet" value={totalPcsPerPallet ?? "—"} />
+                <Kv label="Total Pallets Produced" value={totalPalletsProduced} />
                 <Kv label="Total Rejections" value={totalRejections} />
                 <Kv
                   label="Completed By"

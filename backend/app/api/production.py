@@ -262,6 +262,10 @@ def save_production_run(
             entry.rejection_pad_placement_direction = Decimal(attrs.rejection_pad_placement_direction or "0")
         if attrs.rejection_adhesion_issue is not None:
             entry.rejection_adhesion_issue = Decimal(attrs.rejection_adhesion_issue or "0")
+        # Pallets Produced (migration 0039, task section 1) -- same
+        # empty-means-0 convention as the rejection_* fields above.
+        if attrs.pallets_produced is not None:
+            entry.pallets_produced = int(Decimal(attrs.pallets_produced or "0"))
 
     if run.status == "pending":
         run.status = "saved"

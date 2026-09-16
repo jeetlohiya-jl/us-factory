@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
-import type { RqcDetail, RqcDefectResult, RqcCoaObservation, RqcMachineAllocation } from "@/lib/types";
+import type { RqcDetail, RqcDefectResult, RqcCoaObservation, RqcApprovalEntry } from "@/lib/types";
 import { RQC_DEFECT_GROUPS, RQC_COA_BASE, RQC_COA_FUNCTIONAL, RQC_COA_PACKING, RQC_COA_PRINTING } from "@/lib/types";
 import type { RqcCoaParamDef } from "@/lib/types";
 import { api } from "@/lib/api";
@@ -124,22 +124,64 @@ export default function RqcDetailPanel({
   onEdit?: () => void;
 }) {
   const [manufacturer, setManufacturer] = useState(record.manufacturer || "");
-  const [fgPalletsGenerated, setFgPalletsGenerated] = useState(
-    record.fg_pallets_generated != null ? String(record.fg_pallets_generated) : ""
-  );
-  // Section 11 -- FG Storage Batch Code inputs.
-  const [tablePersonNumber, setTablePersonNumber] = useState(record.table_person_number || "");
-  const [allocations, setAllocations] = useState<Record<string, string>>(
-    Object.fromEntries(record.machine_allocations.map((a) => [a.machine_id, String(a.fg_pallets_count)]))
-  );
+  // Migration 0039 -- the incremental approval ledger. Kept as local state
+  // (not derived straight from the `record` prop) so "+ Add Approval
+  // Entry" can refresh it in place without closing the panel, unlike the
+  // main Save button below.
+  const [approvalEntries, setApprovalEntries] = useState<RqcApprovalEntry[]>(record.approval_entries);
+  const [fgPalletsGeneratedTotal, setFgPalletsGeneratedTotal] = useState(record.fg_pallets_generated);
   const isMultiMachine = record.production_run_machines.length > 1;
 
-  function setAllocationCount(machineId: string, value: string) {
-    setAllocations((prev) => ({ ...prev, [machineId]: value }));
+  // New-entry mini-form state.
+  const [entryDate, setEntryDate] = useState(record.date || "");
+  const [entryApproved, setEntryApproved] = useState("");
+  const [entryTablePerson, setEntryTablePerson] = useState(record.table_person_number || "");
+  const [entryAllocations, setEntryAllocations] = useState<Record<string, string>>({});
+  const [addingEntry, setAddingEntry] = useState(false);
+  const [entryError, setEntryError] = useState<string | null>(null);
+
+  function setEntryAllocationCount(machineId: string, value: string) {
+    setEntryAllocations((prev) => ({ ...prev, [machineId]: value }));
   }
 
-  const allocationTotal = Object.values(allocations).reduce((sum, v) => sum + (Number(v) || 0), 0);
-  const fgTotal = fgPalletsGenerated === "" ? 0 : Number(fgPalletsGenerated);
+  const entryAllocationTotal = Object.values(entryAllocations).reduce((sum, v) => sum + (Number(v) || 0), 0);
+  const entryApprovedTotal = entryApproved === "" ? 0 : Number(entryApproved);
+
+  async function handleAddApprovalEntry() {
+    setEntryError(null);
+    const approved = entryApproved === "" ? 0 : Number(entryApproved);
+    if (!entryDate) { setEntryError("Date is required."); return; }
+    if (approved <= 0) { setEntryError("Approved Pallets must be greater than 0."); return; }
+    if (isMultiMachine && entryAllocationTotal > 0 && entryAllocationTotal !== approved) {
+      setEntryError(`Allocated ${entryAllocationTotal}, but Approved Pallets is ${approved}. These must match.`);
+      return;
+    }
+    setAddingEntry(true);
+    try {
+      await api.createRqcApprovalEntry(record.id, {
+        entry_date: entryDate,
+        approved_pallets: approved,
+        table_person_number: entryTablePerson || null,
+        machine_allocations: Object.entries(entryAllocations)
+          .filter(([, v]) => Number(v) > 0)
+          .map(([machine_id, v]) => ({ machine_id, fg_pallets_count: Number(v) })),
+      });
+      // Keep the panel open -- unlike the main Save button -- and refetch
+      // this record so the new entry (and its FG QR batch status once
+      // generate_pallets is run) shows up immediately.
+      const fresh = await api.getRqc(record.id);
+      setApprovalEntries(fresh.approval_entries);
+      setFgPalletsGeneratedTotal(fresh.fg_pallets_generated);
+      setEntryApproved("");
+      setEntryAllocations({});
+      onSaved();
+    } catch (e) {
+      setEntryError(e instanceof Error ? e.message : "Failed to record this approval entry");
+    } finally {
+      setAddingEntry(false);
+    }
+  }
+
   const [overallResult, setOverallResult] = useState(record.overall_result || "");
   const [defects, setDefects] = useState<Record<number, RqcDefectResult>>(
     Object.fromEntries(record.defect_results.map((d) => [d.defect_sr, d]))
@@ -180,11 +222,6 @@ export default function RqcDetailPanel({
       await api.saveRqc(record.id, {
         manufacturer: manufacturer || null,
         overall_result: overallResult || null,
-        fg_pallets_generated: fgPalletsGenerated === "" ? null : Number(fgPalletsGenerated),
-        table_person_number: tablePersonNumber || null,
-        machine_allocations: Object.entries(allocations)
-          .filter(([, v]) => Number(v) > 0)
-          .map(([machine_id, v]) => ({ machine_id, fg_pallets_count: Number(v) })),
         save_mode: saveMode,
         defect_results: Object.values(defects).filter((d) => d.found !== null || !!d.remarks),
         coa_observations: Object.values(coa).filter((o) => !!o.observation),
@@ -214,80 +251,109 @@ export default function RqcDetailPanel({
             <HoldReleaseSection module="rqc" recordId={record.id} canFill={canEdit} />
           )}
 
-          {/* Number of FG Pallets Generated -- moved here from Production
-              per the updated workflow; this is now the single source of
-              truth FG QR Generation reads (see qr_generation_service.
-              get_or_create_fg_qr_for_production_run). Placed first, at the
-              top of the form, exactly as specified. */}
+          {/* Migration 0039 -- RQC Approval Entries. A shipment's RQC
+              activity can span multiple dates and operators, each
+              approving some number of pallets independently -- never one
+              cumulative field. Each entry recorded here independently
+              drives its own FG QR Generation batch for exactly its own
+              Approved Pallets (see qr_generation_service.
+              get_or_create_fg_qr_for_rqc_approval_entry); re-adding the
+              same activity is never possible from here (this only ever
+              POSTs a brand-new entry), and Previously approved/generated
+              pallets are never regenerated. */}
           <div className="detail-card">
-            <h3>FG Pallets Generated</h3>
-            <div className="field" style={{ maxWidth: 320 }}>
-              <label>Quantity Generated</label>
-              {editable ? (
-                <input
-                  type="number" min={0} placeholder="0"
-                  value={fgPalletsGenerated}
-                  onChange={(e) => setFgPalletsGenerated(e.target.value)}
-                />
-              ) : (
-                <div className="detail-kv-value">{record.fg_pallets_generated ?? record.total_fg_pallets ?? "—"}</div>
-              )}
+            <h3>RQC Approval Entries</h3>
+            <div className="hint-text" style={{ marginBottom: 10 }}>
+              Total Approved Pallets: <strong>{fgPalletsGeneratedTotal ?? 0}</strong>
             </div>
-          </div>
+            <table className="qc-obs-table" style={{ marginBottom: 14 }}>
+              <thead>
+                <tr>
+                  <th>Date</th><th>Operator</th><th style={{ width: 120 }}>Approved Pallets</th>
+                  <th>Table/Person No.</th><th>FG QR Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {approvalEntries.length === 0 ? (
+                  <tr><td colSpan={5} className="hint-text">No approval entries recorded yet.</td></tr>
+                ) : (
+                  approvalEntries.map((e) => (
+                    <tr key={e.id}>
+                      <td>{e.entry_date}</td>
+                      <td>{e.operator_name || "—"}</td>
+                      <td>{e.approved_pallets}</td>
+                      <td>{e.table_person_number || "—"}</td>
+                      <td>{e.fg_qr_status ? <span className={`badge ${e.fg_qr_status}`}>{e.fg_qr_status}</span> : "—"}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
 
-          {/* Section 11 -- FG Storage Batch Code inputs: RQC Table/Person
-              Number (brand-new field) and, for a Production Run spanning
-              more than one machine, how many of the FG Pallets Generated
-              came off each machine. A single-machine run needs no manual
-              split -- the backend auto-assigns the whole count to that one
-              machine at QR-generate time. */}
-          <div className="detail-card">
-            <h3>Batch Code Details</h3>
-            <div className="field" style={{ maxWidth: 320 }}>
-              <label>RQC Table/Person Number</label>
-              {editable ? (
-                <input
-                  type="text" placeholder="e.g. 1"
-                  value={tablePersonNumber}
-                  onChange={(e) => setTablePersonNumber(e.target.value)}
-                />
-              ) : (
-                <div className="detail-kv-value">{record.table_person_number || "—"}</div>
-              )}
-            </div>
-            {isMultiMachine && (
-              <div style={{ marginTop: 14 }}>
-                <div className="section-label">Machine Allocation</div>
-                <div className="hint-text" style={{ marginBottom: 8 }}>
-                  This Production Run spans multiple machines -- split Quantity Generated across them
-                  so each pallet's Batch Code names the machine that actually produced it.
+            {editable && (
+              <div style={{ borderTop: "1px solid var(--line)", paddingTop: 14 }}>
+                <div className="section-label" style={{ marginBottom: 8 }}>+ Add Approval Entry</div>
+                <div className="detail-grid">
+                  <div className="field">
+                    <label>Date</label>
+                    <input type="date" value={entryDate} onChange={(e) => setEntryDate(e.target.value)} />
+                  </div>
+                  <div className="field">
+                    <label>Approved Pallets</label>
+                    <input
+                      type="number" min={0} placeholder="0"
+                      value={entryApproved}
+                      onChange={(e) => setEntryApproved(e.target.value)}
+                    />
+                  </div>
+                  <div className="field">
+                    <label>RQC Table/Person Number</label>
+                    <input
+                      type="text" placeholder="e.g. 1"
+                      value={entryTablePerson}
+                      onChange={(e) => setEntryTablePerson(e.target.value)}
+                    />
+                  </div>
                 </div>
-                <table className="qc-obs-table" style={{ marginBottom: 6 }}>
-                  <thead><tr><th>Machine</th><th style={{ width: 130 }}>FG Pallets</th></tr></thead>
-                  <tbody>
-                    {record.production_run_machines.map((m) => (
-                      <tr key={m.id}>
-                        <td className="mono">{m.code}</td>
-                        <td>
-                          {editable ? (
-                            <input
-                              type="number" min={0} placeholder="0"
-                              value={allocations[m.id] ?? ""}
-                              onChange={(e) => setAllocationCount(m.id, e.target.value)}
-                            />
-                          ) : (
-                            record.machine_allocations.find((a: RqcMachineAllocation) => a.machine_id === m.id)?.fg_pallets_count ?? 0
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {editable && allocationTotal !== fgTotal && (
-                  <div className="hint-text" style={{ color: "var(--red)" }}>
-                    Allocated {allocationTotal}, but Quantity Generated is {fgTotal}. These must match before QR codes can be generated.
+                {isMultiMachine && (
+                  <div style={{ marginTop: 14 }}>
+                    <div className="section-label">Machine Allocation</div>
+                    <div className="hint-text" style={{ marginBottom: 8 }}>
+                      This Production Run spans multiple machines -- split this entry&apos;s Approved
+                      Pallets across them so each pallet&apos;s Batch Code names the machine that
+                      actually produced it.
+                    </div>
+                    <table className="qc-obs-table" style={{ marginBottom: 6 }}>
+                      <thead><tr><th>Machine</th><th style={{ width: 130 }}>FG Pallets</th></tr></thead>
+                      <tbody>
+                        {record.production_run_machines.map((m) => (
+                          <tr key={m.id}>
+                            <td className="mono">{m.code}</td>
+                            <td>
+                              <input
+                                type="number" min={0} placeholder="0"
+                                value={entryAllocations[m.id] ?? ""}
+                                onChange={(e) => setEntryAllocationCount(m.id, e.target.value)}
+                              />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {entryAllocationTotal > 0 && entryAllocationTotal !== entryApprovedTotal && (
+                      <div className="hint-text" style={{ color: "var(--red)" }}>
+                        Allocated {entryAllocationTotal}, but Approved Pallets is {entryApprovedTotal}. These must match.
+                      </div>
+                    )}
                   </div>
                 )}
+                {entryError && <div className="error-banner" style={{ marginTop: 10 }}>{entryError}</div>}
+                <button
+                  className="btn btn-secondary" style={{ marginTop: 12 }}
+                  disabled={addingEntry} onClick={handleAddApprovalEntry}
+                >
+                  {addingEntry ? "Adding…" : "+ Add Approval Entry"}
+                </button>
               </div>
             )}
           </div>

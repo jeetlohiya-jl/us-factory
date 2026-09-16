@@ -103,20 +103,15 @@ def _advance_source_record(db: Session, hr: models.HoldReleaseRecord, current_us
         # ipqc.py's save route docstring). Nothing further to call here.
 
     elif module == "rqc":
-        rec = (
-            db.query(models.RqcRecord)
-            .options(joinedload(models.RqcRecord.production_run))
-            .filter(models.RqcRecord.id == record_id)
-            .first()
-        )
+        rec = db.query(models.RqcRecord).filter(models.RqcRecord.id == record_id).first()
         if not rec:
             return
         rec.status = PASSING_STATUS[module]
-        db.flush()
-        if rec.production_run:
-            qr_generation_service.get_or_create_fg_qr_for_production_run(
-                db, rec.production_run, fg_pallets_generated=rec.fg_pallets_generated,
-            )
+        # Migration 0039 -- no downstream auto-creation from a status flip
+        # here, same as IPQC above. FG QR Generation is now triggered per
+        # RQC Approval Entry (see api/rqc.py's POST /{record_id}/
+        # approval-entries route), never from the whole record reaching
+        # 'approved' via Release.
 
     elif module == "outward_vehicle_inspection":
         rec = db.query(models.OutwardVehicleInspection).filter(models.OutwardVehicleInspection.id == record_id).first()

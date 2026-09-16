@@ -558,6 +558,10 @@ export interface ProductionMachineEntry {
   // single flat value shared by the whole run; now each machine gets its
   // own independently-editable set of counts, same as production_details.
   rejection_classification: ProductionRejectionClassification;
+  // Migration 0039, task section 1 -- FG pallets actually produced on this
+  // machine for this run's shift. Source of truth for "Pallets Produced";
+  // distinct from and never overwritten by RQC's approved_pallets.
+  pallets_produced: number;
 }
 
 export interface ProductionListItem {
@@ -621,6 +625,7 @@ export interface ProductionSavePayload {
     machine_no?: string; auto_padding?: string; container_order_no?: string;
     rejection_damage?: string; rejection_misplaced_glue?: string; rejection_misplaced_pad?: string;
     rejection_glue_on_pad?: string; rejection_pad_placement_direction?: string; rejection_adhesion_issue?: string;
+    pallets_produced?: string;
   }[];
   // This device's own clock ("HH:MM") -- saving this record now stamps
   // end_time on every Material Consumption machine entry it feeds, same
@@ -639,6 +644,10 @@ export interface ProductionDetail {
   sku_codes: string; // distinct SKU codes across every machine entry, comma-joined
   machine_entries: ProductionMachineEntry[];
   total_fg_pallets: number;
+  // Migration 0039 -- sum of machine_entries[].pallets_produced. The real
+  // "how many FG pallets did Production make" figure; total_fg_pallets
+  // above is legacy/display-only (see its own comment upstream).
+  total_pallets_produced: number;
   rejection_classification: ProductionRejectionClassification;
   wastage_entries: ProductionWastageEntry[];
   // Who actually filled in and saved the editable fields (migration 0014)
@@ -859,6 +868,31 @@ export interface RqcCoaObservation {
   observation: string | null;
 }
 
+export interface RqcMachineAllocation {
+  machine_id: string;
+  machine: string | null;
+  fg_pallets_count: number;
+}
+
+// Migration 0039 -- one incremental RQC approval activity (date + operator +
+// approved pallet count). A shipment's RQC record can accumulate many of
+// these over time; each independently drives its own FG QR Generation batch
+// (see qr_generation_service.get_or_create_fg_qr_for_rqc_approval_entry).
+// Immutable once created -- no edit route, only "+ Add Approval Entry".
+export interface RqcApprovalEntry {
+  id: string;
+  entry_date: string;
+  operator_user_id: string | null;
+  operator_name: string | null;
+  approved_pallets: number;
+  table_person_number: string | null;
+  created_at: string | null;
+  machine_allocations: RqcMachineAllocation[];
+  // Whether FG QR Generation has already produced a batch for this entry --
+  // purely informational (idempotency itself lives server-side).
+  fg_qr_status: string | null;
+}
+
 export interface RqcDetail {
   id: string;
   production_run_id: string | null;
@@ -873,16 +907,26 @@ export interface RqcDetail {
   // fg_pallets_generated below, RQC's own editable field and the value
   // FG QR Generation actually uses.
   total_fg_pallets: number | null;
-  // "Number of FG Pallets Generated" -- entered at the top of this form.
-  // Source of truth for FG QR Generation's quantity as of migration 0030.
+  // "Number of FG Pallets Generated" -- as of migration 0039 this is a
+  // denormalized running total (sum of approval_entries[].approved_pallets),
+  // kept in sync by the backend purely for cheap display/back-compat.
+  // approval_entries below is the real source of truth.
   fg_pallets_generated: number | null;
   // Section 11 -- brand-new field, manually entered here (never derived
   // from the logged-in user). The T<value> segment of the Batch Code.
+  // Migration 0039: this is now just the default/last-used value shown when
+  // adding a new approval entry -- each entry carries its own copy.
   table_person_number: string | null;
   // Section 11 -- every machine actually on the linked Production Run
   // (via production_run_machines), for the Machine Allocation dropdown.
   production_run_machines: { id: string; code: string }[];
+  // Migration 0039 -- the incremental approval ledger. Replaces the old
+  // single machine_allocations list below as the primary UI (kept for
+  // back-compat with anything still reading the whole-record total).
+  approval_entries: RqcApprovalEntry[];
   // Section 11 -- how fg_pallets_generated splits across those machines.
+  // Deprecated by migration 0039's per-entry machine_allocations; kept only
+  // for the legacy whole-run path (dev/test endpoint, Hold & Release).
   machine_allocations: RqcMachineAllocation[];
   shift: string | null;
   date: string | null;
@@ -892,23 +936,26 @@ export interface RqcDetail {
   coa_observations: RqcCoaObservation[];
 }
 
-export interface RqcMachineAllocation {
-  machine_id: string;
-  machine: string | null;
-  fg_pallets_count: number;
-}
-
 // Payload for api.saveRqc -- the single atomic write for RQC (backend/
-// app/api/rqc.py's PUT route).
+// app/api/rqc.py's PUT route). Migration 0039: fg_pallets_generated and
+// machine_allocations are no longer written by this call (approval entries
+// have their own route) -- kept here only if still sent for back-compat;
+// the backend now ignores both on this route.
 export interface RqcSavePayload {
   manufacturer: string | null;
   overall_result: string | null;
-  fg_pallets_generated: number | null;
-  table_person_number: string | null;
-  machine_allocations: { machine_id: string; fg_pallets_count: number }[];
   save_mode: "draft" | "final";
   defect_results: RqcDefectResult[];
   coa_observations: RqcCoaObservation[];
+}
+
+// Payload for api.createRqcApprovalEntry -- backend POST
+// /rqc/{record_id}/approval-entries (migration 0039).
+export interface RqcApprovalEntryPayload {
+  entry_date: string;
+  approved_pallets: number;
+  table_person_number: string | null;
+  machine_allocations: { machine_id: string; fg_pallets_count: number }[];
 }
 
 // ---------------------------------------------------------------------------
