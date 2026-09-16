@@ -426,9 +426,24 @@ class ProductionMachineEntryAttributesIn(BaseModel):
     machine_no: Optional[str] = None
     auto_padding: Optional[str] = None
     container_order_no: Optional[str] = None
+    # Rejection Classification, per machine entry (migration 0038) -- same
+    # None-means-"don't touch" convention as the fields above; unlike those,
+    # an empty/omitted value means 0 (there's no "shared reference value"
+    # for a rejection count to fall back to), not "leave unset".
+    rejection_damage: Optional[str] = None
+    rejection_misplaced_glue: Optional[str] = None
+    rejection_misplaced_pad: Optional[str] = None
+    rejection_glue_on_pad: Optional[str] = None
+    rejection_pad_placement_direction: Optional[str] = None
+    rejection_adhesion_issue: Optional[str] = None
 
 
 class ProductionSaveIn(BaseModel):
+    # DEPRECATED as of migration 0038 -- Rejection Classification is now
+    # collected per machine entry (see ProductionMachineEntryAttributesIn's
+    # rejection_* fields below, sent via machine_entry_attributes). These
+    # flat fields are accepted for backward-compatible payload shape only;
+    # the backend no longer writes them anywhere (see save_production_run).
     rejection_damage: Decimal = Decimal("0")
     rejection_misplaced_glue: Decimal = Decimal("0")
     rejection_misplaced_pad: Decimal = Decimal("0")

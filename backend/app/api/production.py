@@ -9,6 +9,7 @@ Generation.
 """
 import uuid
 from datetime import datetime
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session, joinedload
@@ -106,15 +107,35 @@ def create_production_run(
     return _serialize(run)
 
 
+def _sum_rejections(run: models.ProductionRun) -> dict:
+    # Migration 0038: Rejection Classification now lives per machine entry
+    # (own_entry_ids-style traversal, same as save_production_run's own
+    # loop below). This aggregate is only for ProductionSaveOut's response
+    # shape -- the frontend doesn't actually read these response fields
+    # today (it just refetches after a save), but keeping the response
+    # contract populated avoids silently returning zeros for existing
+    # callers of this route.
+    totals = {
+        "rejection_damage": Decimal("0"), "rejection_misplaced_glue": Decimal("0"),
+        "rejection_misplaced_pad": Decimal("0"), "rejection_glue_on_pad": Decimal("0"),
+        "rejection_pad_placement_direction": Decimal("0"), "rejection_adhesion_issue": Decimal("0"),
+    }
+    for mc in run.material_consumptions:
+        for e in mc.machine_entries:
+            totals["rejection_damage"] += e.rejection_damage or Decimal("0")
+            totals["rejection_misplaced_glue"] += e.rejection_misplaced_glue or Decimal("0")
+            totals["rejection_misplaced_pad"] += e.rejection_misplaced_pad or Decimal("0")
+            totals["rejection_glue_on_pad"] += e.rejection_glue_on_pad or Decimal("0")
+            totals["rejection_pad_placement_direction"] += e.rejection_pad_placement_direction or Decimal("0")
+            totals["rejection_adhesion_issue"] += e.rejection_adhesion_issue or Decimal("0")
+    return totals
+
+
 def _serialize_save(run: models.ProductionRun) -> schemas.ProductionSaveOut:
+    totals = _sum_rejections(run)
     return schemas.ProductionSaveOut(
         id=run.id, status=run.status, total_fg_pallets=run.total_fg_pallets,
-        rejection_damage=run.rejection_damage,
-        rejection_misplaced_glue=run.rejection_misplaced_glue,
-        rejection_misplaced_pad=run.rejection_misplaced_pad,
-        rejection_glue_on_pad=run.rejection_glue_on_pad,
-        rejection_pad_placement_direction=run.rejection_pad_placement_direction,
-        rejection_adhesion_issue=run.rejection_adhesion_issue,
+        **totals,
         wastage_entries=[
             schemas.ProductionWastageEntryOut(
                 id=w.id, machine_id=w.machine_id, trays=w.trays, reason=w.reason, sort_order=w.sort_order,
@@ -171,12 +192,11 @@ def save_production_run(
     if not run:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Production record not found.")
 
-    run.rejection_damage = payload.rejection_damage
-    run.rejection_misplaced_glue = payload.rejection_misplaced_glue
-    run.rejection_misplaced_pad = payload.rejection_misplaced_pad
-    run.rejection_glue_on_pad = payload.rejection_glue_on_pad
-    run.rejection_pad_placement_direction = payload.rejection_pad_placement_direction
-    run.rejection_adhesion_issue = payload.rejection_adhesion_issue
+    # NOTE: Rejection Classification is intentionally NOT written onto the
+    # flat run.rejection_* columns anymore (migration 0038 moved it to a
+    # per-machine-entry column on MaterialConsumptionMachineEntry, see the
+    # machine_entry_attributes loop below). payload.rejection_* is still
+    # accepted for backward-compatible payload shape but ignored here.
     # NOTE: total_fg_pallets is intentionally NOT written from here anymore
     # (payload.total_fg_pallets is accepted but ignored, kept only for
     # backward-compatible payload shape). "Number of FG Pallets Generated"
@@ -227,6 +247,21 @@ def save_production_run(
             entry.auto_padding = attrs.auto_padding or None
         if attrs.container_order_no is not None:
             entry.container_order_no = attrs.container_order_no or None
+        # Rejection Classification (migration 0038) -- unlike the override
+        # fields above, an empty value means 0, not "fall back to a shared
+        # reference value" (there is none for a rejection count).
+        if attrs.rejection_damage is not None:
+            entry.rejection_damage = Decimal(attrs.rejection_damage or "0")
+        if attrs.rejection_misplaced_glue is not None:
+            entry.rejection_misplaced_glue = Decimal(attrs.rejection_misplaced_glue or "0")
+        if attrs.rejection_misplaced_pad is not None:
+            entry.rejection_misplaced_pad = Decimal(attrs.rejection_misplaced_pad or "0")
+        if attrs.rejection_glue_on_pad is not None:
+            entry.rejection_glue_on_pad = Decimal(attrs.rejection_glue_on_pad or "0")
+        if attrs.rejection_pad_placement_direction is not None:
+            entry.rejection_pad_placement_direction = Decimal(attrs.rejection_pad_placement_direction or "0")
+        if attrs.rejection_adhesion_issue is not None:
+            entry.rejection_adhesion_issue = Decimal(attrs.rejection_adhesion_issue or "0")
 
     if run.status == "pending":
         run.status = "saved"

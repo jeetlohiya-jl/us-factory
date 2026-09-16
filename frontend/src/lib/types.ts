@@ -554,6 +554,10 @@ export interface ProductionMachineEntry {
   machine_no: string | null;
   auto_padding: string | null;
   container_order_no: string | null;
+  // Rejection Classification, per machine entry (migration 0038) -- was a
+  // single flat value shared by the whole run; now each machine gets its
+  // own independently-editable set of counts, same as production_details.
+  rejection_classification: ProductionRejectionClassification;
 }
 
 export interface ProductionListItem {
@@ -594,6 +598,9 @@ export interface ProductionWastageEntry {
 // Payload for api.saveProduction -- the single atomic write for the
 // editable Production feature (backend/app/api/production.py's PUT route).
 export interface ProductionSavePayload {
+  // DEPRECATED as of migration 0038 -- Rejection Classification moved to
+  // per-machine-entry fields in machine_entry_attributes below. Kept only
+  // for backward-compatible payload shape; the backend ignores these.
   rejection_damage: number;
   rejection_misplaced_glue: number;
   rejection_misplaced_pad: number;
@@ -604,12 +611,16 @@ export interface ProductionSavePayload {
   wastage_entries: { machine_id: string | null; trays: number | null; reason: string | null }[];
   // Section 12 -- per-machine-entry attribute overrides / new fields. A
   // field left undefined is not touched; "" explicitly clears an override
-  // back to "use the SKU Version's own value".
+  // back to "use the SKU Version's own value". Rejection Classification
+  // fields (migration 0038) follow the same "undefined = don't touch"
+  // convention, except "" there means 0, not "use a reference value".
   machine_entry_attributes: {
     machine_entry_id: string;
     weight?: string; pcs_per_sleeve?: string; sleeve_per_case?: string; total_pcs_per_pallet?: string;
     pad_type?: string; pad_color?: string; case_type?: string;
     machine_no?: string; auto_padding?: string; container_order_no?: string;
+    rejection_damage?: string; rejection_misplaced_glue?: string; rejection_misplaced_pad?: string;
+    rejection_glue_on_pad?: string; rejection_pad_placement_direction?: string; rejection_adhesion_issue?: string;
   }[];
   // This device's own clock ("HH:MM") -- saving this record now stamps
   // end_time on every Material Consumption machine entry it feeds, same
