@@ -76,6 +76,11 @@ export interface ChecklistItemRef {
   id: string;
   label: string;
   sort_order: number;
+  // "Vehicle arrived within scheduled time window" is informational only
+  // (migration 0022) -- affects_status=false there. Carried through so
+  // ChecklistStep's status-preview banner can exclude it from Hold/Approved,
+  // matching the backend's compute_status() exactly.
+  affects_status: boolean;
 }
 
 // "Pallets" | "Kgs" | "Units" -- migration 0031's quantity-unit dropdown,
@@ -110,6 +115,7 @@ export interface ChecklistAnswer {
   checklist_item_id: string;
   label: string;
   answer: "ok" | "not_ok" | null;
+  affects_status: boolean;
 }
 
 export interface InspectionListItem {

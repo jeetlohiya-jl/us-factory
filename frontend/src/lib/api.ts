@@ -1527,7 +1527,7 @@ export const api = {
     sbRequest<ChecklistItemRef[]>(() =>
       supabase
         .from("inward_vehicle_inspection_checklist_items")
-        .select("id, label, sort_order")
+        .select("id, label, sort_order, affects_status")
         .eq("is_active", true)
         .order("sort_order") as unknown as Promise<{ data: ChecklistItemRef[] | null; error: { message: string; code?: string } | null }>
     ),
@@ -1663,7 +1663,7 @@ export const api = {
           )
           .eq("id", id)
           .single(),
-        supabase.from("inward_vehicle_inspection_checklist_items").select("id,label,sort_order").eq("is_active", true).order("sort_order"),
+        supabase.from("inward_vehicle_inspection_checklist_items").select("id,label,sort_order,affects_status").eq("is_active", true).order("sort_order"),
         supabase.from("inward_qc_records").select("id,shipment_number").eq("linked_vehicle_inspection_id", id).limit(1),
       ]);
       if (error || !inspection) return { data: null, error: error || { message: "Inward Vehicle Inspection record not found." } };
@@ -1684,6 +1684,7 @@ export const api = {
       const answersByItem = new Map(((rawInspection.checklist_answers as { checklist_item_id: string; answer: "ok" | "not_ok" | null }[]) || []).map((a) => [a.checklist_item_id, a.answer]));
       const checklist_answers: InspectionDetail["checklist_answers"] = (checklistItems || []).map((ci) => ({
         checklist_item_id: ci.id, label: ci.label, answer: answersByItem.get(ci.id) ?? null,
+        affects_status: (ci as unknown as { affects_status: boolean }).affects_status,
       }));
       const linked = (linkedQc || [])[0] as { id: string; shipment_number: string } | undefined;
       const result: InspectionDetail = {

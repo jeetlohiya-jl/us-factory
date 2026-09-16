@@ -29,7 +29,10 @@ def _serialize_detail(db: Session, inspection: models.InwardVehicleInspection) -
     checklist_items = svc.get_active_checklist_items(db)
     answers_by_item = {str(a.checklist_item_id): a.answer for a in inspection.checklist_answers}
     checklist_out = [
-        schemas.ChecklistAnswerOut(checklist_item_id=ci.id, label=ci.label, answer=answers_by_item.get(str(ci.id)))
+        schemas.ChecklistAnswerOut(
+            checklist_item_id=ci.id, label=ci.label, answer=answers_by_item.get(str(ci.id)),
+            affects_status=ci.affects_status,
+        )
         for ci in checklist_items
     ]
     line_items_out = []
