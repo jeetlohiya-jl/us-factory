@@ -121,6 +121,8 @@ def create_customer_shipment(
             sku_code_snapshot=sku_code.code if sku_code else None,
             sku_version_snapshot=sku_version.version if sku_version else None,
             pallets_required=pallets_required,
+            pcs=li.get("pcs"),
+            pcs_per_sleeve=li.get("pcs_per_sleeve"),
         )
         db.add(line_item)
         db.flush()

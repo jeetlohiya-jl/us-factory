@@ -56,6 +56,16 @@ export default function MachinesPage() {
     }
   }
 
+  async function handleBatchNumberChange(m: Machine, value: string) {
+    const batch_number = value.trim() || null;
+    try {
+      await api.updateMachine(m.id, { batch_number });
+      refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to update machine");
+    }
+  }
+
   async function handleDelete(m: Machine) {
     if (!confirm(`Delete "${m.code}"? This cannot be undone.`)) return;
     try {
@@ -107,14 +117,22 @@ export default function MachinesPage() {
 
       <div className="card card-flush">
         <table className="data">
-          <thead><tr><th>Machine Code</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>Machine Code</th><th>Batch Number</th><th>Status</th><th></th></tr></thead>
           <tbody>
             {visible.length === 0 ? (
-              <tr className="empty-row"><td colSpan={3}>{loading ? "Loading…" : "No machines yet — add one above."}</td></tr>
+              <tr className="empty-row"><td colSpan={4}>{loading ? "Loading…" : "No machines yet — add one above."}</td></tr>
             ) : (
               visible.map((m) => (
                 <tr key={m.id}>
                   <td className="mono">{m.code}</td>
+                  <td>
+                    {canEdit ? (
+                      <input
+                        className="mono" style={{ width: 70 }} placeholder="e.g. 01" defaultValue={m.batch_number || ""}
+                        onBlur={(e) => e.target.value !== (m.batch_number || "") && handleBatchNumberChange(m, e.target.value)}
+                      />
+                    ) : (m.batch_number || "—")}
+                  </td>
                   <td><span className={`badge ${m.is_active ? "accepted" : "draft"}`}>{m.is_active ? "Active" : "Inactive"}</span></td>
                   <td style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
                     {canEdit && (

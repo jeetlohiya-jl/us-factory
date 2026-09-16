@@ -189,6 +189,16 @@ def create_rqc(db: Session, shipment_number: str, manufacturer: str | None = Non
         raise RqcError(f'Shipment Number "{shipment_number}" already exists.')
 
     ipqc = find_linked_ipqc_by_shipment_number(db, shipment_number)
+    # Best-effort default only, for continuity with whatever Production had
+    # already recorded (back when it still collected this input) -- not a
+    # live link. Once saved here, this record's own fg_pallets_generated is
+    # what every downstream reader (FG QR Generation) uses; Production's
+    # own total_fg_pallets is never read again after this one seed.
+    default_fg_pallets = (
+        ipqc.production_run.total_fg_pallets
+        if ipqc and ipqc.production_run and ipqc.production_run.total_fg_pallets
+        else None
+    )
     rec = models.RqcRecord(
         shipment_number=shipment_number,
         production_run_id=ipqc.production_run_id if ipqc else None,
@@ -198,6 +208,7 @@ def create_rqc(db: Session, shipment_number: str, manufacturer: str | None = Non
         sku_code_snapshot=ipqc.sku_code_snapshot if ipqc else None,
         sku_version_snapshot=ipqc.sku_version_snapshot if ipqc else None,
         manufacturer=manufacturer or RQC_MANUFACTURER_PLACEHOLDER,
+        fg_pallets_generated=default_fg_pallets,
         status="pending",
     )
     db.add(rec)

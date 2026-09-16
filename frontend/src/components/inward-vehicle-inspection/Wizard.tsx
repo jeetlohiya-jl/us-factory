@@ -8,13 +8,21 @@ import MultiImageField from "./MultiImageField";
 import ChecklistStep from "./ChecklistStep";
 
 const CATEGORY_LABELS: Record<Category, string> = {
-  tray: "Tray", pad: "Soaker Pad", polybag: "Polybag", cfb: "CFB", glue: "Glue",
+  tray: "Base Tray", fnp_tray: "FNP Tray", film: "Film",
+  pad: "Soaker Pad", polybag: "Polybag", cfb: "CFB", glue: "Glue",
 };
 
+// Categories whose Shipment Number is manually entered by the user rather
+// than auto-generated (mirrors backend CATEGORY_PREFIX's None entries in
+// vehicle_inspection_service.py -- Base Tray/FNP Tray/Film all arrive with
+// their own real-world shipment number, unlike Soaker Pad/Polybag/CFB/Glue).
+const MANUAL_SHIPMENT_CATEGORIES: Category[] = ["tray", "fnp_tray", "film"];
+
 function toLineItems(detail: InspectionDetail): EditableLineItem[] {
-  if (!detail.line_items.length) return [{ sku_code_id: "", sku_version_id: "", quantity: "" }];
+  if (!detail.line_items.length) return [{ sku_code_id: "", sku_version_id: "", quantity: "", unit: "Pallets" }];
   return detail.line_items.map((li) => ({
     sku_code_id: li.sku_code_id || "", sku_version_id: li.sku_version_id || "", quantity: String(li.quantity ?? ""),
+    unit: li.unit || "Pallets",
   }));
 }
 
@@ -66,7 +74,7 @@ export default function Wizard({
   function buildBasicPayload() {
     return {
       category,
-      shipment_number: category === "tray" ? shipmentNumber : detail.shipment_number,
+      shipment_number: MANUAL_SHIPMENT_CATEGORIES.includes(category) ? shipmentNumber : detail.shipment_number,
       truck_number: truck,
       container_number: container,
       vendor_name: vendor,
@@ -76,7 +84,7 @@ export default function Wizard({
       remarks,
       line_items: lineItems
         .filter((li) => li.sku_code_id && li.quantity)
-        .map((li) => ({ sku_code_id: li.sku_code_id, sku_version_id: li.sku_version_id || null, quantity: parseFloat(li.quantity) || 0 })),
+        .map((li) => ({ sku_code_id: li.sku_code_id, sku_version_id: li.sku_version_id || null, quantity: parseFloat(li.quantity) || 0, unit: li.unit })),
     };
   }
 
@@ -246,7 +254,7 @@ export default function Wizard({
                 </div>
                 <div className="field">
                   <label>Shipment Number <span style={{ color: "var(--red)" }}>*</span></label>
-                  {category === "tray" ? (
+                  {MANUAL_SHIPMENT_CATEGORIES.includes(category) ? (
                     <input
                       type="text"
                       disabled={readOnlyStep1}

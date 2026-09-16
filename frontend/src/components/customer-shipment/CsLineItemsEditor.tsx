@@ -36,7 +36,7 @@ export default function CsLineItemsEditor({
   }
 
   function addRow() {
-    onChange([...items, { key: `li-${Date.now()}-${Math.random().toString(36).slice(2)}`, sku_code_id: null, sku_version_id: null, pallets_required: "" }]);
+    onChange([...items, { key: `li-${Date.now()}-${Math.random().toString(36).slice(2)}`, sku_code_id: null, sku_version_id: null, pallets_required: "", pcs: "", pcs_per_sleeve: "" }]);
   }
 
   function removeRow(idx: number) {
@@ -56,7 +56,7 @@ export default function CsLineItemsEditor({
     <div>
       <table className="qc-obs-table">
         <thead>
-          <tr><th>SKU Code</th><th>SKU Version</th><th>No. of Pallets</th><th /></tr>
+          <tr><th>SKU Code</th><th>SKU Version</th><th>No. of Pallets</th><th>Pcs</th><th>Pcs/Sleeve</th><th /></tr>
         </thead>
         <tbody>
           {items.map((item, i) => (
@@ -79,6 +79,21 @@ export default function CsLineItemsEditor({
                   min={1}
                   value={item.pallets_required}
                   onChange={(e) => update(i, { pallets_required: e.target.value })}
+                />
+              </td>
+              <td>
+                <input
+                  type="number"
+                  min={0}
+                  value={item.pcs}
+                  onChange={(e) => update(i, { pcs: e.target.value })}
+                />
+              </td>
+              <td>
+                <input
+                  type="text"
+                  value={item.pcs_per_sleeve}
+                  onChange={(e) => update(i, { pcs_per_sleeve: e.target.value })}
                 />
               </td>
               <td><a className="btn-tertiary" onClick={() => removeRow(i)}>Remove</a></td>

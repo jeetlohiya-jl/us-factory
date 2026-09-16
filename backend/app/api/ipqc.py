@@ -1,14 +1,16 @@
 """
 IPQC (In-Process Quality Control) -- the transactional half of the hybrid
-split. Records themselves are auto-created (never manually) the moment a
-Material Consumption record is finalized -- see
-material_consumption_service.find_or_create_ipqc -- so there is no
-POST/create route here, matching "do not create unnecessary CRUD
-endpoints". List/detail reads are Supabase-direct (see frontend/src/lib/
-api.ts); this router exists solely for the one atomic save: Shift Incharge
-plus the full set of Check Time inspection blocks (each with its fixed
-8-defect Failure/Reason grid), matching the prototype's ipqcSaveDraft/
-ipqcSave exactly.
+split. Records are still primarily auto-created the moment a Material
+Consumption record is finalized -- see
+material_consumption_service.find_or_create_ipqc -- but as of migration
+0029 a manual "+ New Record" path also exists (the POST route below,
+backed by ipqc_service.create_ipqc), for starting a record before/without a
+matching Material Consumption finalize. List/detail reads are
+Supabase-direct (see frontend/src/lib/api.ts); this router handles the
+manual create route plus the one atomic save: Shift Incharge plus the full
+set of Check Time inspection blocks (each with its fixed 8-defect
+Failure/Reason grid), matching the prototype's ipqcSaveDraft/ipqcSave
+exactly.
 """
 import uuid
 
@@ -21,6 +23,7 @@ from app.api import schemas
 from app.api.deps import get_current_user
 from app.api import deps
 from app.adapters.auth.base import AuthenticatedUser
+from app.domain import ipqc_service
 
 router = APIRouter(prefix="/api/v1/ipqc-records", tags=["ipqc"])
 
@@ -54,6 +57,27 @@ def _serialize_save(rec: models.IpqcRecord) -> schemas.IpqcSaveOut:
             for b in sorted(rec.check_blocks, key=lambda b: b.sort_order)
         ],
     )
+
+
+@router.post("", response_model=schemas.IpqcCreateOut, status_code=status.HTTP_201_CREATED)
+def create_ipqc_record(
+    payload: schemas.IpqcCreateIn,
+    db: Session = Depends(get_db),
+    _current_user: AuthenticatedUser = Depends(get_current_user),
+    _perm: models.ModulePermission = Depends(require("create")),
+):
+    """Manual "+ New Record" creation -- see ipqc_service.create_ipqc for the
+    optional Shipment Number -> Production Run lookup. This is purely
+    additive: the existing pending/production-linked auto-creation workflow
+    (find_or_create_ipqc, fired from Material Consumption's finalize) is
+    completely untouched and remains how the vast majority of IPQC records
+    come into existence. Cancel on the frontend never calls this route at
+    all (no draft is created just by opening the panel), so there is
+    nothing to discard on Cancel here."""
+    rec = ipqc_service.create_ipqc(db, payload.shipment_number, payload.manufacturer)
+    db.commit()
+    db.refresh(rec)
+    return schemas.IpqcCreateOut(id=rec.id, shipment_number=rec.shipment_number, status=rec.status)
 
 
 @router.put("/{record_id}", response_model=schemas.IpqcSaveOut)

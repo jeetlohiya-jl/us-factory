@@ -1,7 +1,8 @@
 "use client";
 import { useState } from "react";
 import { api, ApiError } from "@/lib/api";
-import type { MaterialConsumptionDetail, MaterialConsumptionMachineEntry, Machine, Permissions, SecondaryMaterialCategory } from "@/lib/types";
+import type { MaterialConsumptionDetail, MaterialConsumptionMachineEntry, Machine, Permissions, SecondaryMaterialCategory, QuantityUnit } from "@/lib/types";
+import { QUANTITY_UNITS } from "@/lib/types";
 import CameraQrScanner from "@/components/storage/CameraQrScanner";
 
 const CATEGORY_LABELS: Record<string, string> = { tray: "Base Tray", fgtray: "FG Non-Padded Tray" };
@@ -83,20 +84,28 @@ function ScanBox({ placeholder, busy, onScan }: { placeholder: string; busy: boo
  * scoped to this one entry's own pallet set instead of the whole record's.
  */
 function MachineEntryPanel({
-  entry, index, canEdit, canRemove, busy, onScanPrimary, onScanSecondary, onRemovePallet, onQuantityChange, onRemoveEntry,
+  entry, index, canEdit, canRemove, busy, onScanPrimary, onScanSecondary, onRemovePallet, onQuantityChange, onPrimaryConsumptionChange, onRemoveEntry,
 }: {
   entry: MaterialConsumptionMachineEntry;
   index: number;
   canEdit: boolean;
   canRemove: boolean;
   busy: boolean;
-  onScanPrimary: (payload: string) => void;
+  onScanPrimary: (payload: string, quantity: string, unit: QuantityUnit, fullyConsumed: boolean) => void;
   onScanSecondary: (category: SecondaryMaterialCategory, payload: string) => void;
   onRemovePallet: (rowId: string) => void;
   onQuantityChange: (rowId: string, value: string) => void;
+  onPrimaryConsumptionChange: (rowId: string, quantity: string, unit: QuantityUnit, fullyConsumed: boolean) => void;
   onRemoveEntry: () => void;
 }) {
   const [secondaryCategory, setSecondaryCategory] = useState<SecondaryMaterialCategory | "">("");
+  // Section 8 -- partial pallet consumption: the Quantity/Unit/"Fully
+  // Consumed" the operator wants applied to the NEXT primary-pallet scan.
+  // Defaults reproduce the pre-Section-8 behaviour (whole pallet, fully
+  // consumed) for anyone who doesn't touch these controls.
+  const [scanQty, setScanQty] = useState("1");
+  const [scanUnit, setScanUnit] = useState<QuantityUnit>("Pallets");
+  const [scanFullyConsumed, setScanFullyConsumed] = useState(true);
   const hasPrimary = entry.pallets.length > 0;
 
   return (
@@ -121,22 +130,80 @@ function MachineEntryPanel({
 
       {canEdit && !entry.end_time && (
         <div style={{ marginBottom: 14 }}>
-          <ScanBox placeholder="Scan or enter RM pallet QR / ID" busy={busy} onScan={onScanPrimary} />
+          <div className="form-grid" style={{ marginBottom: 8, alignItems: "end" }}>
+            <div className="field" style={{ maxWidth: 120 }}>
+              <label>Quantity</label>
+              <input type="number" step="0.01" min="0" value={scanQty} onChange={(e) => setScanQty(e.target.value)} />
+            </div>
+            <div className="field" style={{ maxWidth: 130 }}>
+              <label>Unit</label>
+              <select value={scanUnit} onChange={(e) => setScanUnit(e.target.value as QuantityUnit)}>
+                {QUANTITY_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+              </select>
+            </div>
+            <div className="field" style={{ maxWidth: 220 }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 400 }}>
+                <input type="checkbox" checked={scanFullyConsumed} onChange={(e) => setScanFullyConsumed(e.target.checked)} />
+                Fully consumes this pallet
+              </label>
+            </div>
+          </div>
+          <ScanBox
+            placeholder="Scan or enter RM pallet QR / ID"
+            busy={busy}
+            onScan={(payload) => {
+              onScanPrimary(payload, scanQty || "1", scanUnit, scanFullyConsumed);
+              // Usability (Section 10): reset the consumption controls back
+              // to the safe default (whole pallet, fully consumed) right
+              // after each scan, so a "partial draw" setting left over from
+              // the previous pallet can never be silently applied to the
+              // next different pallet scanned in.
+              setScanQty("1");
+              setScanUnit("Pallets");
+              setScanFullyConsumed(true);
+            }}
+          />
+          {!scanFullyConsumed && (
+            <div className="hint-text" style={{ marginTop: 6 }}>
+              Pallet will stay available in RM Storage for future consumption once this record is finalized.
+            </div>
+          )}
         </div>
       )}
 
+      {hasPrimary && (
+        <div className="hint-text" style={{ marginBottom: 6 }}>
+          {entry.pallets.length} pallet{entry.pallets.length === 1 ? "" : "s"} scanned for this machine.
+        </div>
+      )}
       <table className="qc-obs-table" style={{ marginBottom: 20 }}>
-        <thead><tr><th>Pallet</th><th>SKU Name</th><th>SKU Version</th><th style={{ width: 90 }}>Quantity</th><th></th></tr></thead>
+        <thead><tr><th>Pallet</th><th>SKU Name</th><th>SKU Version</th><th style={{ width: 90 }}>Quantity</th><th style={{ width: 90 }}>Unit</th><th style={{ width: 130 }}>Fully Consumed</th><th></th></tr></thead>
         <tbody>
           {entry.pallets.length === 0 ? (
-            <tr><td colSpan={5} className="hint-text">No pallet scanned yet.</td></tr>
+            <tr><td colSpan={7} className="hint-text">No pallet scanned yet.</td></tr>
           ) : (
             entry.pallets.map((p) => (
               <tr key={p.id}>
                 <td className="mono">{p.pallet_display_id}</td>
                 <td>{p.sku_code}</td>
                 <td>{p.sku_version}</td>
-                <td>{p.quantity}</td>
+                <td>
+                  {canEdit && !entry.end_time ? (
+                    <input
+                      type="number" step="0.01" defaultValue={String(p.quantity)}
+                      onBlur={(e) => onPrimaryConsumptionChange(p.id, e.target.value, p.unit, p.fully_consumed)}
+                    />
+                  ) : p.quantity}
+                </td>
+                <td>{p.unit}</td>
+                <td>
+                  {canEdit && !entry.end_time ? (
+                    <input
+                      type="checkbox" checked={p.fully_consumed}
+                      onChange={(e) => onPrimaryConsumptionChange(p.id, String(p.quantity), p.unit, e.target.checked)}
+                    />
+                  ) : (p.fully_consumed ? "Yes" : "No — partial")}
+                </td>
                 <td>{canEdit && !entry.end_time && <a className="btn-tertiary" style={{ cursor: "pointer" }} onClick={() => onRemovePallet(p.id)}>Remove</a>}</td>
               </tr>
             ))
@@ -149,8 +216,13 @@ function MachineEntryPanel({
         const combined = SECONDARY_CATEGORIES.flatMap((cat) => entry.secondary_materials[cat].map((r) => ({ ...r, cat })));
         return combined.length > 0 ? (
           <table className="qc-obs-table" style={{ marginBottom: 14 }}>
-            <thead><tr><th style={{ width: 90 }}>Type</th><th>Pallet</th><th>SKU</th><th style={{ width: 110 }}>Quantity</th><th></th></tr></thead>
+            <thead><tr><th style={{ width: 90 }}>Type</th><th>Pallet</th><th>SKU</th><th style={{ width: 110 }}>Quantity</th><th style={{ width: 90 }}>Unit</th><th></th></tr></thead>
             <tbody>
+              {/* Section 9: every distinct pallet scanned for a secondary
+                  category shows as its own row here -- an operator can keep
+                  scanning more CFB/Pad/Glue/Polybag pallets into the same
+                  record with no cap and no FIFO/auto-assignment; each scan
+                  is its own explicit row, same as primary pallets. */}
               {combined.map((r) => (
                 <tr key={r.id}>
                   <td>{SECONDARY_LABELS[r.cat]}</td>
@@ -162,6 +234,7 @@ function MachineEntryPanel({
                       onBlur={(e) => onQuantityChange(r.id, e.target.value)}
                     />
                   </td>
+                  <td>{r.unit}</td>
                   <td>{canEdit && !entry.end_time && <a className="btn-tertiary" style={{ cursor: "pointer" }} onClick={() => onRemovePallet(r.id)}>Remove</a>}</td>
                 </tr>
               ))}
@@ -238,16 +311,25 @@ export default function MaterialConsumptionWizard({
   );
   const canProceedToPage2 = !!detail.shift && detail.machine_entries.length > 0 && detail.machine_entries.every((e) => e.machine_id);
 
-  async function handlePrimaryScan(entryId: string, payload: string) {
+  async function handlePrimaryScan(entryId: string, payload: string, quantity: string, unit: QuantityUnit, fullyConsumed: boolean) {
     setBusy(true);
     setError(null);
     try {
-      const updated = await api.scanMaterialConsumptionPallet(mcId, entryId, payload, nowHHMM());
+      const updated = await api.scanMaterialConsumptionPallet(mcId, entryId, payload, nowHHMM(), { quantity, unit, fullyConsumed });
       setDetail(updated);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Could not resolve that pallet QR.");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function handlePrimaryConsumptionChange(rowId: string, quantity: string, unit: QuantityUnit, fullyConsumed: boolean) {
+    try {
+      const updated = await api.setMaterialConsumptionPalletQuantity(mcId, rowId, quantity, { unit, fullyConsumed });
+      setDetail(updated);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to update consumption");
     }
   }
 
@@ -465,10 +547,11 @@ export default function MaterialConsumptionWizard({
                   canEdit={canEdit}
                   canRemove={detail.machine_entries.length > 1}
                   busy={busy}
-                  onScanPrimary={(payload) => handlePrimaryScan(entry.id, payload)}
+                  onScanPrimary={(payload, quantity, unit, fullyConsumed) => handlePrimaryScan(entry.id, payload, quantity, unit, fullyConsumed)}
                   onScanSecondary={(cat, payload) => handleSecondaryScan(entry.id, cat, payload)}
                   onRemovePallet={handleRemovePallet}
                   onQuantityChange={handleQuantityChange}
+                  onPrimaryConsumptionChange={handlePrimaryConsumptionChange}
                   onRemoveEntry={() => handleRemoveMachineEntry(entry.id)}
                 />
               ))}

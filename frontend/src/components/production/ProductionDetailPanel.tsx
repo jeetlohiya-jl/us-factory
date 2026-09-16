@@ -35,19 +35,29 @@ const REJECTION_FIELDS: { key: keyof ProductionDetail["rejection_classification"
 
 type EditableWastage = { machine_id: string | null; trays: number | null; reason: string | null };
 
+// Section 12: which EditableAttrs key each editable row writes to, when the
+// row is editable at all (SKU Name is always pure display -- there's no
+// override field for it, changing SKU means scanning a different pallet).
+type AttrKey = "machine_no" | "auto_padding" | "container_order_no" | "weight" | "pcs_per_sleeve" | "sleeve_per_case" | "total_pcs_per_pallet" | "pad_type" | "pad_color" | "case_type";
+
 // Production Details rows, matching the prototype's PROD_ATTRIBUTES exactly
 // (label text included) -- one row per attribute, one column per machine.
-const PROD_DETAIL_ROWS: { label: string; get: (e: ProductionDetail["machine_entries"][number]) => React.ReactNode }[] = [
+// Section 12 adds Machine No./Auto Padding/Container Order No. (brand new)
+// and makes every backend-populated attribute editable via `attrKey`.
+const PROD_DETAIL_ROWS: { label: string; attrKey?: AttrKey; get: (e: ProductionDetail["machine_entries"][number]) => React.ReactNode }[] = [
   { label: "SKU Name", get: (e) => e.sku_code },
-  { label: "Weight", get: (e) => e.production_details?.prod_weight },
-  { label: "Pcs/Sleeve", get: (e) => e.production_details?.prod_pcs_per_sleeve },
-  { label: "Sleeve/Case", get: (e) => e.production_details?.prod_sleeve_per_case },
-  { label: "Total No. of Pcs/Pallet", get: (e) => e.production_details?.prod_total_pcs_per_pallet },
+  { label: "Machine No.", attrKey: "machine_no", get: (e) => e.machine_no },
+  { label: "Auto Padding", attrKey: "auto_padding", get: (e) => e.auto_padding },
+  { label: "Container Order No.", attrKey: "container_order_no", get: (e) => e.container_order_no },
+  { label: "Weight", attrKey: "weight", get: (e) => e.production_details?.prod_weight },
+  { label: "Pcs/Sleeve", attrKey: "pcs_per_sleeve", get: (e) => e.production_details?.prod_pcs_per_sleeve },
+  { label: "Sleeve/Case", attrKey: "sleeve_per_case", get: (e) => e.production_details?.prod_sleeve_per_case },
+  { label: "Total No. of Pcs/Pallet", attrKey: "total_pcs_per_pallet", get: (e) => e.production_details?.prod_total_pcs_per_pallet },
   { label: "Total No. of Pallets", get: (e) => e.production_details?.prod_total_pallets },
   { label: "Target Shots", get: (e) => e.production_details?.prod_target_shots },
-  { label: "Pad Type/Name/Code", get: (e) => e.production_details?.prod_pad_type },
-  { label: "Pad Color", get: (e) => e.production_details?.prod_pad_color },
-  { label: "Case Type (Combo/Regular)", get: (e) => e.production_details?.prod_case_type },
+  { label: "Pad Type/Name/Code", attrKey: "pad_type", get: (e) => e.production_details?.prod_pad_type },
+  { label: "Pad Color", attrKey: "pad_color", get: (e) => e.production_details?.prod_pad_color },
+  { label: "Case Type (Combo/Regular)", attrKey: "case_type", get: (e) => e.production_details?.prod_case_type },
 ];
 
 function sumProductionDetails(entries: ProductionDetail["machine_entries"], key: "prod_total_pcs_per_pallet"): number | null {
@@ -94,12 +104,33 @@ export default function ProductionDetailPanel({
   onEdit?: () => void;
 }) {
   const [rc, setRc] = useState(record.rejection_classification);
-  const [totalFgPallets, setTotalFgPallets] = useState<number | "">(record.total_fg_pallets || "");
   const [wastage, setWastage] = useState<EditableWastage[]>(
     record.wastage_entries.map((w) => ({ machine_id: w.machine_id, trays: w.trays, reason: w.reason }))
   );
+  // Section 12: keyed by machine_consumption_id -> { attrKey -> value },
+  // seeded from the record's current (already-override-merged) values so
+  // editing starts from what's actually displayed.
+  const [attrEdits, setAttrEdits] = useState<Record<string, Partial<Record<AttrKey, string>>>>(
+    Object.fromEntries(
+      record.machine_entries.map((e) => [
+        e.machine_consumption_id,
+        {
+          machine_no: e.machine_no || "", auto_padding: e.auto_padding || "", container_order_no: e.container_order_no || "",
+          weight: e.production_details?.prod_weight || "", pcs_per_sleeve: e.production_details?.prod_pcs_per_sleeve || "",
+          sleeve_per_case: e.production_details?.prod_sleeve_per_case || "",
+          total_pcs_per_pallet: e.production_details?.prod_total_pcs_per_pallet != null ? String(e.production_details.prod_total_pcs_per_pallet) : "",
+          pad_type: e.production_details?.prod_pad_type || "", pad_color: e.production_details?.prod_pad_color || "",
+          case_type: e.production_details?.prod_case_type || "",
+        },
+      ])
+    )
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  function setAttrEdit(entryId: string, key: AttrKey, value: string) {
+    setAttrEdits((prev) => ({ ...prev, [entryId]: { ...prev[entryId], [key]: value } }));
+  }
 
   // "Edit" is the focused fill-in form -- just Rejection Classification /
   // Wastage / FG Pallets, the fields this record actually needs a human to
@@ -136,8 +167,16 @@ export default function ProductionDetailPanel({
         rejection_glue_on_pad: rc.glue_on_pad,
         rejection_pad_placement_direction: rc.pad_placement_direction,
         rejection_adhesion_issue: rc.adhesion_issue,
-        total_fg_pallets: totalFgPallets === "" ? 0 : Number(totalFgPallets),
+        // No longer editable here (moved to RQC's "Number of FG Pallets
+        // Generated" -- see RqcDetailPanel.tsx); the backend ignores this
+        // field now (api/production.py's save route), so this just echoes
+        // back whatever the record already had rather than changing the
+        // payload shape.
+        total_fg_pallets: record.total_fg_pallets || 0,
         wastage_entries: wastage.map((w) => ({ machine_id: w.machine_id, trays: w.trays, reason: w.reason })),
+        machine_entry_attributes: Object.entries(attrEdits).map(([machine_entry_id, edits]) => ({
+          machine_entry_id, ...edits,
+        })),
         // This save is now what stamps End Time on every Material
         // Consumption machine entry it feeds -- send this device's own
         // clock, same convention as Material Consumption's Start Time.
@@ -191,7 +230,13 @@ export default function ProductionDetailPanel({
             </div>
           )}
 
-          {!isEdit && record.machine_entries.length > 0 && (
+          {/* Section 12: visible AND editable in both the Pending-completion
+              (isEdit) and Edit flows -- no longer hidden behind `!isEdit`.
+              Backend-populated attributes stay editable per machine entry
+              (an override, never a change to the shared SKU Version data);
+              Machine No./Auto Padding/Container Order No. are brand-new
+              fields with no other source. */}
+          {record.machine_entries.length > 0 && (
             <div className="detail-card">
               <h3>Production Details</h3>
               <div style={{ overflowX: "auto" }}>
@@ -207,7 +252,17 @@ export default function ProductionDetailPanel({
                       <tr key={row.label}>
                         <td>{row.label}</td>
                         {record.machine_entries.map((e) => (
-                          <td key={e.machine_consumption_id}>{row.get(e) ?? "—"}</td>
+                          <td key={e.machine_consumption_id}>
+                            {editable && row.attrKey ? (
+                              <input
+                                type="text"
+                                value={attrEdits[e.machine_consumption_id]?.[row.attrKey] ?? ""}
+                                onChange={(ev) => setAttrEdit(e.machine_consumption_id, row.attrKey!, ev.target.value)}
+                              />
+                            ) : (
+                              row.get(e) ?? "—"
+                            )}
+                          </td>
                         ))}
                       </tr>
                     ))}
@@ -347,16 +402,8 @@ export default function ProductionDetailPanel({
             <h3>FG Pallets</h3>
             <div className="field">
               <label>Total Number of FG Pallets Generated</label>
-              {editable ? (
-                <input
-                  type="number"
-                  min={0}
-                  value={totalFgPallets}
-                  onChange={(e) => setTotalFgPallets(e.target.value === "" ? "" : Number(e.target.value))}
-                />
-              ) : (
-                <div className="detail-kv-value">{record.total_fg_pallets || "—"}</div>
-              )}
+              <div className="detail-kv-value">{record.total_fg_pallets || "—"}</div>
+              <div className="hint-text">Now entered in RQC's "Number of FG Pallets Generated" field -- no longer editable here.</div>
             </div>
           </div>
 

@@ -38,6 +38,7 @@ export default function StorageRecordDetailPanel({ record, onClose }: { record: 
               <Kv label="Shipment Number" value={record.shipment_number} />
               <Kv label="SKU Name" value={record.sku_code} />
               <Kv label="SKU Version" value={record.sku_version} />
+              {record.storage_type === "fg" && <Kv label="Batch Code" value={<span className="mono">{record.batch_code}</span>} />}
               <Kv label="Location" value={<span className="mono">{record.location_display_id}</span>} />
             </div>
           </div>

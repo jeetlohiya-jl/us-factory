@@ -126,6 +126,8 @@ def create_fg_qr_from_run(
     # so it must honor the same gate, not bypass it.
     if not run.rqc_record or run.rqc_record.status != "approved":
         raise HTTPException(status_code=422, detail="Only a Production Run whose RQC record is Approved can feed FG QR Generation.")
-    rec = qr_generation_service.get_or_create_fg_qr_for_production_run(db, run)
+    rec = qr_generation_service.get_or_create_fg_qr_for_production_run(
+        db, run, fg_pallets_generated=run.rqc_record.fg_pallets_generated if run.rqc_record else None,
+    )
     db.commit()
     return serialize_qr_detail(_get_or_404(db, rec.id))

@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
-import type { RqcDetail, RqcDefectResult, RqcCoaObservation } from "@/lib/types";
+import type { RqcDetail, RqcDefectResult, RqcCoaObservation, RqcMachineAllocation } from "@/lib/types";
 import { RQC_DEFECT_GROUPS, RQC_COA_BASE, RQC_COA_FUNCTIONAL, RQC_COA_PACKING, RQC_COA_PRINTING } from "@/lib/types";
 import type { RqcCoaParamDef } from "@/lib/types";
 import { api } from "@/lib/api";
@@ -124,6 +124,22 @@ export default function RqcDetailPanel({
   onEdit?: () => void;
 }) {
   const [manufacturer, setManufacturer] = useState(record.manufacturer || "");
+  const [fgPalletsGenerated, setFgPalletsGenerated] = useState(
+    record.fg_pallets_generated != null ? String(record.fg_pallets_generated) : ""
+  );
+  // Section 11 -- FG Storage Batch Code inputs.
+  const [tablePersonNumber, setTablePersonNumber] = useState(record.table_person_number || "");
+  const [allocations, setAllocations] = useState<Record<string, string>>(
+    Object.fromEntries(record.machine_allocations.map((a) => [a.machine_id, String(a.fg_pallets_count)]))
+  );
+  const isMultiMachine = record.production_run_machines.length > 1;
+
+  function setAllocationCount(machineId: string, value: string) {
+    setAllocations((prev) => ({ ...prev, [machineId]: value }));
+  }
+
+  const allocationTotal = Object.values(allocations).reduce((sum, v) => sum + (Number(v) || 0), 0);
+  const fgTotal = fgPalletsGenerated === "" ? 0 : Number(fgPalletsGenerated);
   const [overallResult, setOverallResult] = useState(record.overall_result || "");
   const [defects, setDefects] = useState<Record<number, RqcDefectResult>>(
     Object.fromEntries(record.defect_results.map((d) => [d.defect_sr, d]))
@@ -164,6 +180,11 @@ export default function RqcDetailPanel({
       await api.saveRqc(record.id, {
         manufacturer: manufacturer || null,
         overall_result: overallResult || null,
+        fg_pallets_generated: fgPalletsGenerated === "" ? null : Number(fgPalletsGenerated),
+        table_person_number: tablePersonNumber || null,
+        machine_allocations: Object.entries(allocations)
+          .filter(([, v]) => Number(v) > 0)
+          .map(([machine_id, v]) => ({ machine_id, fg_pallets_count: Number(v) })),
         save_mode: saveMode,
         defect_results: Object.values(defects).filter((d) => d.found !== null || !!d.remarks),
         coa_observations: Object.values(coa).filter((o) => !!o.observation),
@@ -192,12 +213,90 @@ export default function RqcDetailPanel({
           {record.status === "hold" && (
             <HoldReleaseSection module="rqc" recordId={record.id} canFill={canEdit} />
           )}
+
+          {/* Number of FG Pallets Generated -- moved here from Production
+              per the updated workflow; this is now the single source of
+              truth FG QR Generation reads (see qr_generation_service.
+              get_or_create_fg_qr_for_production_run). Placed first, at the
+              top of the form, exactly as specified. */}
+          <div className="detail-card">
+            <h3>FG Pallets Generated</h3>
+            <div className="field" style={{ maxWidth: 320 }}>
+              <label>Number of FG Pallets Generated</label>
+              {editable ? (
+                <input
+                  type="number" min={0} placeholder="0"
+                  value={fgPalletsGenerated}
+                  onChange={(e) => setFgPalletsGenerated(e.target.value)}
+                />
+              ) : (
+                <div className="detail-kv-value">{record.fg_pallets_generated ?? record.total_fg_pallets ?? "—"}</div>
+              )}
+            </div>
+          </div>
+
+          {/* Section 11 -- FG Storage Batch Code inputs: RQC Table/Person
+              Number (brand-new field) and, for a Production Run spanning
+              more than one machine, how many of the FG Pallets Generated
+              came off each machine. A single-machine run needs no manual
+              split -- the backend auto-assigns the whole count to that one
+              machine at QR-generate time. */}
+          <div className="detail-card">
+            <h3>Batch Code Details</h3>
+            <div className="field" style={{ maxWidth: 320 }}>
+              <label>RQC Table/Person Number</label>
+              {editable ? (
+                <input
+                  type="text" placeholder="e.g. 1"
+                  value={tablePersonNumber}
+                  onChange={(e) => setTablePersonNumber(e.target.value)}
+                />
+              ) : (
+                <div className="detail-kv-value">{record.table_person_number || "—"}</div>
+              )}
+            </div>
+            {isMultiMachine && (
+              <div style={{ marginTop: 14 }}>
+                <div className="section-label">Machine Allocation</div>
+                <div className="hint-text" style={{ marginBottom: 8 }}>
+                  This Production Run spans multiple machines -- split Number of FG Pallets Generated across them
+                  so each pallet's Batch Code names the machine that actually produced it.
+                </div>
+                <table className="qc-obs-table" style={{ marginBottom: 6 }}>
+                  <thead><tr><th>Machine</th><th style={{ width: 130 }}>FG Pallets</th></tr></thead>
+                  <tbody>
+                    {record.production_run_machines.map((m) => (
+                      <tr key={m.id}>
+                        <td className="mono">{m.code}</td>
+                        <td>
+                          {editable ? (
+                            <input
+                              type="number" min={0} placeholder="0"
+                              value={allocations[m.id] ?? ""}
+                              onChange={(e) => setAllocationCount(m.id, e.target.value)}
+                            />
+                          ) : (
+                            record.machine_allocations.find((a: RqcMachineAllocation) => a.machine_id === m.id)?.fg_pallets_count ?? 0
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {editable && allocationTotal !== fgTotal && (
+                  <div className="hint-text" style={{ color: "var(--red)" }}>
+                    Allocated {allocationTotal}, but Number of FG Pallets Generated is {fgTotal}. These must match before QR codes can be generated.
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           {showContextCards && (
             <div className="detail-card">
               <h3>Product and Shipment Details</h3>
               <div className="detail-grid">
                 <Kv label="Shipment Number" value={record.shipment_number ? <span className="mono">{record.shipment_number}</span> : "—"} />
-                <Kv label="No. of Pallets" value={record.total_fg_pallets ?? "—"} />
                 <Kv label="Shift" value={record.shift} />
                 <Kv label="Date" value={record.date} />
               </div>

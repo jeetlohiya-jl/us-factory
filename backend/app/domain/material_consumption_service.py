@@ -72,14 +72,29 @@ def _assert_not_already_allocated(db: Session, pallet: models.Pallet, exclude_mc
     (on this machine entry or any other machine entry of the same record)
     is checked separately (by the caller, before this) so it gets the more
     specific 'already scanned into this record' message instead of this
-    generic cross-record one."""
-    q = db.query(models.MaterialConsumptionPallet).filter(models.MaterialConsumptionPallet.pallet_id == pallet.id)
+    generic cross-record one.
+
+    Scoped to still-DRAFT records only (as of migration 0032/Section 8):
+    once a record is finalized, whether the pallet is available again is
+    governed entirely by its own lifecycle_status (_assert_pallet_available)
+    -- a partially-consumed pallet is left 'stored' precisely so it CAN be
+    picked up by a later record. This check exists purely to stop two
+    operators double-booking the same physical pallet into two
+    simultaneously in-progress drafts before either has finalized."""
+    q = (
+        db.query(models.MaterialConsumptionPallet)
+        .join(models.MaterialConsumption, models.MaterialConsumptionPallet.material_consumption_id == models.MaterialConsumption.id)
+        .filter(
+            models.MaterialConsumptionPallet.pallet_id == pallet.id,
+            models.MaterialConsumption.status == "draft",
+        )
+    )
     if exclude_mc_id:
         q = q.filter(models.MaterialConsumptionPallet.material_consumption_id != exclude_mc_id)
     row = q.first()
     if row:
         raise MaterialConsumptionError(
-            f"Pallet {pallet.display_id} has already been scanned into another Material Consumption record."
+            f"Pallet {pallet.display_id} is already scanned into another in-progress Material Consumption record."
         )
 
 
@@ -124,7 +139,18 @@ def set_machine_entry_machine(db: Session, mc: models.MaterialConsumption, entry
 def add_primary_pallet(
     db: Session, mc: models.MaterialConsumption, entry: models.MaterialConsumptionMachineEntry,
     raw_scan: str, client_time: str | None = None, actor_user_id=None,
+    quantity: Decimal | None = None, unit: str = "Pallets", fully_consumed: bool = True,
 ) -> models.MaterialConsumptionPallet:
+    """
+    quantity/unit/fully_consumed (Section 8): how much of THIS scan the
+    operator is drawing, and whether that finishes the pallet off. Defaults
+    (quantity=1 "Pallets", fully_consumed=True) reproduce the pre-Section-8
+    behaviour exactly for a caller that doesn't pass them. A pallet scanned
+    with fully_consumed=False is left at lifecycle_status='stored' by
+    finalize() (never flipped to 'consumed'), which is what makes it
+    eligible to be scanned again into a later record -- see
+    _assert_not_already_allocated and _assert_pallet_available.
+    """
     if mc.status != "draft":
         raise MaterialConsumptionError("This Material Consumption record has already been saved and cannot be changed.")
 
@@ -189,7 +215,8 @@ def add_primary_pallet(
 
     row = models.MaterialConsumptionPallet(
         material_consumption_id=mc.id, machine_entry_id=entry.id, role="primary", pallet_id=pallet.id,
-        quantity=Decimal("1"), sort_order=len(entry.pallets),
+        quantity=quantity if quantity is not None else Decimal("1"), unit=unit or "Pallets",
+        fully_consumed=fully_consumed, sort_order=len(entry.pallets),
     )
     db.add(row)
     db.flush()
@@ -200,6 +227,17 @@ def add_secondary_pallet(
     db: Session, mc: models.MaterialConsumption, entry: models.MaterialConsumptionMachineEntry,
     raw_scan: str, category: str,
 ) -> models.MaterialConsumptionPallet:
+    """
+    Section 9: a secondary material category (cfb/pad/glue/polybag) is NOT
+    capped at one pallet per machine entry -- the only de-dup check below is
+    "this exact pallet was already scanned into this record" (already_scanned),
+    never "a pallet of this category already exists here". Call this as many
+    times as the operator scans distinct CFB/Pad/Glue/Polybag pallets; each
+    call adds its own row (serialize_mc_machine_entry groups them into
+    secondary_materials.<category> as a list, not a single slot). Selection
+    is always the operator's own explicit scan -- never FIFO, never
+    auto-picked from RM Storage -- matching this module's own docstring.
+    """
     if mc.status != "draft":
         raise MaterialConsumptionError("This Material Consumption record has already been saved and cannot be changed.")
     if category not in SECONDARY_ROLES:
@@ -249,13 +287,29 @@ def remove_pallet(db: Session, mc: models.MaterialConsumption, row_id) -> None:
         entry.sku_version_snapshot = None
 
 
-def set_secondary_quantity(db: Session, mc: models.MaterialConsumption, row_id, quantity: Decimal) -> models.MaterialConsumptionPallet:
+def update_pallet_consumption(
+    db: Session, mc: models.MaterialConsumption, row_id,
+    quantity: Decimal | None = None, unit: str | None = None, fully_consumed: bool | None = None,
+) -> models.MaterialConsumptionPallet:
+    """
+    Edits an already-scanned pallet row's Quantity/Unit/"Fully Consumed"
+    flag -- used both for secondary materials (which have always been
+    editable this way) and, as of Section 8, for primary pallets too, since
+    the whole point of partial consumption is that the operator can say
+    "actually only used half of this" after the initial scan. mc.status
+    must still be 'draft' -- a saved record's consumption is locked in.
+    """
+    if mc.status != "draft":
+        raise MaterialConsumptionError("This Material Consumption record has already been saved and cannot be changed.")
     row = next((p for p in _all_pallets(mc) if p.id == row_id), None)
     if not row:
         raise MaterialConsumptionError("Pallet not found on this record.")
-    if row.role == "primary":
-        raise MaterialConsumptionError("Primary pallet quantity is fixed and cannot be edited.")
-    row.quantity = quantity
+    if quantity is not None:
+        row.quantity = quantity
+    if unit is not None:
+        row.unit = unit
+    if fully_consumed is not None:
+        row.fully_consumed = fully_consumed
     db.flush()
     return row
 
@@ -380,10 +434,14 @@ def _derive_shipment_number(mc: models.MaterialConsumption) -> str | None:
 
 
 def find_or_create_ipqc(db: Session, run: models.ProductionRun, mc: models.MaterialConsumption) -> models.IpqcRecord:
-    """One IPQC record per Production Run (unique constraint on
-    production_run_id backstops this) -- dedup falls straight out of the
-    Production Run being itself found-or-created by (date, shift), matching
-    maFindOrCreateIpqc's own linkId of 'ma-run:'+date+'|'+shift exactly.
+    """One IPQC record per Production Run on this (auto-creation) path --
+    enforced by the find-before-create query below, not a DB constraint
+    (migration 0029 dropped the unique constraint on production_run_id so
+    that IPQC's separate manual "+ New Record" path, see
+    ipqc_service.create_ipqc, can also create records). Dedup still falls
+    straight out of the Production Run being itself found-or-created by
+    (date, shift), matching maFindOrCreateIpqc's own linkId of
+    'ma-run:'+date+'|'+shift exactly.
 
     Autopopulates every field the prototype's maFindOrCreateIpqc fills in:
     Shipment Number (derived from the consumed primary pallet, same as
@@ -471,10 +529,26 @@ def finalize(db: Session, mc: models.MaterialConsumption, actor_user_id=None) ->
                 )
 
     for row in all_pallets:
-        pallet_service.record_lifecycle_event(
-            db, row.pallet, "consumed", actor_user_id=actor_user_id,
-            consumed_by_module="material_consumption", consumed_by_record=str(mc.id),
-        )
+        if row.fully_consumed:
+            pallet_service.record_lifecycle_event(
+                db, row.pallet, "consumed", actor_user_id=actor_user_id,
+                consumed_by_module="material_consumption", consumed_by_record=str(mc.id),
+            )
+        else:
+            # Partial draw (Section 8): log the event for traceability
+            # WITHOUT flipping lifecycle_status away from 'stored' --
+            # record_lifecycle_event always overwrites lifecycle_status to
+            # match its `stage` argument, which is exactly what must NOT
+            # happen here, so this constructs the event row directly
+            # instead. Leaving the pallet 'stored' is what makes it
+            # eligible for _assert_pallet_available on a later record.
+            db.add(models.PalletLifecycleEvent(
+                pallet_id=row.pallet.id, stage="partial_consumption", actor_user_id=actor_user_id,
+                event_metadata={
+                    "consumed_by_module": "material_consumption", "consumed_by_record": str(mc.id),
+                    "quantity": str(row.quantity), "unit": row.unit,
+                },
+            ))
 
     run = find_or_create_production_run(db, mc, actor_user_id=actor_user_id)
     find_or_create_ipqc(db, run, mc)

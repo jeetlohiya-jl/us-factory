@@ -46,7 +46,7 @@ def _serialize(rec: models.OutwardVehicleInspection) -> schemas.OviSaveOut:
         id=rec.id, status=rec.status,
         truck_number=rec.truck_number, invoice_number=rec.invoice_number,
         transporter_name=rec.transporter_name, seal_number=rec.seal_number,
-        quantity=rec.quantity, remarks=rec.remarks,
+        quantity=rec.quantity, quantity_unit=rec.quantity_unit or "Pallets", remarks=rec.remarks,
         answers=[schemas.OviAnswerOut(question_sr=a.question_sr, answer=a.answer) for a in sorted(rec.answers, key=lambda a: a.question_sr)],
     )
 
@@ -88,6 +88,7 @@ def save_ovi_record(
     rec.transporter_name = payload.transporter_name
     rec.seal_number = payload.seal_number
     rec.quantity = payload.quantity
+    rec.quantity_unit = payload.quantity_unit or "Pallets"
     rec.remarks = payload.remarks
     rec.updated_by = current_user.user_id
 

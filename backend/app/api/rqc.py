@@ -48,6 +48,14 @@ def require(action: str):
 def _serialize_save(rec: models.RqcRecord) -> schemas.RqcSaveOut:
     return schemas.RqcSaveOut(
         id=rec.id, status=rec.status, manufacturer=rec.manufacturer, overall_result=rec.overall_result,
+        fg_pallets_generated=rec.fg_pallets_generated,
+        table_person_number=rec.table_person_number,
+        machine_allocations=[
+            schemas.RqcMachineAllocationOut(
+                machine_id=a.machine_id, machine=a.machine.code if a.machine else None, fg_pallets_count=a.fg_pallets_count,
+            )
+            for a in rec.machine_allocations
+        ],
         defect_results=[
             schemas.RqcDefectResultOut(defect_sr=d.defect_sr, found=d.found, remarks=d.remarks)
             for d in sorted(rec.defect_results, key=lambda d: d.defect_sr)
@@ -101,9 +109,10 @@ def save_rqc_record(
 ):
     """
     The single transactional write for RQC: atomically saves Manufacturer,
-    the full defect grid (Found/Remarks per defect_sr), the 4 COA
-    observation tables, and Overall Result -- replacing both child lists
-    wholesale, same semantics as IPQC's check-block save.
+    Number of FG Pallets Generated, the full defect grid (Found/Remarks per
+    defect_sr), the 4 COA observation tables, and Overall Result --
+    replacing both child lists wholesale, same semantics as IPQC's
+    check-block save.
 
     Status, no invented model:
     - save_mode='draft' -> status='draft' unconditionally (Save Draft).
@@ -112,22 +121,24 @@ def save_rqc_record(
 
     When a final save results in 'approved', this is the single trigger
     point for FG QR Generation to auto-populate for this run -- reusing
-    get_or_create_fg_qr_for_production_run entirely unchanged, just called
+    get_or_create_fg_qr_for_production_run (now passed this record's own
+    fg_pallets_generated explicitly, rather than reading
+    production_runs.total_fg_pallets -- see migration 0030), just called
     from here instead of unconditionally from Production's own save route.
     Idempotent either way (partial unique index on source_production_run_id
     is the hard backstop), so re-saving an already-approved RQC record is a
     safe no-op on the FG QR side.
 
     Everything else on the record (Shipment Number, SKU Code/Version, the
-    Production Run / IPQC link, No. of Pallets) is autopopulated at
-    creation and read-only -- never touched here, lives entirely in
-    Supabase-direct reads.
+    Production Run / IPQC link) is autopopulated at creation and read-only
+    -- never touched here, lives entirely in Supabase-direct reads.
     """
     rec = (
         db.query(models.RqcRecord)
         .options(joinedload(models.RqcRecord.defect_results))
         .options(joinedload(models.RqcRecord.coa_observations))
         .options(joinedload(models.RqcRecord.production_run))
+        .options(joinedload(models.RqcRecord.machine_allocations))
         .filter(models.RqcRecord.id == record_id)
         .first()
     )
@@ -136,13 +147,23 @@ def save_rqc_record(
 
     rec.manufacturer = payload.manufacturer
     rec.overall_result = payload.overall_result
+    rec.fg_pallets_generated = payload.fg_pallets_generated
+    rec.table_person_number = payload.table_person_number
 
-    # Replace both child lists wholesale -- same pattern as IPQC's blocks.
+    # Replace all three child lists wholesale -- same pattern as IPQC's blocks.
     for existing in list(rec.defect_results):
         db.delete(existing)
     for existing in list(rec.coa_observations):
         db.delete(existing)
+    for existing in list(rec.machine_allocations):
+        db.delete(existing)
     db.flush()
+
+    for a in payload.machine_allocations:
+        if a.fg_pallets_count > 0:
+            db.add(models.RqcMachineAllocation(
+                rqc_record_id=rec.id, machine_id=a.machine_id, fg_pallets_count=a.fg_pallets_count,
+            ))
 
     for d in payload.defect_results:
         db.add(models.RqcDefectResult(
@@ -158,7 +179,9 @@ def save_rqc_record(
     )
 
     if rec.status == "approved" and rec.production_run:
-        qr_generation_service.get_or_create_fg_qr_for_production_run(db, rec.production_run)
+        qr_generation_service.get_or_create_fg_qr_for_production_run(
+            db, rec.production_run, fg_pallets_generated=rec.fg_pallets_generated,
+        )
 
     db.commit()
     db.refresh(rec)

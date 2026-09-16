@@ -19,7 +19,7 @@ const MODULE = "inward-qc";
 const REFERENCE_STALE_MS = 5 * 60_000;
 
 const CATEGORY_LABELS: Record<string, string> = {
-  fgtray: "FG NonPadded Tray", pad: "Soaker Pad", polybag: "Polybag", cfb: "CFB", glue: "Glue",
+  fgtray: "FG Non-Padded Tray", pad: "Soaker Pad", polybag: "Polybag", cfb: "CFB", glue: "Glue",
 };
 
 function StatusBadge({ status }: { status: string }) {
@@ -166,7 +166,7 @@ function InwardQcPageContent() {
       <div className="page-head2">
         <div>
           <h1>Inward QC</h1>
-          <div className="desc">Every Inward QC record created to date, across FG NonPadded Tray, Soaker Pad, Polybag and CFB.</div>
+          <div className="desc">Every Inward QC record created to date, across FG Non-Padded Tray, Soaker Pad, Polybag and CFB.</div>
         </div>
         <button
           className="btn btn-primary"
@@ -193,7 +193,7 @@ function InwardQcPageContent() {
               <div className="f-row"><label>Category</label>
                 <select value={fCategory} onChange={(e) => setFCategory(e.target.value)}>
                   <option value="">All</option>
-                  <option value="fgtray">FG NonPadded Tray</option>
+                  <option value="fgtray">FG Non-Padded Tray</option>
                   <option value="pad">Soaker Pad</option>
                   <option value="polybag">Polybag</option>
                   <option value="cfb">CFB</option>

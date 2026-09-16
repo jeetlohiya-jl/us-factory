@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "@/lib/api";
-import type { QcDetail, QcMeta, Permissions, SkuCode, QcManualCategory } from "@/lib/types";
+import type { QcDetail, QcMeta, Permissions, SkuCode, QcManualCategory, QuantityUnit } from "@/lib/types";
+import { QUANTITY_UNITS } from "@/lib/types";
 import CoaField from "./CoaField";
 import FgtrayObservations from "./FgtrayObservations";
 import AttributeObservations from "./AttributeObservations";
@@ -40,6 +41,7 @@ export default function Wizard({
   const [step, setStep] = useState<2 | 3>(isTray ? 3 : 2);
   const [vendor, setVendor] = useState(initialDetail.vendor_name || "");
   const [quantity, setQuantity] = useState(initialDetail.quantity != null ? String(initialDetail.quantity) : "");
+  const [quantityUnit, setQuantityUnit] = useState<QuantityUnit>((initialDetail.quantity_unit as QuantityUnit) || "Pallets");
   const [skuCodeId, setSkuCodeId] = useState(initialDetail.sku_code_id || "");
   const [skuVersionId, setSkuVersionId] = useState(initialDetail.sku_version_id || "");
   const [conclusion, setConclusion] = useState(initialDetail.conclusion_or_suggestions || "");
@@ -58,7 +60,8 @@ export default function Wizard({
   async function persistBasic(): Promise<QcDetail | null> {
     try {
       const updated = await api.updateQcBasic(qcId, {
-        vendor_name: vendor, quantity: quantity ? Number(quantity) : null, sku_code_id: skuCodeId || null, sku_version_id: skuVersionId || null,
+        vendor_name: vendor, quantity: quantity ? Number(quantity) : null, quantity_unit: quantityUnit,
+        sku_code_id: skuCodeId || null, sku_version_id: skuVersionId || null,
       });
       setDetail(updated);
       return updated;
@@ -74,7 +77,7 @@ export default function Wizard({
     saveTimer.current = setTimeout(() => { persistBasic(); }, 800);
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vendor, quantity, skuCodeId, skuVersionId, touched]);
+  }, [vendor, quantity, quantityUnit, skuCodeId, skuVersionId, touched]);
 
   function markTouched<T>(setter: (v: T) => void) {
     return (v: T) => { setTouched(true); setter(v); };
@@ -243,6 +246,11 @@ export default function Wizard({
                 </div>
                 <div className="field"><label>{meta.quantity_labels[detail.category]}</label>
                   <input type="number" disabled={readOnlyBasic} value={quantity} placeholder="Enter quantity" onChange={(e) => markTouched(setQuantity)(e.target.value)} />
+                </div>
+                <div className="field"><label>Unit</label>
+                  <select disabled={readOnlyBasic} value={quantityUnit} onChange={(e) => markTouched(setQuantityUnit)(e.target.value as QuantityUnit)}>
+                    {QUANTITY_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+                  </select>
                 </div>
               </div>
               <div className="form-grid" style={{ marginBottom: 18 }}>

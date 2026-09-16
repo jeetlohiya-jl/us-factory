@@ -1,10 +1,12 @@
 "use client";
-import type { SkuCode } from "@/lib/types";
+import type { SkuCode, QuantityUnit } from "@/lib/types";
+import { QUANTITY_UNITS } from "@/lib/types";
 
 export interface EditableLineItem {
   sku_code_id: string;
   sku_version_id: string;
   quantity: string;
+  unit: QuantityUnit;
 }
 
 export default function LineItemsEditor({
@@ -29,19 +31,19 @@ export default function LineItemsEditor({
   }
 
   function addRow() {
-    onChange([...items, { sku_code_id: "", sku_version_id: "", quantity: "" }]);
+    onChange([...items, { sku_code_id: "", sku_version_id: "", quantity: "", unit: "Pallets" }]);
   }
 
   function removeRow(idx: number) {
     const next = items.filter((_, i) => i !== idx);
-    onChange(next.length ? next : [{ sku_code_id: "", sku_version_id: "", quantity: "" }]);
+    onChange(next.length ? next : [{ sku_code_id: "", sku_version_id: "", quantity: "", unit: "Pallets" }]);
   }
 
   return (
     <div>
       <table className="qc-obs-table">
         <thead>
-          <tr><th>SKU Name</th><th>SKU Version</th><th>Quantity</th><th /></tr>
+          <tr><th>SKU Name</th><th>SKU Version</th><th>Quantity</th><th>Unit</th><th /></tr>
         </thead>
         <tbody>
           {items.map((item, i) => (
@@ -65,6 +67,11 @@ export default function LineItemsEditor({
                   value={item.quantity}
                   onChange={(e) => update(i, { quantity: e.target.value })}
                 />
+              </td>
+              <td>
+                <select disabled={disabled} value={item.unit} onChange={(e) => update(i, { unit: e.target.value as QuantityUnit })}>
+                  {QUANTITY_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+                </select>
               </td>
               <td>{!disabled && <a className="btn-tertiary" onClick={() => removeRow(i)}>Remove</a>}</td>
             </tr>

@@ -18,6 +18,7 @@ def serialize_pallet(pallet: models.Pallet) -> schemas.PalletOut:
         qr_url=pallet.qr_public_url,
         location_display_id=pallet.current_location.display_id if pallet.current_location else None,
         storage_id=pallet.storage_record.id if pallet.storage_record else None,
+        batch_code=pallet.batch_code,
     )
 
 
@@ -56,7 +57,8 @@ def serialize_mc_pallet(row: models.MaterialConsumptionPallet) -> schemas.Materi
         id=row.id, role=row.role, pallet_id=row.pallet_id,
         pallet_display_id=row.pallet.display_id,
         sku_code=row.pallet.sku_code_snapshot, sku_version=row.pallet.sku_version_snapshot,
-        category=row.pallet.category, quantity=row.quantity, status=row.pallet.lifecycle_status,
+        category=row.pallet.category, quantity=row.quantity, unit=row.unit or "Pallets",
+        fully_consumed=row.fully_consumed, status=row.pallet.lifecycle_status,
     )
 
 

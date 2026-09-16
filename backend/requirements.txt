@@ -13,3 +13,5 @@ passlib
 supabase
 pdfplumber
 pdf2image
+httpx
+reportlab

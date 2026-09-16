@@ -1,4 +1,8 @@
-export type Category = "tray" | "pad" | "polybag" | "cfb" | "glue";
+// "tray" displays as "Base Tray" and "fnp_tray" as "FNP Tray" -- together
+// these are Inward Vehicle Inspection's "tray options" (renamed/expanded
+// per the updated spec); "film" is a new material option alongside them.
+// See components/inward-vehicle-inspection/Wizard.tsx's CATEGORY_LABELS.
+export type Category = "tray" | "fnp_tray" | "film" | "pad" | "polybag" | "cfb" | "glue";
 export type InspectionStatus = "draft" | "hold" | "approved";
 
 export interface SkuVersion {
@@ -30,6 +34,9 @@ export interface SkuCode {
   code: string;
   category: Category;
   is_active: boolean;
+  // Section 11 -- admin-supplied 5-digit SKU number, the first segment of
+  // the FG Storage Batch Code. Populated later by the business.
+  batch_number: string | null;
   versions: SkuVersion[];
 }
 
@@ -47,11 +54,18 @@ export interface ChecklistItemRef {
   sort_order: number;
 }
 
+// "Pallets" | "Kgs" | "Units" -- migration 0031's quantity-unit dropdown,
+// used wherever the app records a quantity (see api.ts's various Unit
+// fields and QUANTITY_UNITS below).
+export type QuantityUnit = "Pallets" | "Kgs" | "Units";
+export const QUANTITY_UNITS: QuantityUnit[] = ["Pallets", "Kgs", "Units"];
+
 export interface LineItem {
   id: string;
   sku_code_id: string | null;
   sku_version_id: string | null;
   quantity: string | number;
+  unit: QuantityUnit;
   sku_code: string | null;
   sku_version: string | null;
 }
@@ -271,6 +285,7 @@ export interface QcDetail {
   vendor_name: string | null;
   quantity: string | number | null;
   quantity_label: string | null;
+  quantity_unit: string;
   sku_code_id: string | null;
   sku_version_id: string | null;
   sku_code: string | null;
@@ -362,6 +377,8 @@ export interface StorageRecordDetail {
   stored_by_name: string | null;
   stored_at: string;
   pallet_status: PalletLifecycleStatus;
+  // FG pallets only, Section 11.
+  batch_code: string | null;
 }
 
 export interface LocationRef {
@@ -391,6 +408,9 @@ export interface Machine {
   id: string;
   code: string;
   is_active: boolean;
+  // Section 11 -- admin-supplied 2-digit number used as the M<nn> segment
+  // of the FG Storage Batch Code. Populated later by the business.
+  batch_number: string | null;
 }
 
 export type SecondaryMaterialCategory = "cfb" | "pad" | "glue" | "polybag";
@@ -404,6 +424,9 @@ export interface MaterialConsumptionPalletRow {
   sku_version: string | null;
   category: string | null;
   quantity: string | number;
+  // Section 8 -- partial pallet consumption.
+  unit: QuantityUnit;
+  fully_consumed: boolean;
   status: PalletLifecycleStatus;
 }
 
@@ -479,7 +502,11 @@ export interface ProductionMachineEntry {
   end_time: string | null;
   pallets: MaterialConsumptionPalletRow[];
   // SKU-derived Production Details, autopopulated from the machine entry's
-  // own SKU Version -- read-only, never re-entered per run (migration 0013).
+  // own SKU Version (migration 0013). As of Section 12 (migration 0034),
+  // each of these has an operator-editable override on this one machine
+  // entry -- these fields already reflect the override where one is set
+  // (see api.ts's flattenProductionDetail), so the UI can always just
+  // display/edit `production_details` directly.
   production_details: {
     prod_weight: string | null;
     prod_pcs_per_sleeve: string | null;
@@ -491,6 +518,11 @@ export interface ProductionMachineEntry {
     prod_pad_color: string | null;
     prod_case_type: string | null;
   } | null;
+  // Section 12 -- genuinely new fields, no upstream source, entered per
+  // machine entry.
+  machine_no: string | null;
+  auto_padding: string | null;
+  container_order_no: string | null;
 }
 
 export interface ProductionListItem {
@@ -539,6 +571,15 @@ export interface ProductionSavePayload {
   rejection_adhesion_issue: number;
   total_fg_pallets: number;
   wastage_entries: { machine_id: string | null; trays: number | null; reason: string | null }[];
+  // Section 12 -- per-machine-entry attribute overrides / new fields. A
+  // field left undefined is not touched; "" explicitly clears an override
+  // back to "use the SKU Version's own value".
+  machine_entry_attributes: {
+    machine_entry_id: string;
+    weight?: string; pcs_per_sleeve?: string; sleeve_per_case?: string; total_pcs_per_pallet?: string;
+    pad_type?: string; pad_color?: string; case_type?: string;
+    machine_no?: string; auto_padding?: string; container_order_no?: string;
+  }[];
   // This device's own clock ("HH:MM") -- saving this record now stamps
   // end_time on every Material Consumption machine entry it feeds, same
   // convention as start_time (see Wizard.tsx's nowHHMM()).
@@ -785,7 +826,22 @@ export interface RqcDetail {
   manufacturer: string | null;
   sku_code: string | null;
   sku_version: string | null;
+  // Legacy/display fallback only -- read live from production_runs.total_fg_pallets,
+  // which Production no longer collects (see migration 0030). Prefer
+  // fg_pallets_generated below, RQC's own editable field and the value
+  // FG QR Generation actually uses.
   total_fg_pallets: number | null;
+  // "Number of FG Pallets Generated" -- entered at the top of this form.
+  // Source of truth for FG QR Generation's quantity as of migration 0030.
+  fg_pallets_generated: number | null;
+  // Section 11 -- brand-new field, manually entered here (never derived
+  // from the logged-in user). The T<value> segment of the Batch Code.
+  table_person_number: string | null;
+  // Section 11 -- every machine actually on the linked Production Run
+  // (via production_run_machines), for the Machine Allocation dropdown.
+  production_run_machines: { id: string; code: string }[];
+  // Section 11 -- how fg_pallets_generated splits across those machines.
+  machine_allocations: RqcMachineAllocation[];
   shift: string | null;
   date: string | null;
   overall_result: string | null;
@@ -794,11 +850,20 @@ export interface RqcDetail {
   coa_observations: RqcCoaObservation[];
 }
 
+export interface RqcMachineAllocation {
+  machine_id: string;
+  machine: string | null;
+  fg_pallets_count: number;
+}
+
 // Payload for api.saveRqc -- the single atomic write for RQC (backend/
 // app/api/rqc.py's PUT route).
 export interface RqcSavePayload {
   manufacturer: string | null;
   overall_result: string | null;
+  fg_pallets_generated: number | null;
+  table_person_number: string | null;
+  machine_allocations: { machine_id: string; fg_pallets_count: number }[];
   save_mode: "draft" | "final";
   defect_results: RqcDefectResult[];
   coa_observations: RqcCoaObservation[];
@@ -829,6 +894,9 @@ export interface CustomerShipmentLineItem {
   sku_code: string | null;
   sku_version: string | null;
   pallets_required: number;
+  // Section 13.
+  pcs: number | null;
+  pcs_per_sleeve: string | null;
 }
 
 export interface ShipmentPickingRequestSummary {
@@ -856,12 +924,15 @@ export interface CustomerShipmentLineItemDraft {
   sku_code_id: string | null;
   sku_version_id: string | null;
   pallets_required: string | number;
+  // Section 13.
+  pcs: string | number;
+  pcs_per_sleeve: string;
 }
 
 export interface CustomerShipmentCreatePayload {
   customer: string;
   shipment_number: string; // user-entered, not system-generated
-  line_items: { sku_code_id: string; sku_version_id: string; pallets_required: number }[];
+  line_items: { sku_code_id: string; sku_version_id: string; pallets_required: number; pcs?: number | null; pcs_per_sleeve?: string | null }[];
 }
 
 export interface CustomerShipmentCreateResult {
@@ -978,6 +1049,7 @@ export interface OviDetail {
   shipment_number: string | null;
   customer_name: string | null;
   quantity: string | null;
+  quantity_unit: string;
   truck_number: string | null;
   invoice_number: string | null;
   transporter_name: string | null;
@@ -994,6 +1066,7 @@ export interface OviSavePayload {
   transporter_name: string | null;
   seal_number: string | null;
   quantity: string | null;
+  quantity_unit: string;
   remarks: string | null;
   save_mode: "draft" | "final";
   answers: OviAnswer[];

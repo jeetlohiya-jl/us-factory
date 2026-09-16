@@ -13,7 +13,9 @@ from app.db import models
 from app.domain.id_counters import next_seq
 
 CATEGORY_PREFIX = {
-    "tray": None,  # manual shipment number for tray
+    "tray": None,  # manual shipment number for tray (renamed "Base Tray" in the UI)
+    "fnp_tray": None,  # "FNP Tray" -- new material option, same manual-shipment-number rule as Base Tray
+    "film": None,  # new material option, same manual-shipment-number rule as Base Tray
     "pad": "US-PAD",
     "polybag": "US-PB",
     "cfb": "US-CFB",

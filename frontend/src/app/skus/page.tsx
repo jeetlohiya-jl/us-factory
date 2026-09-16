@@ -95,9 +95,10 @@ function SkuVersionDetailsModal({
 }
 
 const CATEGORY_LABELS: Record<Category, string> = {
-  tray: "Tray", pad: "Soaker Pad", polybag: "Polybag", cfb: "CFB", glue: "Glue",
+  tray: "Base Tray", fnp_tray: "FNP Tray", film: "Film",
+  pad: "Soaker Pad", polybag: "Polybag", cfb: "CFB", glue: "Glue",
 };
-const MANAGED_CATEGORIES: Category[] = ["tray", "pad", "polybag", "cfb", "glue"];
+const MANAGED_CATEGORIES: Category[] = ["tray", "fnp_tray", "film", "pad", "polybag", "cfb", "glue"];
 
 /**
  * Admin screen for the per-category SKU Name + Version master list backing
@@ -149,6 +150,16 @@ export default function SkusPage() {
   async function toggleSkuActive(s: SkuCode) {
     try {
       await api.updateSku(s.id, { is_active: !s.is_active });
+      refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to update SKU");
+    }
+  }
+
+  async function handleBatchNumberChange(s: SkuCode, value: string) {
+    const batch_number = value.trim() || null;
+    try {
+      await api.updateSku(s.id, { batch_number });
       refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to update SKU");
@@ -243,15 +254,23 @@ export default function SkusPage() {
 
       <div className="card card-flush">
         <table className="data">
-          <thead><tr><th>Category</th><th>SKU Name</th><th>Versions</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>Category</th><th>SKU Name</th><th>Batch Number</th><th>Versions</th><th>Status</th><th></th></tr></thead>
           <tbody>
             {visible.length === 0 ? (
-              <tr className="empty-row"><td colSpan={5}>{loading ? "Loading…" : "No SKUs yet — add one above."}</td></tr>
+              <tr className="empty-row"><td colSpan={6}>{loading ? "Loading…" : "No SKUs yet — add one above."}</td></tr>
             ) : (
               visible.map((s) => (
                 <tr key={s.id}>
                   <td>{CATEGORY_LABELS[s.category] || s.category}</td>
                   <td className="mono">{s.code}</td>
+                  <td>
+                    {canEdit ? (
+                      <input
+                        className="mono" style={{ width: 80 }} placeholder="e.g. 03170" defaultValue={s.batch_number || ""}
+                        onBlur={(e) => e.target.value !== (s.batch_number || "") && handleBatchNumberChange(s, e.target.value)}
+                      />
+                    ) : (s.batch_number || "—")}
+                  </td>
                   <td>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
                       {s.versions.filter((v) => showInactive || v.is_active).map((v) => (

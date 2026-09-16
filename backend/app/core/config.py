@@ -29,8 +29,19 @@ class Settings(BaseSettings):
     # Left in place only so an already-set env var doesn't error out.
     supabase_jwt_secret: str | None = None
 
-    # OCR adapter selection: "tesseract" (real, local, default) or "none".
-    ocr_provider: str = "tesseract"
+    # OCR adapter selection: "google_vision" (cloud, default -- see
+    # app/adapters/ocr/google_vision_adapter.py) or "tesseract" (local
+    # fallback, see app/adapters/ocr/tesseract_adapter.py). get_ocr_adapter()
+    # in factory.py automatically falls back to "tesseract" if
+    # "google_vision" is selected but google_vision_api_key isn't set, so a
+    # dev/local environment without cloud credentials still gets a working
+    # (if less accurate) OCR path rather than every upload failing outright.
+    ocr_provider: str = "google_vision"
+    # Google Cloud Vision API key (Cloud Console -> APIs & Services ->
+    # Credentials -> API key, with the Cloud Vision API enabled on the
+    # project). Required for ocr_provider="google_vision" to actually call
+    # the cloud API instead of falling back to Tesseract.
+    google_vision_api_key: str | None = None
 
     # On Linux the "tesseract-ocr" / "poppler-utils" system packages put
     # these binaries on PATH automatically, so pytesseract/pdf2image find

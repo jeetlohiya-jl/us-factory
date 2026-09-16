@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.db import models
 from app.domain import pallet_service
+from app.domain import batch_code_service
 
 
 class QrGenerationError(Exception):
@@ -153,19 +154,30 @@ def _derive_run_shipment_number(run: models.ProductionRun) -> str | None:
     return None
 
 
-def get_or_create_fg_qr_for_production_run(db: Session, run: models.ProductionRun) -> models.QrGenerationRecord:
+def get_or_create_fg_qr_for_production_run(
+    db: Session, run: models.ProductionRun, fg_pallets_generated: int | None = None,
+) -> models.QrGenerationRecord:
     """
-    Called the moment a Production Run has FG Pallets Generated recorded on
-    it (see app/api/production.py's save_production_run) -- the FG mirror
-    of get_or_create_rm_qr_for_qc, called the moment an Inward QC is
-    Accepted. Idempotent -- the partial unique index on
-    source_production_run_id is the hard backstop against a duplicate
-    batch; this find-first is what makes repeat calls (every time
-    Production is re-saved) a no-op rather than raising.
+    Called the moment a Production Run's RQC record reaches 'approved' (see
+    app/api/rqc.py's save route) -- the FG mirror of get_or_create_rm_qr_for_qc,
+    called the moment an Inward QC is Accepted. Idempotent -- the partial
+    unique index on source_production_run_id is the hard backstop against a
+    duplicate batch; this find-first is what makes repeat calls (e.g.
+    re-saving an already-approved RQC record) a no-op rather than raising.
+
+    fg_pallets_generated is the caller's own "Number of FG Pallets
+    Generated" value -- as of migration 0030 this is RqcRecord.fg_pallets_generated,
+    entered at the top of the RQC form (see api/rqc.py), NOT
+    run.total_fg_pallets (Production no longer collects that input). The
+    parameter defaults to None, in which case run.total_fg_pallets is used
+    as a fallback -- only relevant for the dev/test-only direct-create
+    endpoint (api/production.py's POST route) and any other caller that
+    doesn't have an RQC record to read from.
     """
     sku_code = run.sku_code.code if run.sku_code else None
     sku_version = run.sku_version.version if run.sku_version else None
     shipment_number = _derive_run_shipment_number(run)
+    quantity = int(fg_pallets_generated) if fg_pallets_generated is not None else int(run.total_fg_pallets or 0)
 
     existing = (
         db.query(models.QrGenerationRecord)
@@ -176,16 +188,16 @@ def get_or_create_fg_qr_for_production_run(db: Session, run: models.ProductionRu
         # Only a still-pending (not yet generated) batch may be refreshed --
         # once pallets/QR codes exist the batch's data must never drift,
         # same rule RM QR Generation already follows. This lets a later
-        # correction to Total FG Pallets Generated (before Generate QR is
-        # clicked) actually reach the batch instead of leaving it stuck at
-        # whatever was true the first time Production was saved.
+        # correction to Number of FG Pallets Generated (before Generate QR
+        # is clicked) actually reach the batch instead of leaving it stuck
+        # at whatever was true the first time RQC was approved.
         if existing.status == "pending":
             existing.shipment_number = shipment_number
             existing.sku_code_id = run.sku_code_id
             existing.sku_version_id = run.sku_version_id
             existing.sku_code_snapshot = sku_code
             existing.sku_version_snapshot = sku_version
-            existing.quantity = int(run.total_fg_pallets or 0)
+            existing.quantity = quantity
             db.flush()
         return existing
 
@@ -203,12 +215,47 @@ def get_or_create_fg_qr_for_production_run(db: Session, run: models.ProductionRu
         # regardless of which country any upstream RM component shipped
         # from -- unlike RM, FG's country is never vendor-dependent.
         country_code="US",
-        quantity=int(run.total_fg_pallets or 0),
+        quantity=quantity,
         status="pending",
     )
     db.add(rec)
     db.flush()
     return rec
+
+
+def _generate_one_pallet(
+    db: Session, rec: models.QrGenerationRecord, actor_user_id=None,
+    source_machine_id=None, batch_code: str | None = None,
+) -> models.Pallet:
+    display_id = pallet_service.next_pallet_display_id(db, rec.category, rec.country_code)
+    pallet = models.Pallet(
+        display_id=display_id,
+        pallet_type=rec.qr_type,
+        category=rec.category,
+        sku_code_id=rec.sku_code_id,
+        sku_version_id=rec.sku_version_id,
+        sku_code_snapshot=rec.sku_code_snapshot,
+        sku_version_snapshot=rec.sku_version_snapshot,
+        shipment_number=rec.shipment_number,
+        source_qr_generation_id=rec.id,
+        source_inward_qc_id=rec.source_inward_qc_id,
+        source_production_run_id=rec.source_production_run_id,
+        source_machine_id=source_machine_id,
+        batch_code=batch_code,
+        lifecycle_status="generated",
+    )
+    db.add(pallet)
+    db.flush()
+    pallet_service.generate_pallet_qr(db, pallet)
+    pallet_service.record_lifecycle_event(
+        db, pallet, "generated", actor_user_id=actor_user_id,
+        source_batch=rec.batch_display_id, sku=rec.sku_code_snapshot, version=rec.sku_version_snapshot,
+    )
+    # Immediately propagate to pending storage, per the prototype.
+    pallet_service.record_lifecycle_event(
+        db, pallet, "pending_storage", actor_user_id=actor_user_id, sku=rec.sku_code_snapshot,
+    )
+    return pallet
 
 
 def generate_pallets(db: Session, rec: models.QrGenerationRecord, actor_user_id=None) -> models.QrGenerationRecord:
@@ -217,39 +264,41 @@ def generate_pallets(db: Session, rec: models.QrGenerationRecord, actor_user_id=
     quantity, and immediately propagate all of them into pending_storage —
     matching qrGenerate() + qrPropagateToStorage() in the prototype exactly.
     Regenerating an already-generated batch is a no-op (never allowed).
+
+    FG batches (Section 11) additionally compute a Batch Code per pallet and
+    attribute each pallet to a specific machine, per
+    batch_code_service.resolve_machine_allocations — this is why FG pallets
+    are generated machine-by-machine below instead of one flat loop.
     """
     if rec.status == "generated":
         return rec
     if rec.quantity <= 0:
         raise QrGenerationError("Enter a quantity greater than 0 before generating QR codes.")
 
-    for _ in range(rec.quantity):
-        display_id = pallet_service.next_pallet_display_id(db, rec.category, rec.country_code)
-        pallet = models.Pallet(
-            display_id=display_id,
-            pallet_type=rec.qr_type,
-            category=rec.category,
-            sku_code_id=rec.sku_code_id,
-            sku_version_id=rec.sku_version_id,
-            sku_code_snapshot=rec.sku_code_snapshot,
-            sku_version_snapshot=rec.sku_version_snapshot,
-            shipment_number=rec.shipment_number,
-            source_qr_generation_id=rec.id,
-            source_inward_qc_id=rec.source_inward_qc_id,
-            source_production_run_id=rec.source_production_run_id,
-            lifecycle_status="generated",
-        )
-        db.add(pallet)
-        db.flush()
-        pallet_service.generate_pallet_qr(db, pallet)
-        pallet_service.record_lifecycle_event(
-            db, pallet, "generated", actor_user_id=actor_user_id,
-            source_batch=rec.batch_display_id, sku=rec.sku_code_snapshot, version=rec.sku_version_snapshot,
-        )
-        # Immediately propagate to pending storage, per the prototype.
-        pallet_service.record_lifecycle_event(
-            db, pallet, "pending_storage", actor_user_id=actor_user_id, sku=rec.sku_code_snapshot,
-        )
+    if rec.qr_type == "fg" and rec.source_production_run and rec.source_production_run.rqc_record:
+        rqc = rec.source_production_run.rqc_record
+        try:
+            allocations = batch_code_service.resolve_machine_allocations(db, rqc)
+        except batch_code_service.BatchCodeError as e:
+            raise QrGenerationError(e.message)
+        combo_number = batch_code_service.next_combo_number(db, rec.shipment_number)
+        rec.combo_number = combo_number
+        sku_number = rec.sku_code.batch_number if rec.sku_code else None
+        for machine, count in allocations:
+            batch_code = batch_code_service.build_batch_code(
+                sku_number=sku_number, shipment_number=rec.shipment_number, combo_number=combo_number,
+                production_date=rec.source_production_run.production_date, shift=rec.source_production_run.shift,
+                table_person_number=rqc.table_person_number,
+                machine_number=(machine.batch_number if machine else None),
+            )
+            for _ in range(count):
+                _generate_one_pallet(
+                    db, rec, actor_user_id=actor_user_id,
+                    source_machine_id=machine.id if machine else None, batch_code=batch_code,
+                )
+    else:
+        for _ in range(rec.quantity):
+            _generate_one_pallet(db, rec, actor_user_id=actor_user_id)
 
     rec.status = "generated"
     rec.generated_at = datetime.now(timezone.utc)

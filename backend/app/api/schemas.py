@@ -72,6 +72,8 @@ class LineItemIn(BaseModel):
     sku_code_id: Optional[uuid.UUID] = None
     sku_version_id: Optional[uuid.UUID] = None
     quantity: Decimal = Decimal("0")
+    # "Pallets" | "Kgs" | "Units" -- migration 0031.
+    unit: str = "Pallets"
 
 
 class LineItemOut(BaseModel):
@@ -80,6 +82,7 @@ class LineItemOut(BaseModel):
     sku_code_id: Optional[uuid.UUID]
     sku_version_id: Optional[uuid.UUID]
     quantity: Decimal
+    unit: str = "Pallets"
     sku_code: Optional[str] = None
     sku_version: Optional[str] = None
 
@@ -249,6 +252,8 @@ class QcLineItemSnapshotOut(BaseModel):
 class QcBasicUpdate(BaseModel):
     vendor_name: Optional[str] = None
     quantity: Optional[Decimal] = None
+    # "Pallets" | "Kgs" | "Units" -- migration 0031.
+    quantity_unit: Optional[str] = None
     sku_code_id: Optional[uuid.UUID] = None
     sku_version_id: Optional[uuid.UUID] = None
 
@@ -262,6 +267,7 @@ class QcDetailOut(BaseModel):
     vendor_name: Optional[str]
     quantity: Optional[Decimal]
     quantity_label: Optional[str]
+    quantity_unit: str = "Pallets"
     sku_code_id: Optional[uuid.UUID]
     sku_version_id: Optional[uuid.UUID]
     sku_code: Optional[str] = None
@@ -299,6 +305,7 @@ class PalletOut(BaseModel):
     qr_url: Optional[str] = None
     location_display_id: Optional[str] = None
     storage_id: Optional[uuid.UUID] = None
+    batch_code: Optional[str] = None  # FG pallets only, Section 11
 
 
 class QrGenerationListItemOut(BaseModel):
@@ -395,6 +402,24 @@ class ProductionWastageEntryOut(BaseModel):
     sort_order: int
 
 
+class ProductionMachineEntryAttributesIn(BaseModel):
+    # Section 12 -- per-machine-entry overrides / brand-new fields, editable
+    # in both the Pending-completion and Edit flows. Any field left None is
+    # not touched (keeps whatever it already had); to explicitly clear an
+    # override back to "use the SKU Version's own value", send "".
+    machine_entry_id: uuid.UUID
+    weight: Optional[str] = None
+    pcs_per_sleeve: Optional[str] = None
+    sleeve_per_case: Optional[str] = None
+    total_pcs_per_pallet: Optional[str] = None
+    pad_type: Optional[str] = None
+    pad_color: Optional[str] = None
+    case_type: Optional[str] = None
+    machine_no: Optional[str] = None
+    auto_padding: Optional[str] = None
+    container_order_no: Optional[str] = None
+
+
 class ProductionSaveIn(BaseModel):
     rejection_damage: Decimal = Decimal("0")
     rejection_misplaced_glue: Decimal = Decimal("0")
@@ -404,6 +429,7 @@ class ProductionSaveIn(BaseModel):
     rejection_adhesion_issue: Decimal = Decimal("0")
     total_fg_pallets: int = 0
     wastage_entries: list[ProductionWastageEntryIn] = []
+    machine_entry_attributes: list[ProductionMachineEntryAttributesIn] = []
     # This device's own clock, same convention as Material Consumption's
     # start_time -- saving this record is now what stamps end_time on every
     # machine entry that fed it (see stamp_end_times_for_production_run).
@@ -480,6 +506,20 @@ class IpqcSaveOut(BaseModel):
     blocks: list[IpqcCheckBlockOut] = []
 
 
+class IpqcCreateIn(BaseModel):
+    # Manual "+ New Record" creation. Shipment Number is optional here
+    # (unlike RQC, where it's the required unique business key) -- see
+    # ipqc_service.create_ipqc's docstring.
+    shipment_number: Optional[str] = None
+    manufacturer: Optional[str] = None
+
+
+class IpqcCreateOut(BaseModel):
+    id: uuid.UUID
+    shipment_number: Optional[str] = None
+    status: str
+
+
 # ---------------------------------------------------------------------------
 # RQC (Final Quality Control) -- migration 0019. Auto-created the moment the
 # relevant Material Consumption record is finalized, independent of IPQC's
@@ -517,9 +557,31 @@ class RqcCoaObservationOut(BaseModel):
     observation: Optional[str] = None
 
 
+class RqcMachineAllocationIn(BaseModel):
+    machine_id: uuid.UUID
+    fg_pallets_count: int
+
+
+class RqcMachineAllocationOut(BaseModel):
+    machine_id: uuid.UUID
+    machine: Optional[str] = None
+    fg_pallets_count: int
+
+
 class RqcSaveIn(BaseModel):
     manufacturer: Optional[str] = None
     overall_result: Optional[str] = None
+    # "Number of FG Pallets Generated" -- entered at the top of this form as
+    # of migration 0030 (moved out of Production). Source of truth for FG
+    # QR Generation's quantity; see api/rqc.py's save route.
+    fg_pallets_generated: Optional[int] = None
+    # Section 11 -- brand-new field, never derived from the logged-in user.
+    table_person_number: Optional[str] = None
+    # Section 11 -- how fg_pallets_generated splits across the Production
+    # Run's machines. Empty is fine for a single-machine run (auto-resolved
+    # at QR-generate time); a multi-machine run needs this filled in before
+    # QR codes can be generated (see batch_code_service.resolve_machine_allocations).
+    machine_allocations: list[RqcMachineAllocationIn] = []
     # 'draft' always saves as Draft (Save Draft button); 'final' computes
     # Approved/Hold from whether any defect's Found >= that defect group's
     # reject number across the whole grid (Save button) -- matches
@@ -533,6 +595,9 @@ class RqcSaveIn(BaseModel):
 class RqcSaveOut(BaseModel):
     id: uuid.UUID
     status: str
+    fg_pallets_generated: Optional[int] = None
+    table_person_number: Optional[str] = None
+    machine_allocations: list[RqcMachineAllocationOut] = []
     manufacturer: Optional[str] = None
     overall_result: Optional[str] = None
     defect_results: list[RqcDefectResultOut] = []
@@ -585,6 +650,11 @@ class MaterialConsumptionScanIn(BaseModel):
     # backend server's -- the backend can run anywhere, the workstation is
     # what's physically at the factory.
     client_time: Optional[str] = None
+    # Section 8 -- partial pallet consumption. Omitted (None) means "whole
+    # pallet, fully consumed", matching pre-Section-8 behaviour exactly.
+    quantity: Optional[Decimal] = None
+    unit: str = "Pallets"
+    fully_consumed: bool = True
 
 
 class MaterialConsumptionSecondaryScanIn(BaseModel):
@@ -609,6 +679,8 @@ class MaterialConsumptionPalletOut(BaseModel):
     sku_version: Optional[str] = None
     category: Optional[str] = None
     quantity: Decimal
+    unit: str = "Pallets"
+    fully_consumed: bool = True
     status: str  # the pallet's own lifecycle_status, for display
 
 
@@ -679,6 +751,9 @@ class CustomerShipmentLineItemIn(BaseModel):
     sku_code_id: uuid.UUID
     sku_version_id: uuid.UUID
     pallets_required: int
+    # Section 13.
+    pcs: Optional[int] = None
+    pcs_per_sleeve: Optional[str] = None
 
 
 class CustomerShipmentCreateIn(BaseModel):
@@ -695,6 +770,8 @@ class CustomerShipmentLineItemOut(BaseModel):
     sku_code: Optional[str] = None
     sku_version: Optional[str] = None
     pallets_required: int
+    pcs: Optional[int] = None
+    pcs_per_sleeve: Optional[str] = None
 
 
 class CustomerShipmentCreateOut(BaseModel):
@@ -741,6 +818,8 @@ class OviSaveIn(BaseModel):
     transporter_name: Optional[str] = None
     seal_number: Optional[str] = None
     quantity: Optional[str] = None
+    # "Pallets" | "Kgs" | "Units" -- migration 0031.
+    quantity_unit: Optional[str] = "Pallets"
     remarks: Optional[str] = None
     save_mode: Literal["draft", "final"] = "draft"
     answers: list[OviAnswerIn] = []
@@ -749,6 +828,7 @@ class OviSaveIn(BaseModel):
 class OviSaveOut(BaseModel):
     id: uuid.UUID
     status: str
+    quantity_unit: str = "Pallets"
     truck_number: Optional[str] = None
     invoice_number: Optional[str] = None
     transporter_name: Optional[str] = None

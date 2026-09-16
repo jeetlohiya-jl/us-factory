@@ -2,7 +2,7 @@ import { getAuthHeader } from "./session";
 import { supabase } from "./supabaseClient";
 import { cachedList, invalidateListCache, listCacheKey } from "./listCache";
 import type {
-  InspectionDetail, InspectionListItem, SkuCode, SkuVersion, ChecklistItemRef, MeResponse, Category, ImageType,
+  InspectionDetail, InspectionListItem, SkuCode, SkuVersion, ChecklistItemRef, MeResponse, Category, ImageType, LineItem,
   QcMeta, QcListItem, QcDetail, QcManualCategory, QcAttributeDefinition, QcFgtrayCriterion, QcSamplingPlanTier,
   Pallet, QrGenerationListItem, QrGenerationDetail, StorageRecordDetail, LocationRef, ProductionRun,
   Vendor, Machine, MaterialConsumptionListItem, MaterialConsumptionDetail, SecondaryMaterialCategory,
@@ -251,7 +251,7 @@ async function pendingPalletsQuery(
 
 const STORAGE_RECORD_SELECT =
   "id,storage_type,stored_at," +
-  "pallet:pallets(display_id,sku_code:sku_code_snapshot,sku_version:sku_version_snapshot,shipment_number,lifecycle_status)," +
+  "pallet:pallets(display_id,sku_code:sku_code_snapshot,sku_version:sku_version_snapshot,shipment_number,lifecycle_status,batch_code)," +
   "location:locations(display_id)," +
   "source_qr_generation:qr_generation_records(batch_display_id)," +
   "source_inward_qc_id,source_production_run_id," +
@@ -259,7 +259,7 @@ const STORAGE_RECORD_SELECT =
 
 type RawStorageRecord = {
   id: string; storage_type: "rm" | "fg"; stored_at: string;
-  pallet: { display_id: string; sku_code: string | null; sku_version: string | null; shipment_number: string | null; lifecycle_status: string } | null;
+  pallet: { display_id: string; sku_code: string | null; sku_version: string | null; shipment_number: string | null; lifecycle_status: string; batch_code: string | null } | null;
   location: { display_id: string } | null;
   source_qr_generation: { batch_display_id: string } | null;
   source_inward_qc_id: string | null; source_production_run_id: string | null;
@@ -278,6 +278,7 @@ function flattenStorageRecord(raw: RawStorageRecord): StorageRecordDetail {
     stored_by_name: raw.stored_by_user?.full_name ?? null,
     stored_at: raw.stored_at,
     pallet_status: (raw.pallet?.lifecycle_status ?? "generated") as StorageRecordDetail["pallet_status"],
+    batch_code: raw.pallet?.batch_code ?? null,
   };
 }
 
@@ -375,12 +376,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 // dropped from the flattened shape, which doesn't expose it.
 
 type RawMcPallet = {
-  id: string; role: "primary" | SecondaryMaterialCategory; pallet_id: string; quantity: string | number; sort_order: number;
+  id: string; role: "primary" | SecondaryMaterialCategory; pallet_id: string; quantity: string | number;
+  unit: string | null; fully_consumed: boolean | null; sort_order: number;
   pallet: { display_id: string; sku_code: string | null; sku_version: string | null; category: string | null; lifecycle_status: string } | null;
 };
 
 const MC_PALLET_SELECT =
-  "id,role,pallet_id,quantity,sort_order," +
+  "id,role,pallet_id,quantity,unit,fully_consumed,sort_order," +
   "pallet:pallets(display_id,sku_code:sku_code_snapshot,sku_version:sku_version_snapshot,category,lifecycle_status)";
 
 type RawMcMachineEntry = {
@@ -414,6 +416,8 @@ function mcFlattenPallet(row: RawMcPallet): import("./types").MaterialConsumptio
     pallet_display_id: row.pallet?.display_id ?? "",
     sku_code: row.pallet?.sku_code ?? null, sku_version: row.pallet?.sku_version ?? null,
     category: row.pallet?.category ?? null, quantity: row.quantity,
+    unit: (row.unit || "Pallets") as import("./types").QuantityUnit,
+    fully_consumed: row.fully_consumed ?? true,
     status: (row.pallet?.lifecycle_status ?? "generated") as import("./types").MaterialConsumptionPalletRow["status"],
   };
 }
@@ -733,12 +737,13 @@ async function listProductionRunsSb(): Promise<ProductionRun[]> {
 }
 
 type RawProdPallet = {
-  id: string; role: string; pallet_id: string; quantity: string | number; sort_order: number;
+  id: string; role: string; pallet_id: string; quantity: string | number;
+  unit: string | null; fully_consumed: boolean | null; sort_order: number;
   pallet: { display_id: string; sku_code: string | null; sku_version: string | null; category: string | null; lifecycle_status: string; shipment_number: string | null } | null;
 };
 
 const PRODUCTION_PALLET_SELECT =
-  "id,role,pallet_id,quantity,sort_order," +
+  "id,role,pallet_id,quantity,unit,fully_consumed,sort_order," +
   "pallet:pallets(display_id,sku_code:sku_code_snapshot,sku_version:sku_version_snapshot,category,lifecycle_status,shipment_number)";
 
 function prodFlattenPallet(row: RawProdPallet): MaterialConsumptionPalletRow {
@@ -747,6 +752,8 @@ function prodFlattenPallet(row: RawProdPallet): MaterialConsumptionPalletRow {
     pallet_display_id: row.pallet?.display_id ?? "",
     sku_code: row.pallet?.sku_code ?? null, sku_version: row.pallet?.sku_version ?? null,
     category: row.pallet?.category ?? null, quantity: row.quantity,
+    unit: (row.unit || "Pallets") as import("./types").QuantityUnit,
+    fully_consumed: row.fully_consumed ?? true,
     status: (row.pallet?.lifecycle_status ?? "generated") as MaterialConsumptionPalletRow["status"],
   };
 }
@@ -763,15 +770,24 @@ type RawProdMachineEntry = {
   start_time: string | null; end_time: string | null;
   sort_order: number; pallets: RawProdPallet[];
   sku_version_ref: RawProdSkuVersionDetails;
+  // Section 12 -- per-machine-entry overrides / new fields (migration 0034).
+  override_weight: string | null; override_pcs_per_sleeve: string | null; override_sleeve_per_case: string | null;
+  override_total_pcs_per_pallet: string | null; override_pad_type: string | null; override_pad_color: string | null;
+  override_case_type: string | null;
+  machine_no: string | null; auto_padding: string | null; container_order_no: string | null;
 };
 
 // sku_version_ref is the SKU-derived Production Details lookup (migration
-// 0013) -- joined via the entry's own sku_version_id FK, autopopulated and
-// read-only per run, exactly matching the prototype's SKU_PRODUCTION_DETAILS.
+// 0013) -- joined via the entry's own sku_version_id FK, autopopulated per
+// run, exactly matching the prototype's SKU_PRODUCTION_DETAILS. As of
+// Section 12 (migration 0034) each of these has a per-machine-entry
+// override column, selected alongside it and merged in flattenProductionDetail.
 const PRODUCTION_MACHINE_ENTRY_SELECT =
   "id,machine:machines(code),category,sku_code:sku_code_snapshot,sku_version:sku_version_snapshot,sku_version_id,start_time,end_time,sort_order," +
   `pallets:material_consumption_pallets(${PRODUCTION_PALLET_SELECT}),` +
-  "sku_version_ref:sku_versions(prod_weight,prod_pcs_per_sleeve,prod_sleeve_per_case,prod_total_pcs_per_pallet,prod_total_pallets,prod_target_shots,prod_pad_type,prod_pad_color,prod_case_type)";
+  "sku_version_ref:sku_versions(prod_weight,prod_pcs_per_sleeve,prod_sleeve_per_case,prod_total_pcs_per_pallet,prod_total_pallets,prod_target_shots,prod_pad_type,prod_pad_color,prod_case_type)," +
+  "override_weight,override_pcs_per_sleeve,override_sleeve_per_case,override_total_pcs_per_pallet,override_pad_type,override_pad_color,override_case_type," +
+  "machine_no,auto_padding,container_order_no";
 
 type RawProdMc = { id: string; status: string; machine_entries: RawProdMachineEntry[] };
 
@@ -832,13 +848,30 @@ function flattenProductionDetail(raw: RawProductionRunDetail): ProductionDetail 
   const machineEntries: ProductionMachineEntry[] = [];
   for (const mc of mcs) {
     for (const e of sortedBySortOrder(mc.machine_entries || [])) {
+      // Section 12: an override always wins over the SKU Version's own
+      // reference value; null/"" override falls back to the reference
+      // value exactly as before.
+      const ref = e.sku_version_ref;
+      const productionDetails = ref
+        ? {
+            ...ref,
+            prod_weight: e.override_weight || ref.prod_weight,
+            prod_pcs_per_sleeve: e.override_pcs_per_sleeve || ref.prod_pcs_per_sleeve,
+            prod_sleeve_per_case: e.override_sleeve_per_case || ref.prod_sleeve_per_case,
+            prod_total_pcs_per_pallet: e.override_total_pcs_per_pallet ? Number(e.override_total_pcs_per_pallet) : ref.prod_total_pcs_per_pallet,
+            prod_pad_type: e.override_pad_type || ref.prod_pad_type,
+            prod_pad_color: e.override_pad_color || ref.prod_pad_color,
+            prod_case_type: e.override_case_type || ref.prod_case_type,
+          }
+        : null;
       machineEntries.push({
         machine_consumption_id: e.id, material_consumption_id: mc.id,
         machine: e.machine?.code ?? null, category: e.category,
         sku_code: e.sku_code, sku_version: e.sku_version, sku_version_id: e.sku_version_id,
         start_time: e.start_time, end_time: e.end_time,
         pallets: sortedBySortOrder(e.pallets || []).filter((p) => p.role === "primary").map(prodFlattenPallet),
-        production_details: e.sku_version_ref ? { ...e.sku_version_ref } : null,
+        production_details: productionDetails,
+        machine_no: e.machine_no, auto_padding: e.auto_padding, container_order_no: e.container_order_no,
       });
     }
   }
@@ -999,19 +1032,27 @@ async function listRqcSb(
 
 type RawRqcDefectResult = { defect_sr: number; found: number | string | null; remarks: string | null };
 type RawRqcCoaObservation = { coa_group: string; sr: number; observation: string | null };
+type RawRqcMachineAllocation = { machine_id: string; fg_pallets_count: number; machine: { code: string } | null };
 type RawRqcRecordDetail = {
   id: string; production_run_id: string | null; shipment_number: string | null; manufacturer: string | null;
   sku_code_snapshot: string | null; sku_version_snapshot: string | null; overall_result: string | null; status: string;
-  ipqc_record_id: string | null;
-  production_run: { run_number: string; total_fg_pallets: number; shift: string | null; production_date: string | null } |
-    { run_number: string; total_fg_pallets: number; shift: string | null; production_date: string | null }[] | null;
+  ipqc_record_id: string | null; fg_pallets_generated: number | null; table_person_number: string | null;
+  production_run: {
+    run_number: string; total_fg_pallets: number; shift: string | null; production_date: string | null;
+    machines: { machine: { id: string; code: string } | null }[] | null;
+  } | {
+    run_number: string; total_fg_pallets: number; shift: string | null; production_date: string | null;
+    machines: { machine: { id: string; code: string } | null }[] | null;
+  }[] | null;
+  machine_allocations: RawRqcMachineAllocation[];
   defect_results: RawRqcDefectResult[];
   coa_observations: RawRqcCoaObservation[];
 };
 
 const RQC_DETAIL_SELECT =
-  "id,production_run_id,shipment_number,manufacturer,sku_code_snapshot,sku_version_snapshot,overall_result,status,ipqc_record_id," +
-  "production_run:production_runs(run_number,total_fg_pallets,shift,production_date)," +
+  "id,production_run_id,shipment_number,manufacturer,sku_code_snapshot,sku_version_snapshot,overall_result,status,ipqc_record_id,fg_pallets_generated,table_person_number," +
+  "production_run:production_runs(run_number,total_fg_pallets,shift,production_date,machines:production_run_machines(machine:machines(id,code)))," +
+  "machine_allocations:rqc_machine_allocations(machine_id,fg_pallets_count,machine:machines(code))," +
   "defect_results:rqc_defect_results(defect_sr,found,remarks)," +
   "coa_observations:rqc_coa_observations(coa_group,sr,observation)";
 
@@ -1023,6 +1064,14 @@ function flattenRqcDetail(raw: RawRqcRecordDetail): RqcDetail {
     shipment_number: raw.shipment_number, manufacturer: raw.manufacturer,
     sku_code: raw.sku_code_snapshot, sku_version: raw.sku_version_snapshot,
     total_fg_pallets: runObj?.total_fg_pallets ?? null,
+    fg_pallets_generated: raw.fg_pallets_generated,
+    table_person_number: raw.table_person_number,
+    production_run_machines: (runObj?.machines || [])
+      .filter((m) => m.machine)
+      .map((m) => ({ id: m.machine!.id, code: m.machine!.code })),
+    machine_allocations: (raw.machine_allocations || []).map((a) => ({
+      machine_id: a.machine_id, machine: a.machine?.code ?? null, fg_pallets_count: a.fg_pallets_count,
+    })),
     shift: runObj?.shift ?? null, date: runObj?.production_date ?? null,
     overall_result: raw.overall_result, status: raw.status,
     defect_results: (raw.defect_results || [])
@@ -1091,6 +1140,7 @@ async function listCustomerShipmentsSb(
 type RawCsLineItem = {
   id: string; sku_code_id: string | null; sku_version_id: string | null;
   sku_code_snapshot: string | null; sku_version_snapshot: string | null; pallets_required: number;
+  pcs: number | null; pcs_per_sleeve: string | null;
 };
 type RawCsPickingRequest = {
   id: string; sku_code_snapshot: string | null; sku_version_snapshot: string | null;
@@ -1106,7 +1156,7 @@ type RawCsDetail = {
 // line items + linked Shipment Picking requests, for traceability.
 const CS_DETAIL_SELECT =
   "id,shipment_number,container_number,customer,created_at," +
-  "line_items:customer_shipment_line_items(id,sku_code_id,sku_version_id,sku_code_snapshot,sku_version_snapshot,pallets_required)," +
+  "line_items:customer_shipment_line_items(id,sku_code_id,sku_version_id,sku_code_snapshot,sku_version_snapshot,pallets_required,pcs,pcs_per_sleeve)," +
   "picking_requests:shipment_picking_requests(id,sku_code_snapshot,sku_version_snapshot,pallets_required,status,picks:shipment_picking_picks(id))";
 
 function flattenCsDetail(raw: RawCsDetail): CustomerShipmentDetail {
@@ -1116,6 +1166,7 @@ function flattenCsDetail(raw: RawCsDetail): CustomerShipmentDetail {
     line_items: (raw.line_items || []).map((li) => ({
       id: li.id, sku_code_id: li.sku_code_id, sku_version_id: li.sku_version_id,
       sku_code: li.sku_code_snapshot, sku_version: li.sku_version_snapshot, pallets_required: li.pallets_required,
+      pcs: li.pcs, pcs_per_sleeve: li.pcs_per_sleeve,
     })),
     picking_requests: (raw.picking_requests || []).map((r) => ({
       id: r.id, sku_code: r.sku_code_snapshot, sku_version: r.sku_version_snapshot,
@@ -1252,6 +1303,7 @@ async function listOviSb(
 
 type RawOviDetail = {
   id: string; customer_shipment_id: string; shipment_number: string | null; customer_name: string | null; quantity: string | null;
+  quantity_unit: string | null;
   truck_number: string | null; invoice_number: string | null; transporter_name: string | null; seal_number: string | null;
   remarks: string | null; status: string;
   answers: { question_sr: number; answer: string | null }[];
@@ -1259,14 +1311,15 @@ type RawOviDetail = {
 };
 
 const OVI_DETAIL_SELECT =
-  "id,customer_shipment_id,shipment_number,customer_name,quantity,truck_number,invoice_number,transporter_name,seal_number,remarks,status," +
+  "id,customer_shipment_id,shipment_number,customer_name,quantity,quantity_unit,truck_number,invoice_number,transporter_name,seal_number,remarks,status," +
   "answers:outward_vehicle_inspection_answers(question_sr,answer)," +
   "images:outward_vehicle_inspection_images(id,image_type,public_url,sort_order)";
 
 function flattenOviDetail(raw: RawOviDetail): OviDetail {
   return {
     id: raw.id, customer_shipment_id: raw.customer_shipment_id, shipment_number: raw.shipment_number,
-    customer_name: raw.customer_name, quantity: raw.quantity, truck_number: raw.truck_number,
+    customer_name: raw.customer_name, quantity: raw.quantity, quantity_unit: raw.quantity_unit || "Pallets",
+    truck_number: raw.truck_number,
     invoice_number: raw.invoice_number, transporter_name: raw.transporter_name, seal_number: raw.seal_number,
     remarks: raw.remarks, status: raw.status,
     answers: (raw.answers || []).map((a) => ({ question_sr: a.question_sr, answer: (a.answer as "ok" | "not_ok" | null) })),
@@ -1380,7 +1433,7 @@ async function saveHoldReleaseSb(id: string, payload: HoldReleaseSavePayload): P
 // exact same "all versions, not just active ones" shape (see LineItemsEditor,
 // which itself does no active-filtering on the versions it's handed).
 const SKU_SELECT =
-  "id, code, category, is_active, " +
+  "id, code, category, is_active, batch_number, " +
   "versions:sku_versions(id, version, is_active, prod_weight, prod_pcs_per_sleeve, prod_sleeve_per_case, " +
   "prod_total_pcs_per_pallet, prod_total_pallets, prod_target_shots, prod_pad_type, prod_pad_color, prod_case_type, " +
   "prod_dimensions, prod_absorption_rate)";
@@ -1505,7 +1558,7 @@ export const api = {
       () => supabase.from("sku_codes").insert({ category, code, is_active: true }),
       { conflict: `"${code}" already exists.` }
     ).then(() => invalidateListCache("ref:skus")),
-  updateSku: (id: string, patch: { code?: string; is_active?: boolean }) =>
+  updateSku: (id: string, patch: { code?: string; is_active?: boolean; batch_number?: string | null }) =>
     sbVoid(
       () => supabase.from("sku_codes").update(patch).eq("id", id),
       { conflict: `"${patch.code}" already exists.` }
@@ -1596,7 +1649,7 @@ export const api = {
             "id,shipment_number,is_auto_shipment_number,category,truck_number,container_number,vendor_name," +
               "invoice_number,transporter_name,seal_number,total_quantity,inspection_passed_quantity,remarks," +
               "status,created_at,updated_at," +
-              "line_items:inward_vehicle_inspection_line_items(id,sku_code_id,sku_version_id,quantity,sku_code:sku_codes(code),sku_version:sku_versions(version))," +
+              "line_items:inward_vehicle_inspection_line_items(id,sku_code_id,sku_version_id,quantity,unit,sku_code:sku_codes(code),sku_version:sku_versions(version))," +
               "images:inward_vehicle_inspection_images(id,image_type,public_url,ocr_extracted_value,ocr_confidence,ocr_status,sort_order)," +
               "checklist_answers:inward_vehicle_inspection_checklist_answers(checklist_item_id,answer)"
           )
@@ -1609,10 +1662,11 @@ export const api = {
       // line_items' embedded sku_code/sku_version come back as {code}/{version}
       // objects (or null) -- flatten to the plain string shape InspectionDetail
       // expects, matching LineItemOut's sku_code/sku_version fields exactly.
-      type RawLineItem = { id: string; sku_code_id: string | null; sku_version_id: string | null; quantity: string | number; sku_code: { code: string } | null; sku_version: { version: string } | null };
+      type RawLineItem = { id: string; sku_code_id: string | null; sku_version_id: string | null; quantity: string | number; unit: string | null; sku_code: { code: string } | null; sku_version: { version: string } | null };
       const rawInspection = inspection as unknown as Record<string, unknown>;
       const line_items = ((rawInspection.line_items as RawLineItem[]) || []).map((li) => ({
         id: li.id, sku_code_id: li.sku_code_id, sku_version_id: li.sku_version_id, quantity: li.quantity,
+        unit: (li.unit || "Pallets") as LineItem["unit"],
         sku_code: li.sku_code?.code ?? null, sku_version: li.sku_version?.version ?? null,
       }));
       // checklist_answers must list every active checklist item -- including
@@ -1852,7 +1906,7 @@ export const api = {
       listCacheKey("ref:machines", { includeInactive }),
       () =>
         sbRequest<Machine[]>(() => {
-          let q = supabase.from("machines").select("id, code, is_active");
+          let q = supabase.from("machines").select("id, code, is_active, batch_number");
           if (!includeInactive) q = q.eq("is_active", true);
           return q.order("code") as unknown as Promise<{ data: Machine[] | null; error: { message: string; code?: string } | null }>;
         }),
@@ -1863,7 +1917,7 @@ export const api = {
       () => supabase.from("machines").insert({ code, is_active: true }),
       { conflict: `"${code}" already exists.` }
     ).then(() => invalidateListCache("ref:machines")),
-  updateMachine: (id: string, patch: { code?: string; is_active?: boolean }) =>
+  updateMachine: (id: string, patch: { code?: string; is_active?: boolean; batch_number?: string | null }) =>
     sbVoid(
       () => supabase.from("machines").update(patch).eq("id", id),
       { conflict: `"${patch.code}" already exists.` }
@@ -1894,14 +1948,31 @@ export const api = {
     request<MaterialConsumptionDetail>(`/api/v1/material-consumption/${id}/machine-entries/${entryId}`, { method: "DELETE" }),
   setMaterialConsumptionMachineEntryMachine: (id: string, entryId: string, machineId: string | null) =>
     request<MaterialConsumptionDetail>(`/api/v1/material-consumption/${id}/machine-entries/${entryId}`, { method: "PUT", body: JSON.stringify({ machine_id: machineId }) }),
-  scanMaterialConsumptionPallet: (id: string, entryId: string, payload: string, clientTime?: string) =>
-    request<MaterialConsumptionDetail>(`/api/v1/material-consumption/${id}/machine-entries/${entryId}/scan-pallet`, { method: "POST", body: JSON.stringify({ payload, client_time: clientTime }) }),
+  scanMaterialConsumptionPallet: (
+    id: string, entryId: string, payload: string, clientTime?: string,
+    // Section 8 -- partial pallet consumption: how much of this pallet is
+    // being drawn on this scan, and whether it's now fully used up.
+    // Omitting quantity keeps the pre-Section-8 default (whole pallet,
+    // fully consumed) exactly.
+    opts?: { quantity?: string; unit?: string; fullyConsumed?: boolean },
+  ) =>
+    request<MaterialConsumptionDetail>(`/api/v1/material-consumption/${id}/machine-entries/${entryId}/scan-pallet`, {
+      method: "POST",
+      body: JSON.stringify({
+        payload, client_time: clientTime,
+        quantity: opts?.quantity || undefined, unit: opts?.unit || "Pallets",
+        fully_consumed: opts?.fullyConsumed ?? true,
+      }),
+    }),
   scanMaterialConsumptionSecondary: (id: string, entryId: string, payload: string, category: SecondaryMaterialCategory) =>
     request<MaterialConsumptionDetail>(`/api/v1/material-consumption/${id}/machine-entries/${entryId}/scan-secondary`, { method: "POST", body: JSON.stringify({ payload, category }) }),
   removeMaterialConsumptionPallet: (id: string, rowId: string) =>
     request<MaterialConsumptionDetail>(`/api/v1/material-consumption/${id}/pallets/${rowId}`, { method: "DELETE" }),
-  setMaterialConsumptionPalletQuantity: (id: string, rowId: string, quantity: string) =>
-    request<MaterialConsumptionDetail>(`/api/v1/material-consumption/${id}/pallets/${rowId}/quantity`, { method: "PUT", body: JSON.stringify({ quantity }) }),
+  setMaterialConsumptionPalletQuantity: (id: string, rowId: string, quantity: string, opts?: { unit?: string; fullyConsumed?: boolean }) =>
+    request<MaterialConsumptionDetail>(`/api/v1/material-consumption/${id}/pallets/${rowId}/quantity`, {
+      method: "PUT",
+      body: JSON.stringify({ quantity, unit: opts?.unit, fully_consumed: opts?.fullyConsumed }),
+    }),
   saveMaterialConsumptionDraft: (id: string) =>
     request<MaterialConsumptionDetail>(`/api/v1/material-consumption/${id}/save-draft`, { method: "POST" }),
   finalizeMaterialConsumption: async (id: string) => {
@@ -1937,6 +2008,38 @@ export const api = {
   listProduction: (params: { search?: string; date?: string; shift?: string; machine?: string; page?: number } = {}) =>
     cachedList(listCacheKey("production", params), () => listProductionSb(params)),
   getProduction: (id: string) => getProductionSb(id),
+  // Section 15 -- PDF Export by Shipment Number. Fetches the PDF as a blob
+  // (not JSON, so this bypasses the shared `request()` helper) and triggers
+  // a browser download -- the endpoint itself is tolerant of incomplete
+  // traceability chains, so this never throws just because a later stage
+  // hasn't happened yet for this shipment.
+  exportTraceabilityPdf: async (shipmentNumber: string) => {
+    const authHeader = await getAuthHeader();
+    const res = await fetch(`${BASE}/api/v1/traceability/${encodeURIComponent(shipmentNumber)}/pdf`, {
+      headers: { Authorization: authHeader },
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      let detail = res.statusText;
+      try {
+        const data = await res.json();
+        detail = data.detail || JSON.stringify(data);
+      } catch {
+        // ignore
+      }
+      throw new ApiError(res.status, detail);
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `traceability-${shipmentNumber}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  },
+
   saveProduction: async (id: string, payload: ProductionSavePayload) => {
     const res = await request<{ id: string; status: string }>(`/api/v1/production-runs/${id}`, {
       method: "PUT",
@@ -1947,23 +2050,28 @@ export const api = {
   },
 
   // -- IPQC -----------------------------------------------------------
-  // Same split as Production: list/detail reads Supabase-direct (every
-  // record is auto-created by Material Consumption's finalize()), the one
+  // Same split as RQC: list/detail reads Supabase-direct, the one
   // editable-fields save (Shift Incharge + Check Time blocks) through
-  // FastAPI.
+  // FastAPI. Most records are still auto-created by Material Consumption's
+  // finalize(); "+ New Record" (createIpqc) additionally allows manual
+  // creation -- see ipqc_service.create_ipqc.
   listIpqc: (params: { search?: string; date?: string; shift?: string; status?: string; page?: number } = {}) =>
     cachedList(listCacheKey("ipqc", params), () => listIpqcSb(params)),
   getIpqc: (id: string) => getIpqcSb(id),
+  createIpqc: async (payload: { shipment_number?: string | null; manufacturer?: string | null }) => {
+    const res = await request<{ id: string; shipment_number: string | null; status: string }>("/api/v1/ipqc-records", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    invalidateListCache("ipqc");
+    return res;
+  },
   saveIpqc: async (id: string, payload: IpqcSavePayload) => {
     const res = await request<{ id: string; status: string }>(`/api/v1/ipqc-records/${id}`, {
       method: "PUT",
       body: JSON.stringify(payload),
     });
     invalidateListCache("ipqc");
-    // An IPQC save that reaches Approved auto-creates RQC (see
-    // rqc_service.find_or_create_rqc) -- invalidate RQC's list cache too so
-    // the new Pending record shows up without a hard refresh.
-    invalidateListCache("rqc");
     return res;
   },
 

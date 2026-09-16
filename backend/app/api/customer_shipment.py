@@ -80,6 +80,7 @@ def create(
                 sku_code=li.sku_code_snapshot,
                 sku_version=li.sku_version_snapshot,
                 pallets_required=li.pallets_required,
+                pcs=li.pcs, pcs_per_sleeve=li.pcs_per_sleeve,
             )
             for li in shipment.line_items
         ],

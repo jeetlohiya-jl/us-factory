@@ -1,8 +1,8 @@
 "use client";
 import { useState } from "react";
 import { api } from "@/lib/api";
-import type { OviDetail, OviAnswer, OviImage } from "@/lib/types";
-import { OVI_QUESTIONS, OVI_IMAGE_TYPES } from "@/lib/types";
+import type { OviDetail, OviAnswer, OviImage, QuantityUnit } from "@/lib/types";
+import { OVI_QUESTIONS, OVI_IMAGE_TYPES, QUANTITY_UNITS } from "@/lib/types";
 import HoldReleaseSection from "@/components/HoldReleaseSection";
 import OviImageField from "./OviImageField";
 
@@ -48,6 +48,7 @@ export default function OviPanel({
 }) {
   const [step, setStep] = useState(1);
   const [quantity, setQuantity] = useState(record.quantity || "");
+  const [quantityUnit, setQuantityUnit] = useState<QuantityUnit>((record.quantity_unit as QuantityUnit) || "Pallets");
   const [truck, setTruck] = useState(record.truck_number || "");
   const [invoice, setInvoice] = useState(record.invoice_number || "");
   const [transporter, setTransporter] = useState(record.transporter_name || "");
@@ -80,6 +81,7 @@ export default function OviPanel({
         transporter_name: transporter || null,
         seal_number: seal || null,
         quantity: quantity || null,
+        quantity_unit: quantityUnit,
         remarks: remarks || null,
         save_mode: saveMode,
         answers: payload,
@@ -110,7 +112,7 @@ export default function OviPanel({
               <h3>Shipment Details</h3>
               <div className="detail-grid">
                 <Kv label="Shipment Number" value={record.shipment_number ? <span className="mono">{record.shipment_number}</span> : "—"} />
-                <Kv label="Quantity" value={record.quantity} />
+                <Kv label="Quantity" value={record.quantity ? `${record.quantity} ${record.quantity_unit || "Pallets"}` : null} />
                 <Kv label="Customer Name" value={record.customer_name} />
                 <Kv label="Truck / Vehicle Number" value={record.truck_number} />
                 <Kv label="Invoice No." value={record.invoice_number} />
@@ -195,7 +197,13 @@ export default function OviPanel({
                 </div>
                 <div className="field">
                   <label>Quantity <span style={{ color: "var(--red)" }}>*</span></label>
-                  <input type="text" placeholder="e.g. 44 pallets" value={quantity} disabled={!editable} onChange={(e) => setQuantity(e.target.value)} />
+                  <input type="text" placeholder="e.g. 44" value={quantity} disabled={!editable} onChange={(e) => setQuantity(e.target.value)} />
+                </div>
+                <div className="field">
+                  <label>Unit</label>
+                  <select disabled={!editable} value={quantityUnit} onChange={(e) => setQuantityUnit(e.target.value as QuantityUnit)}>
+                    {QUANTITY_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+                  </select>
                 </div>
               </div>
               <div className="form-grid">

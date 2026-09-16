@@ -61,6 +61,11 @@ class SkuCode(Base):
     category = Column(Text, nullable=False)
     description = Column(Text, nullable=True)
     is_active = Column(Boolean, nullable=False, default=True)
+    # Section 11 -- admin-supplied 5-digit "SKU number" used as the first
+    # segment of the FG Storage Batch Code. Nullable: the real mapping is
+    # "to be supplied later" per the task -- batch_code_service falls back
+    # to a placeholder until this is populated.
+    batch_number = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
     # cascade="all, delete-orphan" so deleting a SkuCode via the ORM (see
@@ -134,6 +139,9 @@ class Machine(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
     code = Column(Text, nullable=False, unique=True)
     is_active = Column(Boolean, nullable=False, default=True)
+    # Section 11 -- admin-supplied 2-digit "machine number" used as the
+    # M<nn> segment of the FG Storage Batch Code. Nullable, populated later.
+    batch_number = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
 
@@ -186,6 +194,10 @@ class InwardVehicleInspectionLineItem(Base):
     sku_code_id = Column(UUID(as_uuid=True), ForeignKey("sku_codes.id"), nullable=True)
     sku_version_id = Column(UUID(as_uuid=True), ForeignKey("sku_versions.id"), nullable=True)
     quantity = Column(Numeric, nullable=False, default=0)
+    # "Pallets" | "Kgs" | "Units" -- migration 0031, so a bare quantity
+    # number is never ambiguous. Defaults 'Pallets' (this factory's
+    # dominant unit); genuinely user-editable via the same line item row.
+    unit = Column(Text, nullable=False, default="Pallets")
     sort_order = Column(Integer, nullable=False, default=0)
 
     inspection = relationship("InwardVehicleInspection", back_populates="line_items")
@@ -247,6 +259,11 @@ class InwardQcRecord(Base):
     vendor_id = Column(UUID(as_uuid=True), ForeignKey("vendors.id"), nullable=True)
     quantity = Column(Numeric, nullable=True)
     quantity_label = Column(Text, nullable=True)
+    # "Pallets" | "Kgs" | "Units" -- migration 0031. Distinct from
+    # quantity_label above (which names WHAT is being counted, e.g. "Number
+    # of pads to be checked") -- this is the actual unit the quantity
+    # number is denominated in.
+    quantity_unit = Column(Text, nullable=False, default="Pallets")
     sku_code_id = Column(UUID(as_uuid=True), ForeignKey("sku_codes.id"), nullable=True)
     sku_version_id = Column(UUID(as_uuid=True), ForeignKey("sku_versions.id"), nullable=True)
     sku_code_snapshot = Column(Text, nullable=True)
@@ -449,24 +466,30 @@ class IpqcRecord(Base):
     finalized (see material_consumption_service.find_or_create_ipqc),
     exactly mirroring the prototype's maFindOrCreateIpqc / linkId dedup.
 
-    One IPQC record per Production Run (unique constraint on
-    production_run_id) is the dedup mechanism: since a Production Run is
-    itself found-or-created by (date, shift) and never duplicated, keying
-    IPQC 1:1 off the run automatically prevents a second Material
-    Consumption record on the same date+shift from ever creating a second
-    IPQC record for that shift.
+    One IPQC record per Production Run used to be enforced by a DB-level
+    unique constraint on production_run_id; as of migration 0029 that
+    constraint is gone, because IPQC can now ALSO be created manually (see
+    "+ New Record" / ipqc_service.create_ipqc), which may leave
+    production_run_id null (no matching Shipment Number yet) or, rarely,
+    non-unique. The AUTO-creation path's own "one record per run" invariant
+    is unchanged and still enforced in application code, by
+    material_consumption_service.find_or_create_ipqc's find-before-create
+    query -- exactly the same pattern Production Run itself already uses to
+    dedup by (date, shift) without a DB constraint.
 
     Fields below split the same way as Production's editable-fields work:
     shipment_number/batch_code/manufacturer/pad_color/weight/dimensions/
     absorption_rate are autopopulated at creation from the source Material
     Consumption + SKU Version and never re-entered (locked in the
-    prototype's IPQC_LOCKABLE_IDS); shift_incharge and the check blocks
-    (ipqc_check_blocks) are genuinely user-entered, saved atomically via
-    FastAPI's PUT /api/v1/ipqc-records/{id}.
+    prototype's IPQC_LOCKABLE_IDS) when auto-created; a manually created
+    record instead seeds shipment_number from user input (see
+    ipqc_service.create_ipqc, mirroring rqc_service.create_rqc). shift_incharge
+    and the check blocks (ipqc_check_blocks) are genuinely user-entered
+    either way, saved atomically via FastAPI's PUT /api/v1/ipqc-records/{id}.
     """
     __tablename__ = "ipqc_records"
     id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
-    production_run_id = Column(UUID(as_uuid=True), ForeignKey("production_runs.id", ondelete="CASCADE"), nullable=False, unique=True)
+    production_run_id = Column(UUID(as_uuid=True), ForeignKey("production_runs.id", ondelete="SET NULL"), nullable=True)
     sku_code_id = Column(UUID(as_uuid=True), ForeignKey("sku_codes.id"), nullable=True)
     sku_version_id = Column(UUID(as_uuid=True), ForeignKey("sku_versions.id"), nullable=True)
     sku_code_snapshot = Column(Text, nullable=True)
@@ -565,10 +588,16 @@ class RqcRecord(Base):
     record when one exists, and never re-entered. Manufacturer has no
     upstream source in this app (same as the HTML prototype's own
     plain-text field) so it's seeded with a placeholder and left genuinely
-    user-editable. The FG pallet count shown alongside this record is read
-    live from production_runs.total_fg_pallets via the FK -- never
-    duplicated onto this table, so there is exactly one source of truth for
-    "how many FG pallets this run produced."
+    user-editable.
+
+    fg_pallets_generated (migration 0030) is "Number of FG Pallets
+    Generated", entered at the top of THIS form -- it replaced
+    production_runs.total_fg_pallets as the source of truth for FG QR
+    Generation's quantity (Production no longer collects this input at
+    all). It is genuinely user-editable, seeded at creation with whatever
+    the linked Production Run's total_fg_pallets already held (a
+    best-effort default only, for continuity with any pre-existing data --
+    once set here, this column is what every downstream reader uses).
     """
     __tablename__ = "rqc_records"
     id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
@@ -584,6 +613,11 @@ class RqcRecord(Base):
     # matching the prototype's #rqc-f-overall-result exactly (separate from
     # `status`, which IS computed from the defect grid below).
     overall_result = Column(Text, nullable=True)
+    fg_pallets_generated = Column(Integer, nullable=True)
+    # Section 11 -- brand-new field, manually entered on this form (never
+    # derived from the logged-in user or anywhere else). The T<value>
+    # segment of the FG Storage Batch Code.
+    table_person_number = Column(Text, nullable=True)
     status = Column(Text, nullable=False, default="pending")
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
@@ -599,6 +633,35 @@ class RqcRecord(Base):
         "RqcCoaObservation", back_populates="rqc_record",
         cascade="all, delete-orphan",
     )
+    machine_allocations = relationship(
+        "RqcMachineAllocation", back_populates="rqc_record", cascade="all, delete-orphan",
+    )
+
+
+class RqcMachineAllocation(Base):
+    """
+    Section 11 -- how many of this RQC's fg_pallets_generated came off each
+    machine. Exists because a Production Run can span multiple machines
+    (see ProductionRunMachine), but the FG Storage Batch Code's Machine
+    segment names the ONE specific machine that produced each pallet -- a
+    level of detail this app has never tracked before pallet generation.
+    For a single-machine run there is exactly one row (the whole count);
+    for a multi-machine run the operator splits the total across machines
+    on the RQC form. The sum matching fg_pallets_generated is enforced in
+    application code (rqc_service), not a DB constraint, so it can be
+    edited freely while the RQC record is still in progress.
+    """
+    __tablename__ = "rqc_machine_allocations"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    rqc_record_id = Column(UUID(as_uuid=True), ForeignKey("rqc_records.id", ondelete="CASCADE"), nullable=False)
+    machine_id = Column(UUID(as_uuid=True), ForeignKey("machines.id"), nullable=False)
+    fg_pallets_count = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+    rqc_record = relationship("RqcRecord", back_populates="machine_allocations")
+    machine = relationship("Machine")
+
+    __table_args__ = (UniqueConstraint("rqc_record_id", "machine_id"),)
 
 
 class RqcDefectResult(Base):
@@ -677,6 +740,9 @@ class QrGenerationRecord(Base):
     created_by = Column(UUID(as_uuid=True), ForeignKey("app_users.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     generated_at = Column(DateTime(timezone=True), nullable=True)
+    # Section 11 -- FG batches only. Frozen at generate_pallets() time; every
+    # pallet in this batch shares this same Combo Number (01-44, wraps).
+    combo_number = Column(Integer, nullable=True)
 
     source_inward_qc = relationship("InwardQcRecord")
     source_production_run = relationship("ProductionRun")
@@ -699,6 +765,12 @@ class Pallet(Base):
     source_qr_generation_id = Column(UUID(as_uuid=True), ForeignKey("qr_generation_records.id"), nullable=False)
     source_inward_qc_id = Column(UUID(as_uuid=True), ForeignKey("inward_qc_records.id"), nullable=True)
     source_production_run_id = Column(UUID(as_uuid=True), ForeignKey("production_runs.id"), nullable=True)
+    # Section 11 -- FG pallets only. Which specific machine (within a
+    # possibly multi-machine Production Run) produced this pallet, and the
+    # frozen Batch Code string computed from it at generation time. Both
+    # null for RM pallets and for FG pallets generated before this existed.
+    source_machine_id = Column(UUID(as_uuid=True), ForeignKey("machines.id"), nullable=True)
+    batch_code = Column(Text, nullable=True)
     lifecycle_status = Column(Text, nullable=False, default="generated")
     current_location_id = Column(UUID(as_uuid=True), ForeignKey("locations.id"), nullable=True)
     qr_storage_path = Column(Text, nullable=True)
@@ -712,6 +784,7 @@ class Pallet(Base):
     source_qr_generation = relationship("QrGenerationRecord", back_populates="pallets")
     source_inward_qc = relationship("InwardQcRecord")
     source_production_run = relationship("ProductionRun")
+    source_machine = relationship("Machine")
     current_location = relationship("Location")
     lifecycle_events = relationship(
         "PalletLifecycleEvent", back_populates="pallet",
@@ -814,6 +887,21 @@ class MaterialConsumptionMachineEntry(Base):
     end_time = Column(Text, nullable=True)
     sort_order = Column(Integer, nullable=False, default=0)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    # Section 12 -- Production's per-machine attribute overrides. Null =
+    # use the SKU Version's own prod_* reference value (unchanged default
+    # behaviour); non-null = the operator's correction for THIS run only,
+    # never written back to the shared SkuVersion row. See migration 0034.
+    override_weight = Column(Text, nullable=True)
+    override_pcs_per_sleeve = Column(Text, nullable=True)
+    override_sleeve_per_case = Column(Text, nullable=True)
+    override_total_pcs_per_pallet = Column(Text, nullable=True)
+    override_pad_type = Column(Text, nullable=True)
+    override_pad_color = Column(Text, nullable=True)
+    override_case_type = Column(Text, nullable=True)
+    # Genuinely new fields, no upstream source.
+    machine_no = Column(Text, nullable=True)
+    auto_padding = Column(Text, nullable=True)
+    container_order_no = Column(Text, nullable=True)
 
     material_consumption = relationship("MaterialConsumption", back_populates="machine_entries")
     machine = relationship("Machine")
@@ -843,14 +931,25 @@ class MaterialConsumptionPallet(Base):
     Structured, not a comma-separated string -- see MaterialConsumption's
     module docstring and the task's explicit "do not store the pallet
     relationship only as a comma-separated display string" instruction.
+
+    pallet_id is deliberately NOT unique as of migration 0032: a pallet
+    that was only partially consumed (fully_consumed=False) stays
+    Pallet.lifecycle_status == 'stored' and can be attached to a LATER
+    Material Consumption record too, so the same pallet can legitimately
+    appear in more than one row across its history. What must never
+    happen -- the same pallet claimed by two still-open (draft) records at
+    once -- is enforced in material_consumption_service._assert_not_already_allocated
+    instead of at the DB layer.
     """
     __tablename__ = "material_consumption_pallets"
     id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
     material_consumption_id = Column(UUID(as_uuid=True), ForeignKey("material_consumptions.id", ondelete="CASCADE"), nullable=False)
     machine_entry_id = Column(UUID(as_uuid=True), ForeignKey("material_consumption_machine_entries.id", ondelete="CASCADE"), nullable=False)
     role = Column(Text, nullable=False)  # 'primary' | 'cfb' | 'pad' | 'glue' | 'polybag'
-    pallet_id = Column(UUID(as_uuid=True), ForeignKey("pallets.id"), nullable=False, unique=True)
+    pallet_id = Column(UUID(as_uuid=True), ForeignKey("pallets.id"), nullable=False, index=True)
     quantity = Column(Numeric, nullable=False, default=1)
+    unit = Column(Text, nullable=False, default="Pallets")
+    fully_consumed = Column(Boolean, nullable=False, default=True)
     sort_order = Column(Integer, nullable=False, default=0)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
@@ -896,6 +995,10 @@ class CustomerShipmentLineItem(Base):
     sku_code_snapshot = Column(Text, nullable=True)
     sku_version_snapshot = Column(Text, nullable=True)
     pallets_required = Column(Integer, nullable=False, default=0)
+    # Section 13 -- genuinely new fields, operator-entered, not derived from
+    # SkuVersion's own (Production-facing) prod_pcs_per_sleeve reference.
+    pcs = Column(Integer, nullable=True)
+    pcs_per_sleeve = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
     customer_shipment = relationship("CustomerShipment", back_populates="line_items")
@@ -976,6 +1079,8 @@ class OutwardVehicleInspection(Base):
     shipment_number = Column(Text, nullable=True)
     customer_name = Column(Text, nullable=True)
     quantity = Column(Text, nullable=True)
+    # "Pallets" | "Kgs" | "Units" -- migration 0031.
+    quantity_unit = Column(Text, nullable=False, default="Pallets")
     truck_number = Column(Text, nullable=True)
     invoice_number = Column(Text, nullable=True)
     transporter_name = Column(Text, nullable=True)

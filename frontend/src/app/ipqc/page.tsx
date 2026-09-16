@@ -7,6 +7,7 @@ import { cachedList, invalidateListCache, listCacheKey } from "@/lib/listCache";
 import { useImmediateThenDebounced } from "@/lib/useImmediateThenDebounced";
 import type { IpqcListItem, IpqcDetail } from "@/lib/types";
 import IpqcDetailPanel from "@/components/ipqc/IpqcDetailPanel";
+import NewIpqcPanel from "@/components/ipqc/NewIpqcPanel";
 import MoreMenu from "@/components/inward-vehicle-inspection/MoreMenu";
 import Pagination from "@/components/Pagination";
 
@@ -48,6 +49,7 @@ function IpqcPageContent() {
 
   const [openRecord, setOpenRecord] = useState<IpqcDetail | null>(null);
   const [panelMode, setPanelMode] = useState<"view" | "edit">("edit");
+  const [showNewPanel, setShowNewPanel] = useState(false);
 
   // "View" only makes sense once there's something finished to review --
   // Pending/Draft records have nothing filled in yet, so the pencil (fill
@@ -112,8 +114,16 @@ function IpqcPageContent() {
         <div>
           <h1>IPQC</h1>
           <div className="desc">Every IPQC record created to date, auto-identified against the current production run.</div>
+          <span className="auto-note">Records are usually created automatically from Material Consumption -- use + New Record to start one manually.</span>
         </div>
-        <span className="auto-note">Records are created automatically from Material Consumption.</span>
+        <button
+          className="btn btn-primary"
+          disabled={!perms || !perms.can_create}
+          title={perms && !perms.can_create ? "You don't have permission to create IPQC records." : ""}
+          onClick={() => setShowNewPanel(true)}
+        >
+          + New Record
+        </button>
       </div>
 
       <div className="toolbar">
@@ -214,6 +224,17 @@ function IpqcPageContent() {
           onSaved={refreshAfterMutation}
           mode={panelMode}
           onEdit={() => setPanelMode("edit")}
+        />
+      )}
+
+      {showNewPanel && (
+        <NewIpqcPanel
+          onClose={() => setShowNewPanel(false)}
+          onCreated={(id) => {
+            setShowNewPanel(false);
+            refreshAfterMutation();
+            openDetail(id, "edit");
+          }}
         />
       )}
 

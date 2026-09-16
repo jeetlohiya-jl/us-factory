@@ -5,14 +5,15 @@ import { useMe } from "@/lib/useMe";
 import type { Category, Vendor } from "@/lib/types";
 
 const CATEGORY_LABELS: Record<Category, string> = {
-  tray: "Tray", pad: "Soaker Pad", polybag: "Polybag", cfb: "CFB", glue: "Glue",
+  tray: "Base Tray", fnp_tray: "FNP Tray", film: "Film",
+  pad: "Soaker Pad", polybag: "Polybag", cfb: "CFB", glue: "Glue",
 };
-// All five Inward Vehicle Inspection categories carry a Vendor Name field
-// on the inspection itself (Tray QC being auto-created from an approved
+// Every Inward Vehicle Inspection category carries a Vendor Name field on
+// the inspection itself (Tray QC being auto-created from an approved
 // inspection doesn't change that -- the inspection's own Vendor Name is
 // entered regardless of category), so every category needs its own vendor
 // list here too.
-const MANAGED_CATEGORIES: Category[] = ["tray", "pad", "polybag", "cfb", "glue"];
+const MANAGED_CATEGORIES: Category[] = ["tray", "fnp_tray", "film", "pad", "polybag", "cfb", "glue"];
 
 /**
  * Admin screen for the per-category Vendor master list backing the Vendor

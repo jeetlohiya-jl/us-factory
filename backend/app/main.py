@@ -8,7 +8,7 @@ from app.api import (
     reference, inward_vehicle_inspections, me, inward_qc,
     rm_qr, rm_storage, fg_qr, fg_storage, production, ipqc, rqc, locations, vendors, skus,
     machines, material_consumption, users, customer_shipment, shipment_picking,
-    outward_vehicle_inspection,
+    outward_vehicle_inspection, traceability,
 )
 
 settings = get_settings()
@@ -42,6 +42,7 @@ app.include_router(rqc.router)
 app.include_router(customer_shipment.router)
 app.include_router(shipment_picking.router)
 app.include_router(outward_vehicle_inspection.router)
+app.include_router(traceability.router)
 app.include_router(locations.router)
 app.include_router(vendors.router)
 app.include_router(skus.router)

@@ -55,13 +55,15 @@ export default function CustomerShipmentDetailPanel({
           <div className="detail-card">
             <h3>Line Items</h3>
             <table className="qc-obs-table">
-              <thead><tr><th>SKU Code</th><th>SKU Version</th><th>No. of Pallets</th></tr></thead>
+              <thead><tr><th>SKU Code</th><th>SKU Version</th><th>No. of Pallets</th><th>Pcs</th><th>Pcs/Sleeve</th></tr></thead>
               <tbody>
                 {detail.line_items.map((li) => (
                   <tr key={li.id}>
                     <td className="mono">{li.sku_code || "—"}</td>
                     <td>{li.sku_version || "—"}</td>
                     <td>{li.pallets_required}</td>
+                    <td>{li.pcs ?? "—"}</td>
+                    <td>{li.pcs_per_sleeve || "—"}</td>
                   </tr>
                 ))}
               </tbody>

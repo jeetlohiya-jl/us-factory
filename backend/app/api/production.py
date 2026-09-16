@@ -138,12 +138,16 @@ def save_production_run(
     """
     The single transactional write for the editable Production feature,
     matching the prototype's prodSaveRecord: atomically saves Rejection
-    Classification, Total FG Pallets Generated and the full Wastage list
-    (replaced wholesale, matching the prototype's own in-memory array
-    semantics), and advances status from 'pending' to 'saved' -- the exact
-    status prodPropagateToFgQr checks before a run becomes eligible for FG
-    QR Generation. Idempotent: saving an already-saved run just updates the
-    editable fields and leaves status as 'saved'.
+    Classification and the full Wastage list (replaced wholesale, matching
+    the prototype's own in-memory array semantics), and advances status
+    from 'pending' to 'saved' -- the exact status prodPropagateToFgQr
+    checks before a run becomes eligible for FG QR Generation. Idempotent:
+    saving an already-saved run just updates the editable fields and leaves
+    status as 'saved'.
+
+    Total FG Pallets Generated is NO LONGER collected here (moved to the
+    top of the RQC form -- see RqcRecord.fg_pallets_generated / migration
+    0030); this route no longer writes production_runs.total_fg_pallets.
 
     Everything else about a Production record (machines, SKU, Material
     Consumption linkage, the SKU Version's Production Details lookup) is
@@ -173,7 +177,12 @@ def save_production_run(
     run.rejection_glue_on_pad = payload.rejection_glue_on_pad
     run.rejection_pad_placement_direction = payload.rejection_pad_placement_direction
     run.rejection_adhesion_issue = payload.rejection_adhesion_issue
-    run.total_fg_pallets = payload.total_fg_pallets
+    # NOTE: total_fg_pallets is intentionally NOT written from here anymore
+    # (payload.total_fg_pallets is accepted but ignored, kept only for
+    # backward-compatible payload shape). "Number of FG Pallets Generated"
+    # moved to the top of the RQC form as of migration 0030 -- see
+    # RqcRecord.fg_pallets_generated / api/rqc.py's save route. This column
+    # is now legacy/display-only.
 
     # Replace the wastage list wholesale -- simplest, safest semantics for a
     # short repeatable list edited as a whole from one form (add/remove rows
@@ -186,6 +195,38 @@ def save_production_run(
             production_run_id=run.id, machine_id=entry.machine_id,
             trays=entry.trays, reason=entry.reason, sort_order=i,
         ))
+
+    # Section 12 -- per-machine-entry attribute overrides / new fields.
+    # Only ever applies to a machine entry that actually belongs to THIS
+    # run (via its Material Consumption records) -- never trusts a
+    # machine_entry_id blindly, so one run's save can't reach into
+    # another's data.
+    own_entry_ids = {e.id for mc in run.material_consumptions for e in mc.machine_entries}
+    entries_by_id = {e.id: e for mc in run.material_consumptions for e in mc.machine_entries}
+    for attrs in payload.machine_entry_attributes:
+        if attrs.machine_entry_id not in own_entry_ids:
+            continue
+        entry = entries_by_id[attrs.machine_entry_id]
+        if attrs.weight is not None:
+            entry.override_weight = attrs.weight or None
+        if attrs.pcs_per_sleeve is not None:
+            entry.override_pcs_per_sleeve = attrs.pcs_per_sleeve or None
+        if attrs.sleeve_per_case is not None:
+            entry.override_sleeve_per_case = attrs.sleeve_per_case or None
+        if attrs.total_pcs_per_pallet is not None:
+            entry.override_total_pcs_per_pallet = attrs.total_pcs_per_pallet or None
+        if attrs.pad_type is not None:
+            entry.override_pad_type = attrs.pad_type or None
+        if attrs.pad_color is not None:
+            entry.override_pad_color = attrs.pad_color or None
+        if attrs.case_type is not None:
+            entry.override_case_type = attrs.case_type or None
+        if attrs.machine_no is not None:
+            entry.machine_no = attrs.machine_no or None
+        if attrs.auto_padding is not None:
+            entry.auto_padding = attrs.auto_padding or None
+        if attrs.container_order_no is not None:
+            entry.container_order_no = attrs.container_order_no or None
 
     if run.status == "pending":
         run.status = "saved"

@@ -36,6 +36,7 @@ def _serialize_detail(db: Session, inspection: models.InwardVehicleInspection) -
     for li in inspection.line_items:
         line_items_out.append(schemas.LineItemOut(
             id=li.id, sku_code_id=li.sku_code_id, sku_version_id=li.sku_version_id, quantity=li.quantity,
+            unit=li.unit or "Pallets",
             sku_code=li.sku_code.code if li.sku_code else None,
             sku_version=li.sku_version.version if li.sku_version else None,
         ))
@@ -179,11 +180,23 @@ def update_inspection(
     if "category" in data and data["category"] != inspection.category:
         inspection.category = data["category"]
         shipment_number, is_auto = svc.next_shipment_number(db, inspection.category)
-        if is_auto:
+        # Section 14: never auto-overwrite a shipment number the user
+        # actually typed in. Before this check, switching FROM a manual
+        # category (e.g. Base Tray, where the operator types their own
+        # Shipment Number) TO an auto-numbered one (Pad/Polybag/CFB/Glue)
+        # would unconditionally stomp whatever the user had entered with a
+        # freshly generated auto number -- silently discarding real data.
+        # Only auto-generate when there's nothing here yet, or what's here
+        # was itself auto-generated (never a user's own entry).
+        user_entered_value_present = bool(inspection.shipment_number) and not inspection.is_auto_shipment_number
+        if is_auto and not user_entered_value_present:
             inspection.shipment_number = shipment_number
             inspection.is_auto_shipment_number = True
-        else:
+        elif not is_auto:
             inspection.is_auto_shipment_number = False
+        # else: is_auto is True but the user already has their own value in
+        # place -- leave shipment_number and is_auto_shipment_number (False)
+        # untouched.
 
     for field in ["shipment_number", "truck_number", "container_number", "vendor_name", "invoice_number",
                   "transporter_name", "seal_number", "remarks", "inspection_passed_quantity"]:
@@ -199,7 +212,7 @@ def update_inspection(
         for i, li in enumerate(line_items):
             inspection.line_items.append(models.InwardVehicleInspectionLineItem(
                 sku_code_id=li.get("sku_code_id"), sku_version_id=li.get("sku_version_id"),
-                quantity=li.get("quantity") or Decimal("0"), sort_order=i,
+                quantity=li.get("quantity") or Decimal("0"), unit=li.get("unit") or "Pallets", sort_order=i,
             ))
         svc.recompute_total_quantity(inspection)
 

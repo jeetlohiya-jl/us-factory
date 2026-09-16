@@ -25,7 +25,7 @@ export default function NewCustomerShipmentPanel({
   const [shipmentNumber, setShipmentNumber] = useState("");
   const [containerPreview, setContainerPreview] = useState<string | null>(null);
   const [lineItems, setLineItems] = useState<CustomerShipmentLineItemDraft[]>([
-    { key: "li-0", sku_code_id: null, sku_version_id: null, pallets_required: "" },
+    { key: "li-0", sku_code_id: null, sku_version_id: null, pallets_required: "", pcs: "", pcs_per_sleeve: "" },
   ]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -61,6 +61,8 @@ export default function NewCustomerShipmentPanel({
           sku_code_id: li.sku_code_id as string,
           sku_version_id: li.sku_version_id as string,
           pallets_required: Number(li.pallets_required),
+          pcs: li.pcs === "" ? null : Number(li.pcs),
+          pcs_per_sleeve: li.pcs_per_sleeve || null,
         })),
       });
       onSaved();

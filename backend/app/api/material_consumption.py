@@ -1,5 +1,6 @@
 import uuid
 from decimal import Decimal, InvalidOperation
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import and_, func, or_
@@ -241,7 +242,10 @@ def scan_pallet(
     mc = _get_or_404(db, mc_id)
     entry = _get_entry_or_404(mc, entry_id)
     try:
-        svc.add_primary_pallet(db, mc, entry, body.payload, client_time=body.client_time, actor_user_id=current_user.user_id)
+        svc.add_primary_pallet(
+            db, mc, entry, body.payload, client_time=body.client_time, actor_user_id=current_user.user_id,
+            quantity=body.quantity, unit=body.unit or "Pallets", fully_consumed=body.fully_consumed,
+        )
         db.commit()
     except svc.MaterialConsumptionError as e:
         db.rollback()
@@ -281,7 +285,12 @@ def remove_pallet(
 
 
 class QuantityIn(schemas.BaseModel):
-    quantity: str
+    quantity: Optional[str] = None
+    unit: Optional[str] = None
+    # Section 8 -- primary pallets only: lets the operator flip an
+    # already-scanned pallet between "fully consumed" and "partial draw"
+    # (and back) while the record is still a draft.
+    fully_consumed: Optional[bool] = None
 
 
 @router.put("/{mc_id}/pallets/{row_id}/quantity", response_model=schemas.MaterialConsumptionDetailOut)
@@ -290,12 +299,14 @@ def set_pallet_quantity(
     db: Session = Depends(get_db), _perm=Depends(require("edit")),
 ):
     mc = _get_or_404(db, mc_id)
+    qty = None
+    if body.quantity is not None:
+        try:
+            qty = Decimal(body.quantity)
+        except (InvalidOperation, ValueError):
+            raise HTTPException(status_code=422, detail="Invalid quantity.")
     try:
-        qty = Decimal(body.quantity)
-    except (InvalidOperation, ValueError):
-        raise HTTPException(status_code=422, detail="Invalid quantity.")
-    try:
-        svc.set_secondary_quantity(db, mc, row_id, qty)
+        svc.update_pallet_consumption(db, mc, row_id, quantity=qty, unit=body.unit, fully_consumed=body.fully_consumed)
         db.commit()
     except svc.MaterialConsumptionError as e:
         db.rollback()

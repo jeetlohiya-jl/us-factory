@@ -124,7 +124,8 @@ def _serialize_detail(db: Session, qc: models.InwardQcRecord) -> dict:
     return schemas.QcDetailOut(
         id=qc.id, shipment_number=qc.shipment_number, is_auto_shipment_number=qc.is_auto_shipment_number,
         category=qc.category, status=qc.status, vendor_name=qc.vendor_name, quantity=qc.quantity,
-        quantity_label=qc.quantity_label, sku_code_id=qc.sku_code_id, sku_version_id=qc.sku_version_id,
+        quantity_label=qc.quantity_label, quantity_unit=qc.quantity_unit or "Pallets",
+        sku_code_id=qc.sku_code_id, sku_version_id=qc.sku_version_id,
         sku_code=qc.sku_code.code if qc.sku_code else None, sku_version=qc.sku_version.version if qc.sku_version else None,
         coa_filename=qc.coa_filename, coa_url=coa_url, conclusion_or_suggestions=qc.conclusion_or_suggestions,
         sampling_sample_size=qc.sampling_sample_size, sampling_upper_limit=qc.sampling_upper_limit, sampling_note=qc.sampling_note,
@@ -243,7 +244,7 @@ def update_qc_basic(
     if qc.category == "fgtray":
         raise HTTPException(status_code=400, detail="Tray QC's basic information comes from its linked Vehicle Inspection and cannot be edited here.")
     data = payload.model_dump(exclude_unset=True)
-    for field in ["vendor_name", "quantity", "sku_code_id", "sku_version_id"]:
+    for field in ["vendor_name", "quantity", "quantity_unit", "sku_code_id", "sku_version_id"]:
         if field in data:
             setattr(qc, field, data[field])
     if "vendor_name" in data:
