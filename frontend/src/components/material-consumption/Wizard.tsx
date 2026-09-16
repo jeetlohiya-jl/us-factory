@@ -94,19 +94,31 @@ function MachineEntryPanel({
   onScanPrimary: (payload: string, quantity: string, unit: QuantityUnit, fullyConsumed: boolean) => void;
   onScanSecondary: (category: SecondaryMaterialCategory, payload: string) => void;
   onRemovePallet: (rowId: string) => void;
-  onQuantityChange: (rowId: string, value: string) => void;
+  onQuantityChange: (rowId: string, value: string, unit?: QuantityUnit) => void;
   onPrimaryConsumptionChange: (rowId: string, quantity: string, unit: QuantityUnit, fullyConsumed: boolean) => void;
   onRemoveEntry: () => void;
 }) {
-  const [secondaryCategory, setSecondaryCategory] = useState<SecondaryMaterialCategory | "">("");
-  // Section 8 -- partial pallet consumption: the Quantity/Unit/"Fully
-  // Consumed" the operator wants applied to the NEXT primary-pallet scan.
-  // Defaults reproduce the pre-Section-8 behaviour (whole pallet, fully
-  // consumed) for anyone who doesn't touch these controls.
-  const [scanQty, setScanQty] = useState("1");
-  const [scanUnit, setScanUnit] = useState<QuantityUnit>("Pallets");
-  const [scanFullyConsumed, setScanFullyConsumed] = useState(true);
+  // Redesigned scanning flow (Section 10 follow-up): scan first, ask
+  // questions after -- no upfront Quantity/Unit/Fully-Consumed form before
+  // the pallet is even known. A fresh scan is still recorded with the
+  // pre-Section-8-compatible defaults (whole pallet, fully consumed); the
+  // operator then adjusts "Fully Consumed" and, only if not fully consumed,
+  // Quantity/Unit inline on that row via onPrimaryConsumptionChange -- the
+  // same generic update path used before, just triggered from the table
+  // instead of a form ahead of the scan.
   const hasPrimary = entry.pallets.length > 0;
+
+  // Secondary Materials: a dropdown+table row editor (matching how SKU
+  // Code/Version line items are added elsewhere) replacing the old single
+  // "pick one category, then scan" control -- lets the operator queue up
+  // more than one category to scan into at once. Each pending row is local
+  // UI state only (not yet a real pallet); scanning it calls the existing
+  // scan-secondary endpoint and the resulting committed row then comes from
+  // entry.secondary_materials same as before. Category can't be changed
+  // after a real pallet is scanned (the backend validates the scanned
+  // pallet's own category), so it's only editable while a row is still
+  // pending.
+  const [pendingSecondary, setPendingSecondary] = useState<{ id: string; type: SecondaryMaterialCategory }[]>([]);
 
   return (
     <div className="detail-card" style={{ marginBottom: 20 }}>
@@ -130,44 +142,14 @@ function MachineEntryPanel({
 
       {canEdit && !entry.end_time && (
         <div style={{ marginBottom: 14 }}>
-          <div className="form-grid" style={{ marginBottom: 8, alignItems: "end" }}>
-            <div className="field" style={{ maxWidth: 120 }}>
-              <label>Quantity</label>
-              <input type="number" step="0.01" min="0" value={scanQty} onChange={(e) => setScanQty(e.target.value)} />
-            </div>
-            <div className="field" style={{ maxWidth: 130 }}>
-              <label>Unit</label>
-              <select value={scanUnit} onChange={(e) => setScanUnit(e.target.value as QuantityUnit)}>
-                {QUANTITY_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
-              </select>
-            </div>
-            <div className="field" style={{ maxWidth: 220 }}>
-              <label style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 400 }}>
-                <input type="checkbox" checked={scanFullyConsumed} onChange={(e) => setScanFullyConsumed(e.target.checked)} />
-                Fully consumes this pallet
-              </label>
-            </div>
-          </div>
           <ScanBox
             placeholder="Scan or enter RM pallet QR / ID"
             busy={busy}
-            onScan={(payload) => {
-              onScanPrimary(payload, scanQty || "1", scanUnit, scanFullyConsumed);
-              // Usability (Section 10): reset the consumption controls back
-              // to the safe default (whole pallet, fully consumed) right
-              // after each scan, so a "partial draw" setting left over from
-              // the previous pallet can never be silently applied to the
-              // next different pallet scanned in.
-              setScanQty("1");
-              setScanUnit("Pallets");
-              setScanFullyConsumed(true);
-            }}
+            onScan={(payload) => onScanPrimary(payload, "1", "Pallets", true)}
           />
-          {!scanFullyConsumed && (
-            <div className="hint-text" style={{ marginTop: 6 }}>
-              Pallet will stay available in RM Storage for future consumption once this record is finalized.
-            </div>
-          )}
+          <div className="hint-text" style={{ marginTop: 6 }}>
+            Once scanned, set &quot;Fully Consumed&quot; on the row below -- if not, you&apos;ll be asked for the quantity drawn.
+          </div>
         </div>
       )}
 
@@ -177,36 +159,59 @@ function MachineEntryPanel({
         </div>
       )}
       <table className="qc-obs-table" style={{ marginBottom: 20 }}>
-        <thead><tr><th>Pallet</th><th>SKU Name</th><th>SKU Version</th><th style={{ width: 90 }}>Quantity</th><th style={{ width: 90 }}>Unit</th><th style={{ width: 130 }}>Fully Consumed</th><th></th></tr></thead>
+        <thead><tr><th>Pallet</th><th>SKU Name</th><th>SKU Version</th><th style={{ width: 170 }}>Fully Consumed</th><th></th></tr></thead>
         <tbody>
           {entry.pallets.length === 0 ? (
-            <tr><td colSpan={7} className="hint-text">No pallet scanned yet.</td></tr>
+            <tr><td colSpan={5} className="hint-text">No pallet scanned yet.</td></tr>
           ) : (
-            entry.pallets.map((p) => (
-              <tr key={p.id}>
-                <td className="mono">{p.pallet_display_id}</td>
-                <td>{p.sku_code}</td>
-                <td>{p.sku_version}</td>
-                <td>
-                  {canEdit && !entry.end_time ? (
-                    <input
-                      type="number" step="0.01" defaultValue={String(p.quantity)}
-                      onBlur={(e) => onPrimaryConsumptionChange(p.id, e.target.value, p.unit, p.fully_consumed)}
-                    />
-                  ) : p.quantity}
-                </td>
-                <td>{p.unit}</td>
-                <td>
-                  {canEdit && !entry.end_time ? (
-                    <input
-                      type="checkbox" checked={p.fully_consumed}
-                      onChange={(e) => onPrimaryConsumptionChange(p.id, String(p.quantity), p.unit, e.target.checked)}
-                    />
-                  ) : (p.fully_consumed ? "Yes" : "No — partial")}
-                </td>
-                <td>{canEdit && !entry.end_time && <a className="btn-tertiary" style={{ cursor: "pointer" }} onClick={() => onRemovePallet(p.id)}>Remove</a>}</td>
-              </tr>
-            ))
+            entry.pallets.map((p) => {
+              const editableRow = canEdit && !entry.end_time;
+              return (
+                <tr key={p.id}>
+                  <td className="mono">{p.pallet_display_id}</td>
+                  <td>{p.sku_code}</td>
+                  <td>{p.sku_version}</td>
+                  <td>
+                    {editableRow ? (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        <div style={{ display: "flex", gap: 4 }}>
+                          <button
+                            type="button"
+                            className={`btn ${p.fully_consumed ? "btn-primary" : "btn-secondary"}`}
+                            style={{ padding: "3px 10px", fontSize: 12.5 }}
+                            onClick={() => onPrimaryConsumptionChange(p.id, String(p.quantity), p.unit, true)}
+                          >Yes</button>
+                          <button
+                            type="button"
+                            className={`btn ${!p.fully_consumed ? "btn-primary" : "btn-secondary"}`}
+                            style={{ padding: "3px 10px", fontSize: 12.5 }}
+                            onClick={() => onPrimaryConsumptionChange(p.id, String(p.quantity), p.unit, false)}
+                          >No</button>
+                        </div>
+                        {!p.fully_consumed && (
+                          <div style={{ display: "flex", gap: 6 }}>
+                            <input
+                              type="number" step="0.01" min="0" defaultValue={String(p.quantity)}
+                              style={{ width: 70 }}
+                              onBlur={(e) => onPrimaryConsumptionChange(p.id, e.target.value, p.unit, false)}
+                            />
+                            <select
+                              value={p.unit}
+                              onChange={(e) => onPrimaryConsumptionChange(p.id, String(p.quantity), e.target.value as QuantityUnit, false)}
+                            >
+                              {QUANTITY_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+                            </select>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      p.fully_consumed ? "Yes" : `No — ${p.quantity} ${p.unit}`
+                    )}
+                  </td>
+                  <td>{canEdit && !entry.end_time && <a className="btn-tertiary" style={{ cursor: "pointer" }} onClick={() => onRemovePallet(p.id)}>Remove</a>}</td>
+                </tr>
+              );
+            })
           )}
         </tbody>
       </table>
@@ -214,15 +219,17 @@ function MachineEntryPanel({
       <div className="section-label">Secondary Materials</div>
       {(() => {
         const combined = SECONDARY_CATEGORIES.flatMap((cat) => entry.secondary_materials[cat].map((r) => ({ ...r, cat })));
-        return combined.length > 0 ? (
+        return combined.length > 0 || pendingSecondary.length > 0 ? (
           <table className="qc-obs-table" style={{ marginBottom: 14 }}>
-            <thead><tr><th style={{ width: 90 }}>Type</th><th>Pallet</th><th>SKU</th><th style={{ width: 110 }}>Quantity</th><th style={{ width: 90 }}>Unit</th><th></th></tr></thead>
+            <thead><tr><th style={{ width: 110 }}>Type</th><th>Pallet</th><th>SKU</th><th style={{ width: 90 }}>Quantity</th><th style={{ width: 90 }}>Unit</th><th></th></tr></thead>
             <tbody>
               {/* Section 9: every distinct pallet scanned for a secondary
                   category shows as its own row here -- an operator can keep
                   scanning more CFB/Pad/Glue/Polybag pallets into the same
                   record with no cap and no FIFO/auto-assignment; each scan
-                  is its own explicit row, same as primary pallets. */}
+                  is its own explicit row, same as primary pallets. Quantity
+                  and Unit are editable directly on every row -- no
+                  Fully-Consumed gate for secondary materials. */}
               {combined.map((r) => (
                 <tr key={r.id}>
                   <td>{SECONDARY_LABELS[r.cat]}</td>
@@ -230,12 +237,45 @@ function MachineEntryPanel({
                   <td>{r.sku_code}</td>
                   <td>
                     <input
-                      type="number" step="0.01" disabled={!canEdit || !!entry.end_time} defaultValue={String(r.quantity)}
-                      onBlur={(e) => onQuantityChange(r.id, e.target.value)}
+                      type="number" step="0.01" min="0" disabled={!canEdit || !!entry.end_time} defaultValue={String(r.quantity)}
+                      onBlur={(e) => onQuantityChange(r.id, e.target.value, r.unit)}
                     />
                   </td>
-                  <td>{r.unit}</td>
+                  <td>
+                    {canEdit && !entry.end_time ? (
+                      <select value={r.unit} onChange={(e) => onQuantityChange(r.id, String(r.quantity), e.target.value as QuantityUnit)}>
+                        {QUANTITY_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+                      </select>
+                    ) : r.unit}
+                  </td>
                   <td>{canEdit && !entry.end_time && <a className="btn-tertiary" style={{ cursor: "pointer" }} onClick={() => onRemovePallet(r.id)}>Remove</a>}</td>
+                </tr>
+              ))}
+              {/* Pending rows: not yet scanned/committed. Type is editable
+                  here only -- once a real pallet is scanned into a row, its
+                  category is fixed (validated server-side against the
+                  pallet), so committed rows above show Type as read-only. */}
+              {canEdit && !entry.end_time && pendingSecondary.map((row) => (
+                <tr key={row.id}>
+                  <td>
+                    <select
+                      value={row.type}
+                      onChange={(e) => setPendingSecondary((rows) => rows.map((r) => (r.id === row.id ? { ...r, type: e.target.value as SecondaryMaterialCategory } : r)))}
+                    >
+                      {SECONDARY_CATEGORIES.map((cat) => <option key={cat} value={cat}>{SECONDARY_LABELS[cat]}</option>)}
+                    </select>
+                  </td>
+                  <td colSpan={3}>
+                    <ScanBox
+                      placeholder={`Scan or enter ${SECONDARY_LABELS[row.type]} pallet QR / ID`}
+                      busy={busy}
+                      onScan={(p) => {
+                        onScanSecondary(row.type, p);
+                        setPendingSecondary((rows) => rows.filter((r) => r.id !== row.id));
+                      }}
+                    />
+                  </td>
+                  <td><a className="btn-tertiary" style={{ cursor: "pointer" }} onClick={() => setPendingSecondary((rows) => rows.filter((r) => r.id !== row.id))}>Remove</a></td>
                 </tr>
               ))}
             </tbody>
@@ -246,25 +286,10 @@ function MachineEntryPanel({
       })()}
 
       {canEdit && !entry.end_time && (
-        <div className="field" style={{ maxWidth: 320 }}>
-          <label>Add Secondary Material</label>
-          <select
-            value={secondaryCategory}
-            onChange={(e) => setSecondaryCategory(e.target.value as SecondaryMaterialCategory | "")}
-          >
-            <option value="">Select to scan…</option>
-            {SECONDARY_CATEGORIES.map((cat) => <option key={cat} value={cat}>{SECONDARY_LABELS[cat]}</option>)}
-          </select>
-          {secondaryCategory && (
-            <div style={{ marginTop: 10 }}>
-              <ScanBox
-                placeholder={`Scan or enter ${SECONDARY_LABELS[secondaryCategory]} pallet QR / ID`}
-                busy={busy}
-                onScan={(p) => onScanSecondary(secondaryCategory, p)}
-              />
-            </div>
-          )}
-        </div>
+        <a
+          className="btn-tertiary" style={{ cursor: "pointer" }}
+          onClick={() => setPendingSecondary((rows) => [...rows, { id: `pend-${Date.now()}-${rows.length}`, type: SECONDARY_CATEGORIES[0] }])}
+        >+ Add Secondary Material</a>
       )}
 
       {/* End Time: read-only here -- it's no longer recorded by hand. It's
@@ -359,9 +384,9 @@ export default function MaterialConsumptionWizard({
     }
   }
 
-  async function handleQuantityChange(rowId: string, value: string) {
+  async function handleQuantityChange(rowId: string, value: string, unit?: QuantityUnit) {
     try {
-      const updated = await api.setMaterialConsumptionPalletQuantity(mcId, rowId, value);
+      const updated = await api.setMaterialConsumptionPalletQuantity(mcId, rowId, value, unit ? { unit } : undefined);
       setDetail(updated);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to update quantity");

@@ -83,11 +83,12 @@ export interface ChecklistItemRef {
   affects_status: boolean;
 }
 
-// "Pallets" | "Kgs" | "Units" -- migration 0031's quantity-unit dropdown,
-// used wherever the app records a quantity (see api.ts's various Unit
-// fields and QUANTITY_UNITS below).
-export type QuantityUnit = "Pallets" | "Kgs" | "Units";
-export const QUANTITY_UNITS: QuantityUnit[] = ["Pallets", "Kgs", "Units"];
+// "Pallets" | "Kgs" | "Units" | "Bags" -- migration 0031's quantity-unit
+// dropdown, used wherever the app records a quantity (see api.ts's various
+// Unit fields and QUANTITY_UNITS below). "Bags" added for the Material
+// Consumption scanning redesign (partial-consumption quantity entry).
+export type QuantityUnit = "Pallets" | "Kgs" | "Units" | "Bags";
+export const QUANTITY_UNITS: QuantityUnit[] = ["Pallets", "Kgs", "Units", "Bags"];
 
 export interface LineItem {
   id: string;
