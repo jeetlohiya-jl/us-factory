@@ -39,7 +39,12 @@ type EditableWastage = { machine_id: string | null; trays: number | null; reason
 // Section 12: which EditableAttrs key each editable row writes to, when the
 // row is editable at all (SKU Name is always pure display -- there's no
 // override field for it, changing SKU means scanning a different pallet).
-type AttrKey = "machine_no" | "auto_padding" | "container_order_no" | "weight" | "pcs_per_sleeve" | "sleeve_per_case" | "total_pcs_per_pallet" | "pad_type" | "pad_color" | "case_type";
+// Migration 0038 folds Rejection Classification's six fields into this
+// same per-machine-entry editable-attribute mechanism (attrEdits/
+// setAttrEdit/machine_entry_attributes) instead of a separate flow -- it's
+// the exact same shape (one value per machine entry per field).
+type AttrKey = "machine_no" | "auto_padding" | "container_order_no" | "weight" | "pcs_per_sleeve" | "sleeve_per_case" | "total_pcs_per_pallet" | "pad_type" | "pad_color" | "case_type"
+  | "rejection_damage" | "rejection_misplaced_glue" | "rejection_misplaced_pad" | "rejection_glue_on_pad" | "rejection_pad_placement_direction" | "rejection_adhesion_issue";
 
 // Production Details rows, matching the prototype's PROD_ATTRIBUTES exactly
 // (label text included) -- one row per attribute, one column per machine.
@@ -104,13 +109,14 @@ export default function ProductionDetailPanel({
   // record doesn't need a trip back out.
   onEdit?: () => void;
 }) {
-  const [rc, setRc] = useState(record.rejection_classification);
   const [wastage, setWastage] = useState<EditableWastage[]>(
     record.wastage_entries.map((w) => ({ machine_id: w.machine_id, trays: w.trays, reason: w.reason }))
   );
   // Section 12: keyed by machine_consumption_id -> { attrKey -> value },
   // seeded from the record's current (already-override-merged) values so
-  // editing starts from what's actually displayed.
+  // editing starts from what's actually displayed. Migration 0038 adds
+  // each entry's own Rejection Classification counts to this same seed
+  // (blank input == 0, matching the old single-column behaviour).
   const [attrEdits, setAttrEdits] = useState<Record<string, Partial<Record<AttrKey, string>>>>(
     Object.fromEntries(
       record.machine_entries.map((e) => [
@@ -122,6 +128,12 @@ export default function ProductionDetailPanel({
           total_pcs_per_pallet: e.production_details?.prod_total_pcs_per_pallet != null ? String(e.production_details.prod_total_pcs_per_pallet) : "",
           pad_type: e.production_details?.prod_pad_type || "", pad_color: e.production_details?.prod_pad_color || "",
           case_type: e.production_details?.prod_case_type || "",
+          rejection_damage: e.rejection_classification.damage ? String(e.rejection_classification.damage) : "",
+          rejection_misplaced_glue: e.rejection_classification.misplaced_glue ? String(e.rejection_classification.misplaced_glue) : "",
+          rejection_misplaced_pad: e.rejection_classification.misplaced_pad ? String(e.rejection_classification.misplaced_pad) : "",
+          rejection_glue_on_pad: e.rejection_classification.glue_on_pad ? String(e.rejection_classification.glue_on_pad) : "",
+          rejection_pad_placement_direction: e.rejection_classification.pad_placement_direction ? String(e.rejection_classification.pad_placement_direction) : "",
+          rejection_adhesion_issue: e.rejection_classification.adhesion_issue ? String(e.rejection_classification.adhesion_issue) : "",
         },
       ])
     )
@@ -143,7 +155,7 @@ export default function ProductionDetailPanel({
   const isEdit = mode === "edit";
   const editable = isEdit && canEdit;
   const totalPcsPerPallet = sumProductionDetails(record.machine_entries, "prod_total_pcs_per_pallet");
-  const totalRejections = sumRejections(rc);
+  const totalRejections = sumRejections(record.rejection_classification);
 
   const runMachines = Array.from(new Set(record.machine_entries.map((e) => e.machine).filter((m): m is string => !!m)));
 
@@ -162,12 +174,17 @@ export default function ProductionDetailPanel({
     setError(null);
     try {
       await api.saveProduction(record.id, {
-        rejection_damage: rc.damage,
-        rejection_misplaced_glue: rc.misplaced_glue,
-        rejection_misplaced_pad: rc.misplaced_pad,
-        rejection_glue_on_pad: rc.glue_on_pad,
-        rejection_pad_placement_direction: rc.pad_placement_direction,
-        rejection_adhesion_issue: rc.adhesion_issue,
+        // DEPRECATED as of migration 0038 -- Rejection Classification is
+        // now sent per machine entry via machine_entry_attributes below
+        // (each entry's rejection_* keys, already included in `edits`).
+        // These flat fields are kept only for payload-shape compatibility;
+        // the backend ignores them.
+        rejection_damage: 0,
+        rejection_misplaced_glue: 0,
+        rejection_misplaced_pad: 0,
+        rejection_glue_on_pad: 0,
+        rejection_pad_placement_direction: 0,
+        rejection_adhesion_issue: 0,
         // No longer editable here (moved to RQC's "Number of FG Pallets
         // Generated" -- see RqcDetailPanel.tsx); the backend ignores this
         // field now (api/production.py's save route), so this just echoes
@@ -217,7 +234,6 @@ export default function ProductionDetailPanel({
                 <Kv label="Status" value={<StatusBadge status={record.status} />} />
                 <Kv label="Total PCS/Pallet" value={totalPcsPerPallet ?? "—"} />
                 <Kv label="Total Rejections" value={totalRejections} />
-                <Kv label="FG Pallets Generated" value={record.total_fg_pallets || "—"} />
                 <Kv
                   label="Completed By"
                   value={record.completed_by ? (
@@ -320,30 +336,48 @@ export default function ProductionDetailPanel({
             </div>
           )}
 
-          <div className="detail-card">
-            <h3>Rejection Classification</h3>
-            <table className="qc-obs-table">
-              <tbody>
-                {REJECTION_FIELDS.map((f) => (
-                  <tr key={f.key}>
-                    <td>{f.label}</td>
-                    <td style={{ width: 140 }}>
-                      {editable ? (
-                        <input
-                          type="number"
-                          min={0}
-                          value={rc[f.key] === 0 ? "" : rc[f.key]}
-                          onChange={(e) => setRc((prev) => ({ ...prev, [f.key]: e.target.value === "" ? 0 : Number(e.target.value) }))}
-                        />
-                      ) : (
-                        rc[f.key] || 0
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          {/* Migration 0038: one column per selected machine, same pattern
+              as Production Details below -- rows = REJECTION_FIELDS,
+              columns = record.machine_entries. */}
+          {record.machine_entries.length > 0 && (
+            <div className="detail-card">
+              <h3>Rejection Classification</h3>
+              <div style={{ overflowX: "auto" }}>
+                <table className="qc-obs-table">
+                  <thead>
+                    <tr>
+                      <th>Field</th>
+                      {record.machine_entries.map((e, i) => <th key={e.machine_consumption_id}>{e.machine || `Machine #${i + 1}`}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {REJECTION_FIELDS.map((f) => (
+                      <tr key={f.key}>
+                        <td>{f.label}</td>
+                        {record.machine_entries.map((e) => {
+                          const attrKey = `rejection_${f.key}` as AttrKey;
+                          return (
+                            <td key={e.machine_consumption_id} style={{ width: 100 }}>
+                              {editable ? (
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={attrEdits[e.machine_consumption_id]?.[attrKey] ?? ""}
+                                  onChange={(ev) => setAttrEdit(e.machine_consumption_id, attrKey, ev.target.value)}
+                                />
+                              ) : (
+                                e.rejection_classification[f.key] || 0
+                              )}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           <div className="detail-card">
             <h3>Wastage</h3>

@@ -907,6 +907,16 @@ class MaterialConsumptionMachineEntry(Base):
     machine_no = Column(Text, nullable=True)
     auto_padding = Column(Text, nullable=True)
     container_order_no = Column(Text, nullable=True)
+    # Rejection Classification, per machine entry (migration 0038) -- was a
+    # single flat value shared by the whole Production Run; now each
+    # machine gets its own independently-editable count per field, matching
+    # Production Details' one-column-per-machine pattern.
+    rejection_damage = Column(Numeric, nullable=False, default=0)
+    rejection_misplaced_glue = Column(Numeric, nullable=False, default=0)
+    rejection_misplaced_pad = Column(Numeric, nullable=False, default=0)
+    rejection_glue_on_pad = Column(Numeric, nullable=False, default=0)
+    rejection_pad_placement_direction = Column(Numeric, nullable=False, default=0)
+    rejection_adhesion_issue = Column(Numeric, nullable=False, default=0)
 
     material_consumption = relationship("MaterialConsumption", back_populates="machine_entries")
     machine = relationship("Machine")

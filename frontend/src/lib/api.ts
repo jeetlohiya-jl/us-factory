@@ -585,6 +585,9 @@ type RawProdMcPalletShallow = { role: string; pallet: { shipment_number: string 
 type RawProdMcShallowEntry = {
   pallets: RawProdMcPalletShallow[];
   sku_version_ref: { prod_total_pcs_per_pallet: number | null } | null;
+  // Rejection Classification, per machine entry (migration 0038).
+  rejection_damage: number | string; rejection_misplaced_glue: number | string; rejection_misplaced_pad: number | string;
+  rejection_glue_on_pad: number | string; rejection_pad_placement_direction: number | string; rejection_adhesion_issue: number | string;
 };
 type RawProdMcShallow = { machine_entries: RawProdMcShallowEntry[] };
 
@@ -595,27 +598,34 @@ type RawProductionRunList = {
   machines: { machine: { code: string } | null }[];
   created_by_user: { full_name: string } | null;
   material_consumptions: RawProdMcShallow[];
-  rejection_damage: number | string; rejection_misplaced_glue: number | string;
-  rejection_misplaced_pad: number | string; rejection_glue_on_pad: number | string;
-  rejection_pad_placement_direction: number | string; rejection_adhesion_issue: number | string;
 };
 
 const PRODUCTION_LIST_SELECT =
   "id,run_number,shipment_number,shift,production_date,status," +
-  "rejection_damage,rejection_misplaced_glue,rejection_misplaced_pad,rejection_glue_on_pad,rejection_pad_placement_direction,rejection_adhesion_issue," +
   "sku_code:sku_codes(code)," +
   "machines:production_run_machines(machine:machines(code))," +
   "created_by_user:app_users!production_runs_created_by_fkey(full_name)," +
-  "material_consumptions(machine_entries:material_consumption_machine_entries(pallets:material_consumption_pallets(role,pallet:pallets(shipment_number)),sku_version_ref:sku_versions(prod_total_pcs_per_pallet)))";
+  "material_consumptions(machine_entries:material_consumption_machine_entries(" +
+  "pallets:material_consumption_pallets(role,pallet:pallets(shipment_number))," +
+  "sku_version_ref:sku_versions(prod_total_pcs_per_pallet)," +
+  "rejection_damage,rejection_misplaced_glue,rejection_misplaced_pad,rejection_glue_on_pad,rejection_pad_placement_direction,rejection_adhesion_issue" +
+  "))";
 
-function sumRejections(raw: {
-  rejection_damage: number | string; rejection_misplaced_glue: number | string; rejection_misplaced_pad: number | string;
-  rejection_glue_on_pad: number | string; rejection_pad_placement_direction: number | string; rejection_adhesion_issue: number | string;
-}): number {
-  return [
-    raw.rejection_damage, raw.rejection_misplaced_glue, raw.rejection_misplaced_pad,
-    raw.rejection_glue_on_pad, raw.rejection_pad_placement_direction, raw.rejection_adhesion_issue,
-  ].reduce((sum: number, v) => sum + (Number(v) || 0), 0);
+/** Total Rejections for a run's list row: sum of every machine entry's own
+ * Rejection Classification fields (migration 0038 -- was a single flat
+ * value on production_runs, now per machine entry, same aggregation shape
+ * as sumTotalPcsPerPallet above it). */
+function sumRejections(mcs: RawProdMcShallow[]): number {
+  let total = 0;
+  for (const mc of mcs || []) {
+    for (const e of mc.machine_entries || []) {
+      total += [
+        e.rejection_damage, e.rejection_misplaced_glue, e.rejection_misplaced_pad,
+        e.rejection_glue_on_pad, e.rejection_pad_placement_direction, e.rejection_adhesion_issue,
+      ].reduce((sum: number, v) => sum + (Number(v) || 0), 0);
+    }
+  }
+  return total;
 }
 
 /** Total PCS/Pallet for a run's list row: sum of each distinct machine
@@ -658,7 +668,7 @@ function flattenProductionListItem(raw: RawProductionRunList): ProductionListIte
     operator: raw.created_by_user?.full_name ?? null,
     status: raw.status, date: raw.production_date,
     total_pcs_per_pallet: sumTotalPcsPerPallet(raw.material_consumptions),
-    total_rejections: sumRejections(raw),
+    total_rejections: sumRejections(raw.material_consumptions),
   };
 }
 
@@ -783,6 +793,9 @@ type RawProdMachineEntry = {
   override_total_pcs_per_pallet: string | null; override_pad_type: string | null; override_pad_color: string | null;
   override_case_type: string | null;
   machine_no: string | null; auto_padding: string | null; container_order_no: string | null;
+  // Rejection Classification, per machine entry (migration 0038).
+  rejection_damage: number | string; rejection_misplaced_glue: number | string; rejection_misplaced_pad: number | string;
+  rejection_glue_on_pad: number | string; rejection_pad_placement_direction: number | string; rejection_adhesion_issue: number | string;
 };
 
 // sku_version_ref is the SKU-derived Production Details lookup (migration
@@ -795,7 +808,8 @@ const PRODUCTION_MACHINE_ENTRY_SELECT =
   `pallets:material_consumption_pallets(${PRODUCTION_PALLET_SELECT}),` +
   "sku_version_ref:sku_versions(prod_weight,prod_pcs_per_sleeve,prod_sleeve_per_case,prod_total_pcs_per_pallet,prod_total_pallets,prod_target_shots,prod_pad_type,prod_pad_color,prod_case_type)," +
   "override_weight,override_pcs_per_sleeve,override_sleeve_per_case,override_total_pcs_per_pallet,override_pad_type,override_pad_color,override_case_type," +
-  "machine_no,auto_padding,container_order_no";
+  "machine_no,auto_padding,container_order_no," +
+  "rejection_damage,rejection_misplaced_glue,rejection_misplaced_pad,rejection_glue_on_pad,rejection_pad_placement_direction,rejection_adhesion_issue";
 
 type RawProdMc = { id: string; status: string; machine_entries: RawProdMachineEntry[] };
 
@@ -803,7 +817,10 @@ const PRODUCTION_WASTAGE_SELECT = "id,machine_id,machine:machines(code),trays,re
 
 const PRODUCTION_DETAIL_SELECT =
   "id,run_number,shipment_number,shift,production_date,status,total_fg_pallets,completed_at," +
-  "rejection_damage,rejection_misplaced_glue,rejection_misplaced_pad,rejection_glue_on_pad,rejection_pad_placement_direction,rejection_adhesion_issue," +
+  // Rejection Classification is now read per machine entry (migration
+  // 0038, via PRODUCTION_MACHINE_ENTRY_SELECT below) -- the flat
+  // production_runs.rejection_* columns are legacy/unused as of this
+  // change, so no longer selected here.
   "created_by_user:app_users!production_runs_created_by_fkey(full_name)," +
   "completed_by_user:app_users!production_runs_completed_by_fkey(full_name)," +
   "ipqc_record:ipqc_records(id,status)," +
@@ -819,9 +836,6 @@ type RawProdWastageEntry = {
 type RawProductionRunDetail = {
   id: string; run_number: string; shipment_number: string | null; shift: string | null; production_date: string | null; status: string;
   total_fg_pallets: number; completed_at: string | null;
-  rejection_damage: number | string; rejection_misplaced_glue: number | string;
-  rejection_misplaced_pad: number | string; rejection_glue_on_pad: number | string;
-  rejection_pad_placement_direction: number | string; rejection_adhesion_issue: number | string;
   created_by_user: { full_name: string } | null;
   completed_by_user: { full_name: string } | null;
   ipqc_record: { id: string; status: string } | { id: string; status: string }[] | null;
@@ -880,6 +894,15 @@ function flattenProductionDetail(raw: RawProductionRunDetail): ProductionDetail 
         pallets: sortedBySortOrder(e.pallets || []).filter((p) => p.role === "primary").map(prodFlattenPallet),
         production_details: productionDetails,
         machine_no: e.machine_no, auto_padding: e.auto_padding, container_order_no: e.container_order_no,
+        // Rejection Classification, per machine entry (migration 0038).
+        rejection_classification: {
+          damage: Number(e.rejection_damage) || 0,
+          misplaced_glue: Number(e.rejection_misplaced_glue) || 0,
+          misplaced_pad: Number(e.rejection_misplaced_pad) || 0,
+          glue_on_pad: Number(e.rejection_glue_on_pad) || 0,
+          pad_placement_direction: Number(e.rejection_pad_placement_direction) || 0,
+          adhesion_issue: Number(e.rejection_adhesion_issue) || 0,
+        },
       });
     }
   }
@@ -892,14 +915,21 @@ function flattenProductionDetail(raw: RawProductionRunDetail): ProductionDetail 
     sku_codes: skuCodes.join(", "),
     machine_entries: machineEntries,
     total_fg_pallets: raw.total_fg_pallets ?? 0,
-    rejection_classification: {
-      damage: Number(raw.rejection_damage) || 0,
-      misplaced_glue: Number(raw.rejection_misplaced_glue) || 0,
-      misplaced_pad: Number(raw.rejection_misplaced_pad) || 0,
-      glue_on_pad: Number(raw.rejection_glue_on_pad) || 0,
-      pad_placement_direction: Number(raw.rejection_pad_placement_direction) || 0,
-      adhesion_issue: Number(raw.rejection_adhesion_issue) || 0,
-    },
+    // Aggregated across every machine entry -- the per-entry values (each
+    // entry's own rejection_classification above) are the source of truth
+    // and what's actually edited; this total is display-only (General
+    // Information's "Total Rejections").
+    rejection_classification: machineEntries.reduce(
+      (sum, e) => ({
+        damage: sum.damage + e.rejection_classification.damage,
+        misplaced_glue: sum.misplaced_glue + e.rejection_classification.misplaced_glue,
+        misplaced_pad: sum.misplaced_pad + e.rejection_classification.misplaced_pad,
+        glue_on_pad: sum.glue_on_pad + e.rejection_classification.glue_on_pad,
+        pad_placement_direction: sum.pad_placement_direction + e.rejection_classification.pad_placement_direction,
+        adhesion_issue: sum.adhesion_issue + e.rejection_classification.adhesion_issue,
+      }),
+      { damage: 0, misplaced_glue: 0, misplaced_pad: 0, glue_on_pad: 0, pad_placement_direction: 0, adhesion_issue: 0 },
+    ),
     wastage_entries: sortedBySortOrder(raw.wastage_entries || []).map((w) => ({
       id: w.id, machine_id: w.machine_id, machine: w.machine?.code ?? null,
       trays: w.trays == null ? null : Number(w.trays), reason: w.reason, sort_order: w.sort_order,
