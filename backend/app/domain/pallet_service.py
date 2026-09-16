@@ -91,10 +91,14 @@ def _make_qr_png(payload: str) -> bytes:
     return buf.getvalue()
 
 
-def generate_pallet_qr(db: Session, pallet: models.Pallet) -> None:
-    """Real QR PNG encoding the pallet's immutable display_id + enough
-    context to resolve its identity — backed by, never a substitute for, the
-    DB row itself."""
+def build_pallet_qr(pallet: models.Pallet) -> tuple[str, str, bytes]:
+    """Pure/CPU-only half of generate_pallet_qr -- no DB access, no network
+    call. Returns (storage_path, payload, png_bytes) so a caller generating
+    many pallets at once (see qr_generation_service.generate_pallets) can
+    build every pallet's QR PNG up front and then upload them all
+    concurrently, instead of one network round-trip at a time. Split out
+    specifically to fix QR Generation being slow for a full batch (e.g.
+    ~8s for 44 pallets when each upload ran back-to-back)."""
     payload = json.dumps({
         "t": "rm_pallet" if pallet.pallet_type == "rm" else "fg_pallet",
         "id": pallet.display_id,
@@ -102,8 +106,19 @@ def generate_pallet_qr(db: Session, pallet: models.Pallet) -> None:
         "sku": pallet.sku_code_snapshot,
     })
     png = _make_qr_png(payload)
-    storage = get_storage_adapter()
     path = f"qr/pallets/{pallet.id}.png"
+    return path, payload, png
+
+
+def generate_pallet_qr(db: Session, pallet: models.Pallet) -> None:
+    """Real QR PNG encoding the pallet's immutable display_id + enough
+    context to resolve its identity — backed by, never a substitute for, the
+    DB row itself. Single-pallet convenience wrapper around build_pallet_qr
+    -- generate_pallets (the batch path) calls build_pallet_qr directly so
+    it can parallelize the storage upload across the whole batch instead of
+    going through this one-at-a-time version."""
+    path, payload, png = build_pallet_qr(pallet)
+    storage = get_storage_adapter()
     stored = storage.save(path, png, "image/png")
     pallet.qr_storage_path = stored.storage_path
     pallet.qr_public_url = stored.public_url

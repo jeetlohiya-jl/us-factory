@@ -222,7 +222,7 @@ export default function RqcDetailPanel({
           <div className="detail-card">
             <h3>FG Pallets Generated</h3>
             <div className="field" style={{ maxWidth: 320 }}>
-              <label>Number of FG Pallets Generated</label>
+              <label>Quantity Generated</label>
               {editable ? (
                 <input
                   type="number" min={0} placeholder="0"
@@ -259,7 +259,7 @@ export default function RqcDetailPanel({
               <div style={{ marginTop: 14 }}>
                 <div className="section-label">Machine Allocation</div>
                 <div className="hint-text" style={{ marginBottom: 8 }}>
-                  This Production Run spans multiple machines -- split Number of FG Pallets Generated across them
+                  This Production Run spans multiple machines -- split Quantity Generated across them
                   so each pallet's Batch Code names the machine that actually produced it.
                 </div>
                 <table className="qc-obs-table" style={{ marginBottom: 6 }}>
@@ -285,7 +285,7 @@ export default function RqcDetailPanel({
                 </table>
                 {editable && allocationTotal !== fgTotal && (
                   <div className="hint-text" style={{ color: "var(--red)" }}>
-                    Allocated {allocationTotal}, but Number of FG Pallets Generated is {fgTotal}. These must match before QR codes can be generated.
+                    Allocated {allocationTotal}, but Quantity Generated is {fgTotal}. These must match before QR codes can be generated.
                   </div>
                 )}
               </div>

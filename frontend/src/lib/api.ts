@@ -1427,12 +1427,21 @@ async function getOrCreateHoldReleaseSb(module: HoldReleaseModule, recordId: str
   return created as unknown as HoldReleaseRecord;
 }
 
+// Save (unlike the find-or-create read above) goes through FastAPI, not
+// straight to Supabase: when a decision is saved as Completed with a
+// Disposition other than Reject, the record needs to actually advance --
+// the linked Inward Vehicle Inspection / Inward QC / IPQC / RQC / Outward
+// Vehicle Inspection record has to move to its passing status and fire the
+// same downstream auto-creation (Inward Vehicle Inspection -> Inward QC,
+// Inward QC -> RM QR Generation, RQC -> FG QR Generation) its own normal
+// Submit/Save would have -- that's privileged, transactional logic that
+// can't live in a plain RLS-gated Supabase update. See
+// backend/app/api/hold_release.py.
 async function saveHoldReleaseSb(id: string, payload: HoldReleaseSavePayload): Promise<HoldReleaseRecord> {
-  const { data, error } = await supabase
-    .from("hold_release_records").update(payload).eq("id", id)
-    .select(HOLD_RELEASE_SELECT).single();
-  if (error) throw new ApiError(403, error.message);
-  return data as unknown as HoldReleaseRecord;
+  return request<HoldReleaseRecord>(`/api/v1/hold-release-records/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
 }
 
 // Sku_codes rows always come back with their versions embedded via
@@ -1487,7 +1496,7 @@ async function qcMetaSb(): Promise<QcMeta> {
 
   // First tier row per category is this category's qty_label -- same
   // "first match wins" lookup `quantity_label_for()` does server-side.
-  const quantity_labels: Record<string, string> = { fgtray: "No. of Pallets" };
+  const quantity_labels: Record<string, string> = { fgtray: "Quantity" };
   for (const cat of QC_MANUAL_CATEGORIES) {
     quantity_labels[cat] = (tierRows || []).find((t) => t.category === cat)?.qty_label || "Quantity";
   }

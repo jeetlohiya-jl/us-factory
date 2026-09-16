@@ -54,7 +54,7 @@ const PROD_DETAIL_ROWS: { label: string; attrKey?: AttrKey; get: (e: ProductionD
   { label: "Pcs/Sleeve", attrKey: "pcs_per_sleeve", get: (e) => e.production_details?.prod_pcs_per_sleeve },
   { label: "Sleeve/Case", attrKey: "sleeve_per_case", get: (e) => e.production_details?.prod_sleeve_per_case },
   { label: "Total No. of Pcs/Pallet", attrKey: "total_pcs_per_pallet", get: (e) => e.production_details?.prod_total_pcs_per_pallet },
-  { label: "Total No. of Pallets", get: (e) => e.production_details?.prod_total_pallets },
+  { label: "Total Quantity", get: (e) => e.production_details?.prod_total_pallets },
   { label: "Target Shots", get: (e) => e.production_details?.prod_target_shots },
   { label: "Pad Type/Name/Code", attrKey: "pad_type", get: (e) => e.production_details?.prod_pad_type },
   { label: "Pad Color", attrKey: "pad_color", get: (e) => e.production_details?.prod_pad_color },
@@ -402,9 +402,9 @@ export default function ProductionDetailPanel({
           <div className="detail-card">
             <h3>FG Pallets</h3>
             <div className="field">
-              <label>Total Number of FG Pallets Generated</label>
+              <label>Total Quantity Generated</label>
               <div className="detail-kv-value">{record.total_fg_pallets || "—"}</div>
-              <div className="hint-text">Now entered in RQC's "Number of FG Pallets Generated" field -- no longer editable here.</div>
+              <div className="hint-text">Now entered in RQC's "Quantity Generated" field -- no longer editable here.</div>
             </div>
           </div>
 

@@ -894,3 +894,41 @@ class UserUpdateIn(BaseModel):
     is_active: Optional[bool] = None
     is_admin: Optional[bool] = None
     permissions: Optional[dict[str, PermissionFlags]] = None
+
+
+class HoldReleaseSaveIn(BaseModel):
+    date_of_hold: Optional[str] = None
+    product_name: Optional[str] = None
+    batch_code: Optional[str] = None
+    point_of_detection: Optional[str] = None
+    qty_of_hold: Optional[str] = None
+    reason_for_hold: Optional[str] = None
+    record_filled_by: Optional[str] = None
+    date_of_decision: Optional[str] = None
+    disposition: Optional[str] = None
+    reason_of_disposition: Optional[str] = None
+    qty_decided: Optional[str] = None
+    done_by: Optional[str] = None
+    approved_by: Optional[str] = None
+    status: str  # 'draft' | 'completed'
+
+
+class HoldReleaseOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    module: str
+    record_id: uuid.UUID
+    date_of_hold: Optional[str] = None
+    product_name: Optional[str] = None
+    batch_code: Optional[str] = None
+    point_of_detection: Optional[str] = None
+    qty_of_hold: Optional[str] = None
+    reason_for_hold: Optional[str] = None
+    record_filled_by: Optional[str] = None
+    date_of_decision: Optional[str] = None
+    disposition: Optional[str] = None
+    reason_of_disposition: Optional[str] = None
+    qty_decided: Optional[str] = None
+    done_by: Optional[str] = None
+    approved_by: Optional[str] = None
+    status: str

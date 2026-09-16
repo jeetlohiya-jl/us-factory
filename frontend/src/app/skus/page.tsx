@@ -13,7 +13,7 @@ const PROD_DETAIL_FIELDS: { key: keyof SkuVersion; label: string; numeric?: bool
   { key: "prod_pcs_per_sleeve", label: "Pcs/Sleeve" },
   { key: "prod_sleeve_per_case", label: "Sleeve/Case" },
   { key: "prod_total_pcs_per_pallet", label: "Total No. of Pcs/Pallet", numeric: true },
-  { key: "prod_total_pallets", label: "Total No. of Pallets", numeric: true },
+  { key: "prod_total_pallets", label: "Total Quantity", numeric: true },
   { key: "prod_target_shots", label: "Target Shots" },
   { key: "prod_pad_type", label: "Pad Type" },
   { key: "prod_pad_color", label: "Pad Color" },

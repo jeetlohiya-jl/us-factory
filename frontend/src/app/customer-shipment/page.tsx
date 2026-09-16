@@ -136,7 +136,7 @@ export default function CustomerShipmentPage() {
       <div className="card card-flush">
         <table className="data">
           <thead>
-            <tr><th>Shipment Number</th><th>Container Number</th><th>Customer</th><th>SKU Code(s)</th><th>No. of Pallets</th><th>Date</th><th></th></tr>
+            <tr><th>Shipment Number</th><th>Container Number</th><th>Customer</th><th>SKU Code(s)</th><th>Quantity</th><th>Date</th><th></th></tr>
           </thead>
           <tbody>
             {items.length === 0 ? (
