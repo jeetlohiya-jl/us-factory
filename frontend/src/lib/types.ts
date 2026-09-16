@@ -5,6 +5,25 @@
 export type Category = "tray" | "fnp_tray" | "film" | "pad" | "polybag" | "cfb" | "glue";
 export type InspectionStatus = "draft" | "hold" | "approved";
 
+// An Inward QC record auto-created from an approved Tray-family Vehicle
+// Inspection carries the SAME category the inspection used ("tray" or
+// "fnp_tray") -- it is never remapped to a different label, so the same
+// category flows unchanged from Inward Vehicle Inspection all the way
+// through Inward QC, Material Consumption, Production, QR Generation and
+// Storage. "fgtray" is kept in this set only so QC records created before
+// this passthrough existed still render/behave correctly; no new record is
+// ever created with that value. Every place that used to special-case
+// `category === "fgtray"` should check `TRAY_FAMILY_QC_CATEGORIES.includes(category)`
+// instead, and every category label lookup should go through
+// QC_CATEGORY_LABELS so "Base Tray"/"FNP Tray" are never spelled a second,
+// inconsistent way (the old "FG Non-Padded Tray" / "FG NonPadded Tray" /
+// "FNPG" wording is retired).
+export const TRAY_FAMILY_QC_CATEGORIES: string[] = ["tray", "fnp_tray", "fgtray"];
+export const QC_CATEGORY_LABELS: Record<string, string> = {
+  tray: "Base Tray", fnp_tray: "FNP Tray", fgtray: "FNP Tray",
+  pad: "Soaker Pad", polybag: "Polybag", cfb: "CFB", glue: "Glue",
+};
+
 export interface SkuVersion {
   id: string;
   version: string;
@@ -37,6 +56,11 @@ export interface SkuCode {
   // Section 11 -- admin-supplied 5-digit SKU number, the first segment of
   // the FG Storage Batch Code. Populated later by the business.
   batch_number: string | null;
+  // Section 11 (correction) -- a separate, alphanumeric "SKU Code" field.
+  // Distinct from `code` (SKU Name, above) and from `batch_number` (numeric
+  // -only): "my sku code has numbers and alphabets : batch number is onky
+  // the numbers without the alphabet."
+  sku_code: string | null;
   versions: SkuVersion[];
 }
 
@@ -196,7 +220,7 @@ export interface UserUpdateInput {
 // Inward QC
 // ---------------------------------------------------------------------------
 
-export type QcCategory = "fgtray" | "pad" | "polybag" | "cfb" | "glue";
+export type QcCategory = "tray" | "fnp_tray" | "fgtray" | "pad" | "polybag" | "cfb" | "glue";
 export type QcManualCategory = "pad" | "polybag" | "cfb" | "glue";
 export type QcStatus = "draft" | "pending" | "accepted" | "onhold";
 export type QcFieldType = "text" | "number" | "dropdown";

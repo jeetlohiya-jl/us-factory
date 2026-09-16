@@ -2,10 +2,10 @@
 import { useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import type { MaterialConsumptionDetail, MaterialConsumptionMachineEntry, Machine, Permissions, SecondaryMaterialCategory, QuantityUnit } from "@/lib/types";
-import { QUANTITY_UNITS } from "@/lib/types";
+import { QUANTITY_UNITS, QC_CATEGORY_LABELS } from "@/lib/types";
 import CameraQrScanner from "@/components/storage/CameraQrScanner";
 
-const CATEGORY_LABELS: Record<string, string> = { tray: "Base Tray", fgtray: "FG Non-Padded Tray" };
+const CATEGORY_LABELS = QC_CATEGORY_LABELS;
 const SECONDARY_LABELS: Record<SecondaryMaterialCategory, string> = { cfb: "CFB", pad: "Pads", glue: "Glue", polybag: "Polybags" };
 const SECONDARY_CATEGORIES: SecondaryMaterialCategory[] = ["cfb", "pad", "glue", "polybag"];
 

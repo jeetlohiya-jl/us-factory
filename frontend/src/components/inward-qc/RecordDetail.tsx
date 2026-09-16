@@ -2,12 +2,11 @@
 import { useState } from "react";
 import { api } from "@/lib/api";
 import type { QcDetail } from "@/lib/types";
+import { TRAY_FAMILY_QC_CATEGORIES, QC_CATEGORY_LABELS } from "@/lib/types";
 import VehicleInspectionDetailContent from "@/components/inward-vehicle-inspection/VehicleInspectionDetailContent";
 import HoldReleaseSection from "@/components/HoldReleaseSection";
 
-const CATEGORY_LABELS: Record<string, string> = {
-  fgtray: "FG Non-Padded Tray", pad: "Soaker Pad", polybag: "Polybag", cfb: "CFB", glue: "Glue",
-};
+const CATEGORY_LABELS = QC_CATEGORY_LABELS;
 
 function Kv({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -21,7 +20,7 @@ function Kv({ label, value }: { label: string; value: React.ReactNode }) {
 export default function RecordDetail({ detail, onClose, onEdit, canEdit }: {
   detail: QcDetail; onClose: () => void; onEdit: () => void; canEdit: boolean;
 }) {
-  const isTray = detail.category === "fgtray";
+  const isTray = TRAY_FAMILY_QC_CATEGORIES.includes(detail.category);
   const [tab, setTab] = useState<"qc" | "vehicle">("qc");
 
   return (

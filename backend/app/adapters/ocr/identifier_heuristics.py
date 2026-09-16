@@ -42,6 +42,12 @@ MIN_CONFIDENCE = {
 LABEL_WORD_BLOCKLIST = {
     "TARE", "MGW", "GROSS", "NET", "PAYLOAD", "WEIGHT", "MAX", "CAP", "CU",
     "KG", "KGS", "LB", "LBS", "SEACO", "SRL",
+    # Indian vehicle plates carry a fixed "IND" country badge printed
+    # directly on the plate itself (distinct from the registration number),
+    # per the Indian Motor Vehicles Act's international-identification
+    # requirement -- it's read confidently and legitimately, but it's never
+    # part of the plate number and must never be joined into it.
+    "IND",
 }
 
 
@@ -90,6 +96,52 @@ def multi_word_candidates(words: list[tuple[str, float]]) -> list[tuple[str, flo
     return [(joined, avg_conf)]
 
 
+def full_plate_candidate(words: list[tuple[str, float]]) -> tuple[str, float] | None:
+    """Indian (and many other) vehicle registration plates print in FOUR
+    groups -- state code, district/series code, series letters, and the
+    number -- e.g. "KL 87 AB 1234". A tightly-cropped or angled photo often
+    has OCR read each group as its own short word (sometimes two groups
+    fuse, e.g. "KL87" + "AB1234", sometimes all four stay separate). Picking
+    only the single highest-confidence SHORT identifier-shaped word (the old
+    behaviour) systematically returns just one fragment -- e.g. "KL87" --
+    and silently drops the rest of the plate, which is the exact symptom
+    reported against real uploads.
+
+    This walks every short (<=6 char) alphanumeric-ish fragment in the
+    OCR engine's own reading order (top-to-bottom, left-to-right -- the
+    order `words` already arrives in) and joins ALL of them into one
+    candidate. Reading order is what makes this safe: a plate's four
+    groups are printed left-to-right/top-to-bottom as one visual unit, so
+    joining consecutive short fragments in that order reconstructs the
+    plate even when OCR has split it into 2, 3, or 4 pieces -- whereas
+    picking "the single best word" can never do better than one fragment.
+    Only fragments that are themselves plausible plate pieces (<=6 chars,
+    alnum, not a known non-identifier label word) are included, so an
+    unrelated long word elsewhere in the frame (a company name, a road
+    sign) never gets pulled in. A pure-letters fragment (no digit of its
+    own -- e.g. a country badge like "IND" stamped on many Indian plates,
+    separate from the plate itself) is only pulled in when it sits directly
+    next to a digit-bearing fragment in reading order -- a real plate group
+    is always adjacent to the rest of the plate, whereas a badge/stamp
+    elsewhere in the frame is not."""
+    short = [
+        (i, w, c) for i, (w, c) in enumerate(words)
+        if 1 <= len(w) <= 6 and w.isalnum() and w not in LABEL_WORD_BLOCKLIST
+    ]
+    has_digit = {i for i, w, _ in short if any(ch.isdigit() for ch in w)}
+    fragments = [
+        (w, c) for i, w, c in short
+        if any(ch.isdigit() for ch in w) or (i - 1 in has_digit) or (i + 1 in has_digit)
+    ]
+    if len(fragments) < 2:
+        return None
+    joined = "".join(w for w, _ in fragments)
+    if not looks_like_identifier(joined):
+        return None
+    avg_conf = sum(c for _, c in fragments) / len(fragments)
+    return (joined, avg_conf)
+
+
 def extract_from_words(words: list[tuple[str, float]], field_type: str, log=None) -> OcrResult:
     """Classifies an OCR engine's recognized (UPPERCASE text, confidence
     0-1) word list into the best identifier candidate for field_type. Never
@@ -106,12 +158,55 @@ def extract_from_words(words: list[tuple[str, float]], field_type: str, log=None
     best_conf = 0.0
 
     if field_type == "container":
+        # Track each word's character span within raw_text (words are
+        # joined with single spaces) so a regex match can be mapped back to
+        # exactly which word index(es) it came from -- needed below to find
+        # the word that comes right AFTER the match, not just any word that
+        # happens to share a substring with it (a lone "7" is a substring of
+        # almost any digit run, so naive substring matching picks the wrong
+        # word).
+        spans: list[tuple[int, int]] = []
+        pos = 0
+        for w, _ in words:
+            spans.append((pos, pos + len(w)))
+            pos += len(w) + 1
+
         m = CONTAINER_RE.search(raw_text)
         if m:
             candidate = m.group(1).replace(" ", "")
-            matching = [c for w, c in words if w.replace(" ", "") in candidate or candidate in w]
+            match_word_idxs = [i for i, (s, e) in enumerate(spans) if s < m.end() and e > m.start()]
+            matching = [words[i][1] for i in match_word_idxs]
             best_value = candidate
             best_conf = max(matching) if matching else 0.5
+            # ISO 6346 codes are 4 letters + 7 digits (the last digit is a
+            # check digit); CONTAINER_RE accepts 4-7 digits so it already
+            # matches on a partial read, but a photo of the whole container
+            # door often has that trailing check digit printed/boxed
+            # separately and so OCR reads it as its OWN word right after the
+            # rest of the number (e.g. "SEGU 657685" + "7"). Complete the
+            # number to 7 digits from the word immediately following the
+            # match (by position, not by a fuzzy substring check) when it's
+            # a bare 1-2 digit run, rather than silently returning a
+            # truncated container number.
+            digits_only = "".join(ch for ch in candidate if ch.isdigit())
+            if len(digits_only) < 7 and match_word_idxs:
+                idx = match_word_idxs[-1]
+                if idx + 1 < len(words):
+                    nxt, nxt_conf = words[idx + 1]
+                    if nxt.isdigit() and len(digits_only) + len(nxt) <= 7:
+                        candidate = candidate + nxt
+                        best_value = candidate
+                        best_conf = (best_conf + nxt_conf) / 2
+
+    if field_type == "truck":
+        # Vehicle plates routinely split into several short fragments (see
+        # full_plate_candidate) -- try that reconstruction FIRST and prefer
+        # it over any single fragment whenever it's actually more complete,
+        # since a longer joined reading is never a worse answer than one
+        # isolated piece of the same plate.
+        joined = full_plate_candidate(words)
+        if joined:
+            best_value, best_conf = joined
 
     if best_value is None:
         candidates = [(w, c) for w, c in words if looks_like_identifier(w)]

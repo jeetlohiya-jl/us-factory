@@ -21,7 +21,7 @@ function Kv({ label, value }: { label: string; value: React.ReactNode }) {
 /**
  * The read-only content of a Vehicle Inspection record — used both by the
  * Vehicle Inspection module's own Record Details panel and, embedded, by the
- * Inward QC module's "Vehicle Inspection" tab for Tray/FG Non-Padded Tray QC
+ * Inward QC module's "Vehicle Inspection" tab for Base Tray/FNP Tray QC
  * records (see inward-qc/RecordDetail.tsx). Always fetched from the real
  * linked record via the API — never duplicated/copied into QC's own data.
  */

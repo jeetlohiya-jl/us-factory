@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import type { ImageType, InspectionDetail, InspectionImage } from "@/lib/types";
 import Lightbox from "./Lightbox";
@@ -26,11 +26,35 @@ export default function MultiImageField({
   // "new" while capturing a photo to add, an image id while capturing a
   // replacement for that image, or null when no camera view is open.
   const [capturing, setCapturing] = useState<string | "new" | null>(null);
+  // Shown instantly for whichever tile (new-tile, or an existing image
+  // being replaced) is mid-upload -- see the matching note in ImageField.tsx;
+  // the upload now waits on a slower server-side cloud OCR call, so without
+  // a local preview the tile goes blank for a few seconds between capture
+  // and the real image URL coming back.
+  const [localPreview, setLocalPreview] = useState<{ id: string | "new"; url: string } | null>(null);
+  const localPreviewUrl = useRef<string | null>(null);
+
+  useEffect(() => {
+    return () => { if (localPreviewUrl.current) URL.revokeObjectURL(localPreviewUrl.current); };
+  }, []);
+
+  function setPreview(id: string | "new", file: File) {
+    if (localPreviewUrl.current) URL.revokeObjectURL(localPreviewUrl.current);
+    const url = URL.createObjectURL(file);
+    localPreviewUrl.current = url;
+    setLocalPreview({ id, url });
+  }
+
+  function clearPreview() {
+    if (localPreviewUrl.current) { URL.revokeObjectURL(localPreviewUrl.current); localPreviewUrl.current = null; }
+    setLocalPreview(null);
+  }
 
   async function handleAdd(file: File) {
     setCapturing(null);
     setBusyId("new");
     setError(null);
+    setPreview("new", file);
     try {
       const detail = await api.uploadImage(inspectionId, imageType || "damage", file);
       onChange(detail);
@@ -38,6 +62,7 @@ export default function MultiImageField({
       setError(e instanceof Error ? e.message : "Upload failed");
     } finally {
       setBusyId(null);
+      clearPreview();
     }
   }
 
@@ -45,6 +70,7 @@ export default function MultiImageField({
     setCapturing(null);
     setBusyId(imageId);
     setError(null);
+    setPreview(imageId, file);
     try {
       const detail = await api.replaceImage(inspectionId, imageId, file);
       onChange(detail);
@@ -52,6 +78,7 @@ export default function MultiImageField({
       setError(e instanceof Error ? e.message : "Replace failed");
     } finally {
       setBusyId(null);
+      clearPreview();
     }
   }
 
@@ -71,20 +98,29 @@ export default function MultiImageField({
     <div className="img-field">
       <div className="img-field-label">{label}</div>
       <div className="img-thumb-row">
-        {images.map((img) => (
-          <div className="img-thumb" key={img.id}>
-            {img.public_url && (
-              /* eslint-disable-next-line @next/next/no-img-element */
-              <img src={api.mediaUrl(img.public_url)} alt={label} onClick={() => setLightboxSrc(api.mediaUrl(img.public_url!))} />
-            )}
-            {!disabled && (
-              <div className="img-thumb-actions">
-                <button disabled={busyId === img.id} onClick={() => setCapturing(img.id)}>Replace</button>
-                <button disabled={busyId === img.id} onClick={() => handleDelete(img.id)}>Delete</button>
-              </div>
-            )}
+        {images.map((img) => {
+          const preview = localPreview?.id === img.id ? localPreview.url : null;
+          return (
+            <div className="img-thumb" key={img.id}>
+              {(preview || img.public_url) && (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img src={preview || api.mediaUrl(img.public_url!)} alt={label} onClick={() => !preview && setLightboxSrc(api.mediaUrl(img.public_url!))} />
+              )}
+              {!disabled && !preview && (
+                <div className="img-thumb-actions">
+                  <button disabled={busyId === img.id} onClick={() => setCapturing(img.id)}>Replace</button>
+                  <button disabled={busyId === img.id} onClick={() => handleDelete(img.id)}>Delete</button>
+                </div>
+              )}
+            </div>
+          );
+        })}
+        {localPreview?.id === "new" && (
+          <div className="img-thumb">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={localPreview.url} alt={label} />
           </div>
-        ))}
+        )}
         {!disabled && (
           <button type="button" className="img-add-tile" onClick={() => setCapturing("new")}>
             + Add More

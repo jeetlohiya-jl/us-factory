@@ -66,6 +66,11 @@ class SkuCode(Base):
     # "to be supplied later" per the task -- batch_code_service falls back
     # to a placeholder until this is populated.
     batch_number = Column(Text, nullable=True)
+    # Section 11 (correction) -- a genuinely separate, alphanumeric "SKU Code"
+    # field, distinct from both `code` (SKU Name) and `batch_number` (numeric
+    # -only, FG Storage Batch Code segment). Nullable/optional, same pattern
+    # as batch_number.
+    sku_code = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
     # cascade="all, delete-orphan" so deleting a SkuCode via the ORM (see

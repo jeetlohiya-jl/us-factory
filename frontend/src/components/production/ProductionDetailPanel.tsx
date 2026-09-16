@@ -2,10 +2,11 @@
 import { useState } from "react";
 import Link from "next/link";
 import type { ProductionDetail, Machine } from "@/lib/types";
+import { QC_CATEGORY_LABELS } from "@/lib/types";
 import { formatTime12h, nowHHMM } from "@/components/material-consumption/Wizard";
 import { api } from "@/lib/api";
 
-const CATEGORY_LABELS: Record<string, string> = { tray: "Base Tray", fgtray: "FG Non-Padded Tray" };
+const CATEGORY_LABELS = QC_CATEGORY_LABELS;
 
 function Kv({ label, value }: { label: string; value: React.ReactNode }) {
   return (

@@ -260,7 +260,8 @@ export default function Wizard({
                       disabled={readOnlyStep1}
                       value={shipmentNumber}
                       placeholder="e.g. A45, D45, E6"
-                      onChange={(e) => markTouched(setShipmentNumber)(e.target.value)}
+                      style={{ textTransform: "uppercase" }}
+                      onChange={(e) => markTouched(setShipmentNumber)(e.target.value.toUpperCase())}
                     />
                   ) : (
                     <div className="readonly-val">{detail.shipment_number}</div>
@@ -274,10 +275,10 @@ export default function Wizard({
 
               <div className="form-grid">
                 <div className="field"><label>Truck / Vehicle Number</label>
-                  <input disabled={readOnlyStep1} value={truck} placeholder="e.g. TRK-88213" onChange={(e) => markTouched(setTruck)(e.target.value)} />
+                  <input disabled={readOnlyStep1} value={truck} placeholder="e.g. TRK-88213" style={{ textTransform: "uppercase" }} onChange={(e) => markTouched(setTruck)(e.target.value.toUpperCase())} />
                 </div>
                 <div className="field"><label>Container Number</label>
-                  <input disabled={readOnlyStep1} value={container} placeholder="e.g. CXY-20354" onChange={(e) => markTouched(setContainer)(e.target.value)} />
+                  <input disabled={readOnlyStep1} value={container} placeholder="e.g. CXY-20354" style={{ textTransform: "uppercase" }} onChange={(e) => markTouched(setContainer)(e.target.value.toUpperCase())} />
                 </div>
                 <div className="field"><label>Vendor Name</label>
                   {addingVendor ? (
@@ -319,13 +320,13 @@ export default function Wizard({
                   {vendorError && <div className="hint-text" style={{ color: "var(--red)" }}>{vendorError}</div>}
                 </div>
                 <div className="field"><label>Invoice No.</label>
-                  <input disabled={readOnlyStep1} value={invoice} placeholder="e.g. INV-88213" onChange={(e) => markTouched(setInvoice)(e.target.value)} />
+                  <input disabled={readOnlyStep1} value={invoice} placeholder="e.g. INV-88213" style={{ textTransform: "uppercase" }} onChange={(e) => markTouched(setInvoice)(e.target.value.toUpperCase())} />
                 </div>
                 <div className="field"><label>Name of Transporter</label>
                   <input disabled={readOnlyStep1} value={transporter} placeholder="e.g. ABC Logistics" onChange={(e) => markTouched(setTransporter)(e.target.value)} />
                 </div>
                 <div className="field"><label>Seal No.</label>
-                  <input disabled={readOnlyStep1} value={seal} placeholder="e.g. SL-44210" onChange={(e) => markTouched(setSeal)(e.target.value)} />
+                  <input disabled={readOnlyStep1} value={seal} placeholder="e.g. SL-44210" style={{ textTransform: "uppercase" }} onChange={(e) => markTouched(setSeal)(e.target.value.toUpperCase())} />
                 </div>
               </div>
 

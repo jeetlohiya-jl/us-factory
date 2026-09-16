@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.db import models
 from app.domain.id_counters import next_seq
+from app.domain.inward_qc_service import TRAY_FAMILY_CATEGORIES
 
 CATEGORY_PREFIX = {
     "tray": None,  # manual shipment number for tray (renamed "Base Tray" in the UI)
@@ -108,10 +109,19 @@ def compute_status(db: Session, inspection: models.InwardVehicleInspection) -> s
 
 
 def propagate_to_qc(db: Session, inspection: models.InwardVehicleInspection) -> models.InwardQcRecord | None:
-    """When an approved Inward Vehicle Inspection for the Tray category (which
-    feeds FG Non-Padded Tray Inward QC) reaches Approved, ensure exactly one
-    linked Inward QC record exists. Never creates a duplicate."""
-    if inspection.category != "tray" or inspection.status != "approved":
+    """When an approved Inward Vehicle Inspection for a Tray-family category
+    (Base Tray or FNP Tray -- see inward_qc_service.TRAY_FAMILY_CATEGORIES)
+    reaches Approved, ensure exactly one linked Inward QC record exists.
+    Never creates a duplicate.
+
+    The downstream QC record's category is always the SAME value the
+    inspection itself used (Base Tray stays "tray", FNP Tray stays
+    "fnp_tray") -- it is never remapped to a different label. Base Tray and
+    FNP Tray are genuinely different materials (today only FNP Tray is an
+    active workflow; Base Tray is wired up for future use), so each gets
+    its own correctly-labeled QC record rather than being collapsed into a
+    single shared category."""
+    if inspection.category not in TRAY_FAMILY_CATEGORIES or inspection.status != "approved":
         return None
     existing = (
         db.query(models.InwardQcRecord)
@@ -123,7 +133,7 @@ def propagate_to_qc(db: Session, inspection: models.InwardVehicleInspection) -> 
     qc = models.InwardQcRecord(
         shipment_number=inspection.shipment_number,
         is_auto_shipment_number=False,  # mirrors the Vehicle Inspection's own shipment number, not QC's own sequence
-        category="fgtray",
+        category=inspection.category,  # passthrough -- never remapped, see docstring above
         status="pending",
         linked_vehicle_inspection_id=inspection.id,
         vendor_name=inspection.vendor_name,

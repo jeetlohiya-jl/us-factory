@@ -92,9 +92,9 @@ def _serialize_detail(db: Session, qc: models.InwardQcRecord) -> dict:
             remarks=(answers_by_id.get(c.id).remarks if c.id in answers_by_id else None),
         )
         for c in fgtray_criteria
-    ] if qc.category == "fgtray" else []
+    ] if qc.category in svc.TRAY_FAMILY_CATEGORIES else []
 
-    attr_defs = svc.get_attribute_definitions(db, qc.category) if qc.category != "fgtray" else []
+    attr_defs = svc.get_attribute_definitions(db, qc.category) if qc.category not in svc.TRAY_FAMILY_CATEGORIES else []
     values_by_id = {v.attribute_definition_id: v.value for v in qc.attribute_values}
     attribute_values_out = [
         schemas.QcAttributeValueOut(
@@ -114,7 +114,7 @@ def _serialize_detail(db: Session, qc: models.InwardQcRecord) -> dict:
     ]
 
     vehicle_inspection_dict = None
-    if qc.category == "fgtray" and qc.linked_vehicle_inspection_id and qc.vehicle_inspection:
+    if qc.category in svc.TRAY_FAMILY_CATEGORIES and qc.linked_vehicle_inspection_id and qc.vehicle_inspection:
         # Reuses the joinedload from _get_or_404 above instead of
         # re-querying the linked inspection from scratch (that used to be
         # a full second detail query -- 4 extra joins -- on every fgtray
@@ -204,14 +204,14 @@ def create_manual_draft(
     current_user: AuthenticatedUser = Depends(get_current_user),
     _perm=Depends(require_qc_permission("create")),
 ):
-    """Tray/FG Non-Padded Tray QC is NEVER manually created — it is
+    """Tray-family (Base Tray / FNP Tray) QC is NEVER manually created — it is
     auto-created only from an approved Vehicle Inspection (see
     vehicle_inspection_service.propagate_to_qc). '+ New Record' on this
     module only ever offers the four manual categories."""
     if category not in svc.MANUAL_CATEGORIES:
         raise HTTPException(
             status_code=400,
-            detail="Tray / FG Non-Padded Tray QC cannot be created manually — it is generated automatically when its Inward Vehicle Inspection is approved.",
+            detail="Base Tray / FNP Tray QC cannot be created manually — it is generated automatically when its Inward Vehicle Inspection is approved.",
         )
     shipment_number, is_auto = svc.next_shipment_number(db, category)
     qty_label = svc.quantity_label_for(db, category)
@@ -241,7 +241,7 @@ def update_qc_basic(
     _perm=Depends(require_qc_permission("fill_section")),
 ):
     qc = _get_or_404(db, qc_id)
-    if qc.category == "fgtray":
+    if qc.category in svc.TRAY_FAMILY_CATEGORIES:
         raise HTTPException(status_code=400, detail="Tray QC's basic information comes from its linked Vehicle Inspection and cannot be edited here.")
     data = payload.model_dump(exclude_unset=True)
     for field in ["vendor_name", "quantity", "quantity_unit", "sku_code_id", "sku_version_id"]:
@@ -265,8 +265,8 @@ async def upload_coa(
     _perm=Depends(require_qc_permission("fill_section")),
 ):
     qc = _get_or_404(db, qc_id)
-    if qc.category == "fgtray":
-        raise HTTPException(status_code=400, detail="COA is not applicable to Tray / FG Non-Padded Tray QC.")
+    if qc.category in svc.TRAY_FAMILY_CATEGORIES:
+        raise HTTPException(status_code=400, detail="COA is not applicable to Base Tray / FNP Tray QC.")
     content = await file.read()
     ext = (file.filename or "coa").rsplit(".", 1)[-1] if "." in (file.filename or "") else "pdf"
     storage_path = f"qc/{qc_id}/coa_{uuid.uuid4().hex[:8]}.{ext}"
@@ -330,8 +330,8 @@ def save_fgtray_answers(
     _perm=Depends(require_qc_permission("fill_section")),
 ):
     qc = _get_or_404(db, qc_id)
-    if qc.category != "fgtray":
-        raise HTTPException(status_code=400, detail="Only applicable to Tray / FG Non-Padded Tray QC.")
+    if qc.category not in svc.TRAY_FAMILY_CATEGORIES:
+        raise HTTPException(status_code=400, detail="Only applicable to Base Tray / FNP Tray QC.")
     valid_ids = {c.id for c in svc.get_fgtray_criteria(db)}
     for item in payload:
         if item.criteria_id not in valid_ids:
@@ -357,8 +357,8 @@ def save_attributes(
     _perm=Depends(require_qc_permission("fill_section")),
 ):
     qc = _get_or_404(db, qc_id)
-    if qc.category == "fgtray":
-        raise HTTPException(status_code=400, detail="Not applicable to Tray / FG Non-Padded Tray QC.")
+    if qc.category in svc.TRAY_FAMILY_CATEGORIES:
+        raise HTTPException(status_code=400, detail="Not applicable to Base Tray / FNP Tray QC.")
     valid_ids = {d.id for d in svc.get_attribute_definitions(db, qc.category)}
     for item in payload:
         if item.attribute_definition_id not in valid_ids:
@@ -388,7 +388,7 @@ def save_draft(
     auto-created Tray QC is never a 'draft', it stays Pending until its own
     completion logic promotes it (see submit_qc)."""
     qc = _get_or_404(db, qc_id)
-    if qc.category != "fgtray" and qc.status not in ("accepted", "onhold"):
+    if qc.category not in svc.TRAY_FAMILY_CATEGORIES and qc.status not in ("accepted", "onhold"):
         qc.status = "draft"
     qc.updated_by = current_user.user_id
     db.commit()
@@ -405,7 +405,7 @@ def submit_qc(
     qc = _get_or_404(db, qc_id)
     new_status = svc.compute_status(db, qc)
     if new_status == "pending":
-        if qc.category == "fgtray":
+        if qc.category in svc.TRAY_FAMILY_CATEGORIES:
             detail = "Mark OK / NOT OK for every criterion to complete this inspection. Until then it stays Pending."
         else:
             detail = "Fill in every required field (marked *) and the conclusion to complete this inspection. Until then it stays Pending."

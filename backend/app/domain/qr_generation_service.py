@@ -28,7 +28,7 @@ def _resolve_qc_sku(qc: models.InwardQcRecord) -> tuple[str | None, str | None, 
     """
     Manual QC categories (Glue, Soaker Pad, Polybag, CFB) carry their single
     SKU directly on the InwardQcRecord row (sku_code_id/sku_code_snapshot).
-    Tray / FG Non-Padded Tray QC — auto-created from an approved Vehicle
+    Base Tray / FNP Tray QC — auto-created from an approved Vehicle
     Inspection, which can list multiple SKU line items — carries its SKU(s)
     in the separate line_item_snapshots table instead; the top-level columns
     are never populated for that category. Fall back to the first line-item
@@ -60,15 +60,15 @@ def _resolve_qc_country(db: Session, qc: models.InwardQcRecord) -> str:
     generation -- it only means the pallet gets the same "US-" prefix
     every pallet got before this feature existed.
 
-    The vendor lookup category is NOT always qc.category: a Tray / FG
-    Non-Padded Tray QC is auto-created with qc.category == "fgtray", but the
-    Vendor Name dropdown on the *source Vehicle Inspection* -- where this
-    vendor_name was actually chosen -- is scoped to the inspection's own
-    category, "tray" (the Vendors admin screen's managed category list is
-    tray/pad/polybag/cfb/glue; "fgtray" is never a Vendor category). So for
-    a QC with a linked vehicle inspection, look the vendor up under that
-    inspection's category instead, or the vendor set up for this vendor
-    name would never be found.
+    The vendor lookup category is NOT always qc.category: a Tray-family QC
+    record's category now mirrors its source Inward Vehicle Inspection
+    directly ("tray" or "fnp_tray" -- see vehicle_inspection_service.
+    propagate_to_qc), so for a current record this already matches. This
+    fallback exists for a QC record created before that passthrough existed
+    (qc.category == "fgtray", a value the Vendors admin screen's managed
+    category list has never included) -- for those, look the vendor up
+    under the linked inspection's own category instead, or the vendor set
+    up for this vendor name would never be found.
     """
     if qc.vendor_id and qc.vendor:
         return qc.vendor.country or "US"

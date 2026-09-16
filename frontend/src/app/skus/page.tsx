@@ -116,6 +116,8 @@ export default function SkusPage() {
   const [error, setError] = useState<string | null>(null);
   const [category, setCategory] = useState<Category>("pad");
   const [newCode, setNewCode] = useState("");
+  const [newSkuCode, setNewSkuCode] = useState("");
+  const [newInitialVersion, setNewInitialVersion] = useState("");
   const [showInactive, setShowInactive] = useState(false);
   const [newVersionBySkuId, setNewVersionBySkuId] = useState<Record<string, string>>({});
   const [detailsTarget, setDetailsTarget] = useState<{ skuCode: string; version: SkuVersion } | null>(null);
@@ -139,8 +141,27 @@ export default function SkusPage() {
     if (!code) return;
     setError(null);
     try {
-      await api.createSku(category, code);
+      const created = await api.createSku(category, code);
+      // SKU Code (a separate, alphanumeric field from both SKU Name above
+      // and the numeric-only Batch Number further down this same table --
+      // "my sku code has numbers and alphabets : batch number is onky the
+      // numbers without the alphabet") and initial Version(s) are both
+      // optional and both reuse the exact same updateSku/addSkuVersion
+      // calls their table row controls already use -- not new concepts,
+      // just available at creation time too instead of requiring a second
+      // trip to the table. Versions may be a comma-separated list so more
+      // than one can be added in one go.
+      const skuCode = newSkuCode.trim();
+      if (skuCode) {
+        await api.updateSku(created.id, { sku_code: skuCode });
+      }
+      const initialVersions = newInitialVersion.split(",").map((v) => v.trim()).filter(Boolean);
+      for (const v of initialVersions) {
+        await api.addSkuVersion(created.id, v);
+      }
       setNewCode("");
+      setNewSkuCode("");
+      setNewInitialVersion("");
       refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to add SKU");
@@ -160,6 +181,16 @@ export default function SkusPage() {
     const batch_number = value.trim() || null;
     try {
       await api.updateSku(s.id, { batch_number });
+      refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to update SKU");
+    }
+  }
+
+  async function handleSkuCodeChange(s: SkuCode, value: string) {
+    const sku_code = value.trim() || null;
+    try {
+      await api.updateSku(s.id, { sku_code });
       refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to update SKU");
@@ -239,6 +270,22 @@ export default function SkusPage() {
                 onKeyDown={(e) => e.key === "Enter" && handleAddSku()}
               />
             </div>
+            <div className="field" style={{ minWidth: 140 }}>
+              <label>SKU Code (optional)</label>
+              <input
+                className="mono" value={newSkuCode} placeholder="e.g. SC-4821A"
+                onChange={(e) => setNewSkuCode(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleAddSku()}
+              />
+            </div>
+            <div className="field" style={{ minWidth: 160 }}>
+              <label>Version(s) (optional)</label>
+              <input
+                value={newInitialVersion} placeholder="e.g. V1, V2"
+                onChange={(e) => setNewInitialVersion(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleAddSku()}
+              />
+            </div>
             <button className="btn btn-primary" disabled={!newCode.trim()} onClick={handleAddSku}>+ Add SKU Name</button>
           </div>
         </div>
@@ -254,15 +301,23 @@ export default function SkusPage() {
 
       <div className="card card-flush">
         <table className="data">
-          <thead><tr><th>Category</th><th>SKU Name</th><th>Batch Number</th><th>Versions</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>Category</th><th>SKU Name</th><th>SKU Code</th><th>Batch Number</th><th>Versions</th><th>Status</th><th></th></tr></thead>
           <tbody>
             {visible.length === 0 ? (
-              <tr className="empty-row"><td colSpan={6}>{loading ? "Loading…" : "No SKUs yet — add one above."}</td></tr>
+              <tr className="empty-row"><td colSpan={7}>{loading ? "Loading…" : "No SKUs yet — add one above."}</td></tr>
             ) : (
               visible.map((s) => (
                 <tr key={s.id}>
                   <td>{CATEGORY_LABELS[s.category] || s.category}</td>
                   <td className="mono">{s.code}</td>
+                  <td>
+                    {canEdit ? (
+                      <input
+                        className="mono" style={{ width: 100 }} placeholder="e.g. SC-4821A" defaultValue={s.sku_code || ""}
+                        onBlur={(e) => e.target.value !== (s.sku_code || "") && handleSkuCodeChange(s, e.target.value)}
+                      />
+                    ) : (s.sku_code || "—")}
+                  </td>
                   <td>
                     {canEdit ? (
                       <input
