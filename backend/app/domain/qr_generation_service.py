@@ -270,6 +270,23 @@ def generate_pallets(db: Session, rec: models.QrGenerationRecord, actor_user_id=
     batch_code_service.resolve_machine_allocations — this is why FG pallets
     are generated machine-by-machine below instead of one flat loop.
     """
+    # Lock this row for the rest of the transaction before checking status.
+    # Without this, two overlapping "Generate QR" requests (a genuine
+    # double-click, a slow request the user retried, or a network hiccup
+    # that made the frontend re-send) can both read status="pending" before
+    # either has committed its own status="generated" write, and both then
+    # run the pallet-creation loop below -- silently doubling every pallet
+    # (and every physical QR label) for the batch. Locking here makes the
+    # second request's SELECT block until the first request's transaction
+    # commits (see the route's db.commit() right after this call returns),
+    # so by the time it re-reads status it correctly sees "generated" and
+    # returns early instead of generating a second time.
+    rec = (
+        db.query(models.QrGenerationRecord)
+        .filter(models.QrGenerationRecord.id == rec.id)
+        .with_for_update()
+        .one()
+    )
     if rec.status == "generated":
         return rec
     if rec.quantity <= 0:
