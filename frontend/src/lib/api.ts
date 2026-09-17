@@ -2214,6 +2214,12 @@ export const api = {
     invalidateListCache("rqc");
     return res;
   },
+  // Blocked (409) if any approval entry already has a GENERATED FG QR
+  // batch -- see rqc_service.blocked_delete_reason.
+  deleteRqc: async (id: string) => {
+    await request<void>(`/api/v1/rqc-records/${id}`, { method: "DELETE" });
+    invalidateListCache("rqc");
+  },
   // Migration 0039 -- records one incremental RQC approval activity (date +
   // operator + approved pallet count) and always creates that entry's own
   // FG QR Generation batch (idempotent -- re-posting the same entry never

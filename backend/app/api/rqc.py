@@ -96,6 +96,36 @@ def create_rqc_record(
     return schemas.RqcCreateOut(id=rec.id, shipment_number=rec.shipment_number, status=rec.status)
 
 
+@router.delete("/{record_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_rqc_record(
+    record_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    _current_user: AuthenticatedUser = Depends(get_current_user),
+    _perm: models.ModulePermission = Depends(require("delete")),
+):
+    """Same shape as customer_shipment.py's delete: a friendly pre-check
+    (rqc_service.blocked_delete_reason) surfaces a 409 before what would
+    otherwise be a silent orphan -- deleting a record whose approval
+    entries already have a GENERATED FG QR batch (real pallets/QR codes)
+    would leave those batches alive but permanently unlinked, since
+    qr_generation_records.source_rqc_approval_entry_id is ondelete=SET
+    NULL, not CASCADE. Everything else (defect_results, coa_observations,
+    machine_allocations, approval_entries -- and any still-PENDING batch's
+    link, which is fine to lose) cascades cleanly via the model's own
+    relationship cascades."""
+    rec = db.query(models.RqcRecord).filter(models.RqcRecord.id == record_id).first()
+    if not rec:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="RQC record not found.")
+
+    reason = rqc_service.blocked_delete_reason(db, rec)
+    if reason:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=reason)
+
+    db.delete(rec)
+    db.commit()
+    return None
+
+
 @router.put("/{record_id}", response_model=schemas.RqcSaveOut)
 def save_rqc_record(
     record_id: uuid.UUID,

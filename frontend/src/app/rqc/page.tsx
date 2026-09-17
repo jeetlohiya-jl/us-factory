@@ -1,7 +1,7 @@
 "use client";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import { useMe } from "@/lib/useMe";
 import { cachedList, invalidateListCache, listCacheKey } from "@/lib/listCache";
 import { useImmediateThenDebounced } from "@/lib/useImmediateThenDebounced";
@@ -9,6 +9,7 @@ import type { RqcListItem, RqcDetail } from "@/lib/types";
 import RqcDetailPanel from "@/components/rqc/RqcDetailPanel";
 import NewRqcPanel from "@/components/rqc/NewRqcPanel";
 import MoreMenu from "@/components/inward-vehicle-inspection/MoreMenu";
+import ConfirmDialog from "@/components/inward-vehicle-inspection/ConfirmDialog";
 import Pagination from "@/components/Pagination";
 
 const MODULE = "rqc";
@@ -47,6 +48,8 @@ function RqcPageContent() {
   const [openRecord, setOpenRecord] = useState<RqcDetail | null>(null);
   const [panelMode, setPanelMode] = useState<"view" | "edit">("edit");
   const [showNewPanel, setShowNewPanel] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<RqcListItem | null>(null);
+  const [deleteBlockedMsg, setDeleteBlockedMsg] = useState<string | null>(null);
 
   // "View" only makes sense once there's something finished to review --
   // Pending/Draft records have nothing filled in yet, so the pencil (fill
@@ -84,6 +87,21 @@ function RqcPageContent() {
       setPanelMode(mode);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load record");
+    }
+  }
+
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    try {
+      await api.deleteRqc(deleteTarget.id);
+      setDeleteTarget(null);
+      refreshAfterMutation();
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) {
+        setDeleteBlockedMsg(e.message);
+      } else {
+        setDeleteBlockedMsg(e instanceof Error ? e.message : "Failed to delete record");
+      }
     }
   }
 
@@ -190,6 +208,8 @@ function RqcPageContent() {
                       <MoreMenu
                         canEdit={!!perms?.can_fill_section}
                         onEdit={() => openDetail(r.id, "edit")}
+                        canDelete={!!perms?.can_delete}
+                        onDelete={() => setDeleteTarget(r)}
                       />
                     </td>
                   </tr>
@@ -225,6 +245,25 @@ function RqcPageContent() {
 
       {perms && !perms.can_view && (
         <div className="hint-text" style={{ marginTop: 12 }}>You don&apos;t have permission to view RQC records.</div>
+      )}
+
+      {deleteTarget && !deleteBlockedMsg && (
+        <ConfirmDialog
+          title="Delete this record?"
+          message={`This will permanently delete the RQC record "${deleteTarget.shipment_number || deleteTarget.id.slice(0, 8)}" and every approval entry recorded against it. This cannot be undone.`}
+          confirmLabel="Delete"
+          danger
+          onConfirm={confirmDelete}
+          onCancel={() => setDeleteTarget(null)}
+        />
+      )}
+      {deleteBlockedMsg && (
+        <ConfirmDialog
+          title="Can't delete this record"
+          message=""
+          blockedNote={deleteBlockedMsg}
+          onCancel={() => { setDeleteBlockedMsg(null); setDeleteTarget(null); }}
+        />
       )}
     </>
   );
