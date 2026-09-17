@@ -192,11 +192,14 @@ def create_rqc_approval_entry(
     Pallets count, optionally split across machines. Never overwrites a
     prior entry; a shipment can accumulate many of these over time.
 
-    When this record is already linked to a Production Run, this is the
-    trigger point for FG QR Generation -- one batch for exactly this
-    entry's own approved_pallets, via get_or_create_fg_qr_for_rqc_approval_entry
-    (idempotent: a partial unique index on source_rqc_approval_entry_id is
-    the hard backstop, so retrying the same entry is a safe no-op).
+    This is always the trigger point for FG QR Generation -- one batch for
+    exactly this entry's own approved_pallets, via
+    get_or_create_fg_qr_for_rqc_approval_entry (idempotent: a partial
+    unique index on source_rqc_approval_entry_id is the hard backstop, so
+    retrying the same entry is a safe no-op). A Production Run link is not
+    required -- a standalone RQC record (shipment number entered before, or
+    without, a matching IPQC record) still gets its FG QR batch from its
+    own SKU snapshot/shipment_number; see that function's docstring.
     """
     rec = (
         db.query(models.RqcRecord)
@@ -217,10 +220,8 @@ def create_rqc_approval_entry(
             machine_allocations=[(str(a.machine_id), a.fg_pallets_count) for a in payload.machine_allocations],
         )
 
-        fg_qr_batch_id = None
-        if rec.production_run:
-            batch = qr_generation_service.get_or_create_fg_qr_for_rqc_approval_entry(db, entry)
-            fg_qr_batch_id = batch.id
+        batch = qr_generation_service.get_or_create_fg_qr_for_rqc_approval_entry(db, entry)
+        fg_qr_batch_id = batch.id
 
         db.commit()
     except (rqc_service.RqcError, qr_generation_service.QrGenerationError) as e:
@@ -228,6 +229,50 @@ def create_rqc_approval_entry(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
 
     db.refresh(entry)
+    return _serialize_approval_entry(entry, fg_qr_batch_id=fg_qr_batch_id, fg_pallets_generated=rec.fg_pallets_generated)
+
+
+@router.post("/{record_id}/approval-entries/{entry_id}/generate-fg-qr", response_model=schemas.RqcApprovalEntryOut)
+def generate_fg_qr_for_approval_entry(
+    record_id: uuid.UUID,
+    entry_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    _current_user: AuthenticatedUser = Depends(get_current_user),
+    _perm: models.ModulePermission = Depends(require("fill_section")),
+):
+    """
+    2026-09-17 -- a manual retry/backfill for an approval entry that was
+    recorded before FG QR Generation could reach it (e.g. an entry created
+    when this record had no linked Production Run, back when that was
+    required -- it no longer is, see get_or_create_fg_qr_for_rqc_approval_entry).
+    Idempotent, same as the automatic trigger in the POST route above: a
+    partial unique index on source_rqc_approval_entry_id means calling this
+    on an entry that already has a batch just returns that existing batch.
+    """
+    entry = (
+        db.query(models.RqcApprovalEntry)
+        .options(joinedload(models.RqcApprovalEntry.machine_allocations))
+        .options(joinedload(models.RqcApprovalEntry.rqc_record))
+        .filter(models.RqcApprovalEntry.id == entry_id, models.RqcApprovalEntry.rqc_record_id == record_id)
+        .first()
+    )
+    if not entry:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="RQC approval entry not found.")
+
+    try:
+        batch = qr_generation_service.get_or_create_fg_qr_for_rqc_approval_entry(db, entry)
+        db.commit()
+    except qr_generation_service.QrGenerationError as e:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+
+    db.refresh(entry)
+    return _serialize_approval_entry(entry, fg_qr_batch_id=batch.id, fg_pallets_generated=entry.rqc_record.fg_pallets_generated)
+
+
+def _serialize_approval_entry(
+    entry: models.RqcApprovalEntry, *, fg_qr_batch_id, fg_pallets_generated,
+) -> schemas.RqcApprovalEntryOut:
     return schemas.RqcApprovalEntryOut(
         id=entry.id, entry_date=entry.entry_date, operator_user_id=entry.operator_user_id,
         approved_pallets=entry.approved_pallets, table_person_number=entry.table_person_number,
@@ -238,5 +283,5 @@ def create_rqc_approval_entry(
             for a in entry.machine_allocations
         ],
         fg_qr_batch_id=fg_qr_batch_id,
-        fg_pallets_generated=rec.fg_pallets_generated,
+        fg_pallets_generated=fg_pallets_generated,
     )

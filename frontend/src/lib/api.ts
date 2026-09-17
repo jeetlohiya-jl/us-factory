@@ -2215,9 +2215,10 @@ export const api = {
     return res;
   },
   // Migration 0039 -- records one incremental RQC approval activity (date +
-  // operator + approved pallet count) and, when the record is already
-  // linked to a Production Run, creates that entry's own FG QR Generation
-  // batch (idempotent -- re-posting the same entry never duplicates it).
+  // operator + approved pallet count) and always creates that entry's own
+  // FG QR Generation batch (idempotent -- re-posting the same entry never
+  // duplicates it; a Production Run link is not required -- see
+  // qr_generation_service.get_or_create_fg_qr_for_rqc_approval_entry).
   // Replaces the old "save reaches Approved -> auto-create FG QR for the
   // whole run" behavior.
   createRqcApprovalEntry: async (id: string, payload: RqcApprovalEntryPayload) => {
@@ -2225,6 +2226,19 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     });
+    invalidateListCache("rqc");
+    invalidateListCache("fg-qr");
+    return res;
+  },
+  // Manual retry/backfill for an entry recorded before this record had FG
+  // QR Generation wired up (e.g. an unlinked record, back when that
+  // blocked it) -- idempotent, same as createRqcApprovalEntry's own
+  // FG QR trigger.
+  generateFgQrForApprovalEntry: async (recordId: string, entryId: string) => {
+    const res = await request<{ id: string; fg_qr_batch_id: string | null }>(
+      `/api/v1/rqc-records/${recordId}/approval-entries/${entryId}/generate-fg-qr`,
+      { method: "POST" }
+    );
     invalidateListCache("rqc");
     invalidateListCache("fg-qr");
     return res;

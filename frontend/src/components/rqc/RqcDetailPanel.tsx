@@ -153,6 +153,27 @@ export default function RqcDetailPanel({
   const entryAllocationTotal = Object.values(entryAllocations).reduce((sum, v) => sum + (Number(v) || 0), 0);
   const entryApprovedTotal = entryApproved === "" ? 0 : Number(entryApproved);
 
+  // Manual retry for an entry recorded before this record could reach FG
+  // QR Generation (e.g. an unlinked record, back when that was required --
+  // it no longer is). Idempotent, so this is safe to offer on any entry
+  // without an fg_qr_status yet.
+  const [generatingEntryId, setGeneratingEntryId] = useState<string | null>(null);
+  async function handleGenerateFgQr(entryId: string) {
+    setGeneratingEntryId(entryId);
+    setEntryError(null);
+    try {
+      await api.generateFgQrForApprovalEntry(record.id, entryId);
+      const fresh = await api.getRqc(record.id);
+      setApprovalEntries(fresh.approval_entries);
+      setFgPalletsGeneratedTotal(fresh.fg_pallets_generated);
+      onSaved();
+    } catch (e) {
+      setEntryError(e instanceof Error ? e.message : "Failed to generate FG QR for this entry");
+    } finally {
+      setGeneratingEntryId(null);
+    }
+  }
+
   async function handleAddApprovalEntry() {
     setEntryError(null);
     const approved = entryApproved === "" ? 0 : Number(entryApproved);
@@ -303,7 +324,18 @@ export default function RqcDetailPanel({
                       <td>{e.operator_name || "—"}</td>
                       <td>{e.approved_pallets}</td>
                       <td>{e.table_person_number || "—"}</td>
-                      <td>{e.fg_qr_status ? <span className={`badge ${e.fg_qr_status}`}>{e.fg_qr_status}</span> : "—"}</td>
+                      <td>
+                        {e.fg_qr_status ? (
+                          <span className={`badge ${e.fg_qr_status}`}>{e.fg_qr_status}</span>
+                        ) : editable ? (
+                          <a
+                            className="btn-tertiary" style={{ cursor: "pointer" }}
+                            onClick={() => generatingEntryId ? undefined : handleGenerateFgQr(e.id)}
+                          >
+                            {generatingEntryId === e.id ? "Generating…" : "Generate"}
+                          </a>
+                        ) : "—"}
+                      </td>
                     </tr>
                   ))
                 )}
@@ -312,7 +344,7 @@ export default function RqcDetailPanel({
 
             {editable && (
               <div style={{ borderTop: "1px solid var(--line)", paddingTop: 14 }}>
-                <div className="section-label" style={{ marginBottom: 8 }}>+ Add Approval Entry</div>
+                <div className="section-label" style={{ marginBottom: 8 }}>Record New Approval</div>
                 <div className="detail-grid">
                   <div className="field">
                     <label>Date</label>
