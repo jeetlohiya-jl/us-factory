@@ -130,6 +130,12 @@ export default function RqcDetailPanel({
   // main Save button below.
   const [approvalEntries, setApprovalEntries] = useState<RqcApprovalEntry[]>(record.approval_entries);
   const [fgPalletsGeneratedTotal, setFgPalletsGeneratedTotal] = useState(record.fg_pallets_generated);
+  // Production's own count -- the hard ceiling RQC's approved pallets may
+  // never exceed (task requirement, 2026-09-17). null when there's no
+  // linked Production Run to compare against (server-side enforcement is
+  // likewise skipped in that case -- see rqc_service.create_approval_entry).
+  const [totalProduced, setTotalProduced] = useState(record.total_pallets_produced);
+  const remainingToApprove = totalProduced != null ? Math.max(totalProduced - (fgPalletsGeneratedTotal || 0), 0) : null;
   const isMultiMachine = record.production_run_machines.length > 1;
 
   // New-entry mini-form state.
@@ -152,6 +158,13 @@ export default function RqcDetailPanel({
     const approved = entryApproved === "" ? 0 : Number(entryApproved);
     if (!entryDate) { setEntryError("Date is required."); return; }
     if (approved <= 0) { setEntryError("Approved Pallets must be greater than 0."); return; }
+    if (remainingToApprove != null && approved > remainingToApprove) {
+      setEntryError(
+        `Only ${remainingToApprove} pallet(s) remain unapproved for this Production Run `
+        + `(${totalProduced} produced, ${fgPalletsGeneratedTotal || 0} already approved).`
+      );
+      return;
+    }
     if (isMultiMachine && entryAllocationTotal > 0 && entryAllocationTotal !== approved) {
       setEntryError(`Allocated ${entryAllocationTotal}, but Approved Pallets is ${approved}. These must match.`);
       return;
@@ -172,6 +185,7 @@ export default function RqcDetailPanel({
       const fresh = await api.getRqc(record.id);
       setApprovalEntries(fresh.approval_entries);
       setFgPalletsGeneratedTotal(fresh.fg_pallets_generated);
+      setTotalProduced(fresh.total_pallets_produced);
       setEntryApproved("");
       setEntryAllocations({});
       onSaved();
@@ -265,6 +279,12 @@ export default function RqcDetailPanel({
             <h3>RQC Approval Entries</h3>
             <div className="hint-text" style={{ marginBottom: 10 }}>
               Total Approved Pallets: <strong>{fgPalletsGeneratedTotal ?? 0}</strong>
+              {totalProduced != null && (
+                <>
+                  {" "}· Produced: <strong>{totalProduced}</strong>
+                  {" "}· Remaining to Approve: <strong>{remainingToApprove}</strong>
+                </>
+              )}
             </div>
             <table className="qc-obs-table" style={{ marginBottom: 14 }}>
               <thead>
@@ -299,9 +319,9 @@ export default function RqcDetailPanel({
                     <input type="date" value={entryDate} onChange={(e) => setEntryDate(e.target.value)} />
                   </div>
                   <div className="field">
-                    <label>Approved Pallets</label>
+                    <label>Approved Pallets{remainingToApprove != null && ` (max ${remainingToApprove})`}</label>
                     <input
-                      type="number" min={0} placeholder="0"
+                      type="number" min={0} max={remainingToApprove ?? undefined} placeholder="0"
                       value={entryApproved}
                       onChange={(e) => setEntryApproved(e.target.value)}
                     />

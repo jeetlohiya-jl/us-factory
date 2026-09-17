@@ -51,10 +51,10 @@ type AttrKey = "machine_no" | "auto_padding" | "container_order_no" | "weight" |
 // (label text included) -- one row per attribute, one column per machine.
 // Section 12 adds Machine No./Auto Padding/Container Order No. (brand new)
 // and makes every backend-populated attribute editable via `attrKey`.
-// Migration 0039, task section 1 adds Pallets Produced -- per shift + per
-// machine, same one-column-per-machine mechanism as everything else here;
-// this is the source of truth FG QR Generation's downstream RQC approval
-// step is compared against, never total_fg_pallets/Total Quantity above.
+// Pallets Produced (migration 0039) gets its own dedicated "FG Pallets
+// Generated" card below instead of a row here -- it's the figure RQC and FG
+// QR Generation actually key off, so it's called out on its own rather than
+// buried in this reference table.
 const PROD_DETAIL_ROWS: { label: string; attrKey?: AttrKey; get: (e: ProductionDetail["machine_entries"][number]) => React.ReactNode }[] = [
   { label: "SKU Name", get: (e) => e.sku_code },
   { label: "Machine No.", attrKey: "machine_no", get: (e) => e.machine_no },
@@ -69,7 +69,6 @@ const PROD_DETAIL_ROWS: { label: string; attrKey?: AttrKey; get: (e: ProductionD
   { label: "Pad Type/Name/Code", attrKey: "pad_type", get: (e) => e.production_details?.prod_pad_type },
   { label: "Pad Color", attrKey: "pad_color", get: (e) => e.production_details?.prod_pad_color },
   { label: "Case Type (Combo/Regular)", attrKey: "case_type", get: (e) => e.production_details?.prod_case_type },
-  { label: "Pallets Produced", attrKey: "pallets_produced", get: (e) => e.pallets_produced },
 ];
 
 function sumProductionDetails(entries: ProductionDetail["machine_entries"], key: "prod_total_pcs_per_pallet"): number | null {
@@ -442,14 +441,53 @@ export default function ProductionDetailPanel({
             )}
           </div>
 
-          <div className="detail-card">
-            <h3>FG Pallets</h3>
-            <div className="field">
-              <label>Total Quantity Generated</label>
-              <div className="detail-kv-value">{record.total_fg_pallets || "—"}</div>
-              <div className="hint-text">Now entered in RQC's "Quantity Generated" field -- no longer editable here.</div>
+          {/* Migration 0039, task section 1 -- FG pallets actually produced,
+              per machine, for this run's shift. This is Production's own
+              count and the real source of truth for "how many pallets did
+              we make" -- RQC then approves out of this pool (never more
+              than what's recorded here), and only RQC-approved pallets ever
+              reach FG QR Generation. See ProductionMachineEntry.
+              pallets_produced / rqc_service.create_approval_entry. */}
+          {record.machine_entries.length > 0 && (
+            <div className="detail-card">
+              <h3>FG Pallets Generated</h3>
+              <div className="hint-text" style={{ marginBottom: 10 }}>
+                Per machine, for this run&apos;s shift. RQC approves pallets out of this total --
+                it can never approve more than what&apos;s recorded here.
+              </div>
+              <div style={{ overflowX: "auto" }}>
+                <table className="qc-obs-table">
+                  <thead>
+                    <tr>
+                      <th>Machine</th>
+                      {record.machine_entries.map((e, i) => <th key={e.machine_consumption_id}>{e.machine || `Machine #${i + 1}`}</th>)}
+                      <th style={{ width: 100 }}>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>FG Pallets Generated</td>
+                      {record.machine_entries.map((e) => (
+                        <td key={e.machine_consumption_id} style={{ width: 110 }}>
+                          {editable ? (
+                            <input
+                              type="number"
+                              min={0}
+                              value={attrEdits[e.machine_consumption_id]?.pallets_produced ?? ""}
+                              onChange={(ev) => setAttrEdit(e.machine_consumption_id, "pallets_produced", ev.target.value)}
+                            />
+                          ) : (
+                            e.pallets_produced || 0
+                          )}
+                        </td>
+                      ))}
+                      <td><strong>{totalPalletsProduced}</strong></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>
+          )}
 
           {!isEdit && (
             <div className="detail-card">

@@ -1086,17 +1086,22 @@ type RawRqcApprovalEntry = {
   machine_allocations: RawRqcMachineAllocation[];
   fg_qr_batch: { status: string } | { status: string }[] | null;
 };
+// Migration 0039 (produced-vs-approved) -- just enough of the linked
+// Production Run's own Material Consumption -> machine_entries chain to sum
+// pallets_produced client-side for display (the real enforcement is
+// server-side, in rqc_service.create_approval_entry -- this is purely a
+// "how many are left to approve" readout).
+type RawRqcRunMc = { machine_entries: { pallets_produced: number | string | null }[] };
+type RawRqcProductionRun = {
+  run_number: string; total_fg_pallets: number; shift: string | null; production_date: string | null;
+  machines: { machine: { id: string; code: string } | null }[] | null;
+  material_consumptions: RawRqcRunMc[] | null;
+};
 type RawRqcRecordDetail = {
   id: string; production_run_id: string | null; shipment_number: string | null; manufacturer: string | null;
   sku_code_snapshot: string | null; sku_version_snapshot: string | null; overall_result: string | null; status: string;
   ipqc_record_id: string | null; fg_pallets_generated: number | null; table_person_number: string | null;
-  production_run: {
-    run_number: string; total_fg_pallets: number; shift: string | null; production_date: string | null;
-    machines: { machine: { id: string; code: string } | null }[] | null;
-  } | {
-    run_number: string; total_fg_pallets: number; shift: string | null; production_date: string | null;
-    machines: { machine: { id: string; code: string } | null }[] | null;
-  }[] | null;
+  production_run: RawRqcProductionRun | RawRqcProductionRun[] | null;
   machine_allocations: RawRqcMachineAllocation[];
   approval_entries: RawRqcApprovalEntry[];
   defect_results: RawRqcDefectResult[];
@@ -1105,13 +1110,28 @@ type RawRqcRecordDetail = {
 
 const RQC_DETAIL_SELECT =
   "id,production_run_id,shipment_number,manufacturer,sku_code_snapshot,sku_version_snapshot,overall_result,status,ipqc_record_id,fg_pallets_generated,table_person_number," +
-  "production_run:production_runs(run_number,total_fg_pallets,shift,production_date,machines:production_run_machines(machine:machines(id,code)))," +
+  "production_run:production_runs(run_number,total_fg_pallets,shift,production_date,machines:production_run_machines(machine:machines(id,code))," +
+  "material_consumptions(machine_entries:material_consumption_machine_entries(pallets_produced)))," +
   "machine_allocations:rqc_machine_allocations(machine_id,fg_pallets_count,machine:machines(code))," +
   "approval_entries:rqc_approval_entries(id,entry_date,operator_user_id,approved_pallets,table_person_number,created_at," +
   "operator:app_users(full_name),machine_allocations:rqc_machine_allocations(machine_id,fg_pallets_count,machine:machines(code))," +
   "fg_qr_batch:qr_generation_records(status))," +
   "defect_results:rqc_defect_results(defect_sr,found,remarks)," +
   "coa_observations:rqc_coa_observations(coa_group,sr,observation)";
+
+/** Sum of Production's own pallets_produced across every machine entry
+ * feeding this run -- the hard ceiling RQC's approved pallets are checked
+ * against server-side (rqc_service._run_total_pallets_produced mirrors this
+ * exact aggregation). */
+function sumRunPalletsProduced(run: RawRqcProductionRun | null): number {
+  let total = 0;
+  for (const mc of run?.material_consumptions || []) {
+    for (const e of mc.machine_entries || []) {
+      total += Number(e.pallets_produced) || 0;
+    }
+  }
+  return total;
+}
 
 function flattenRqcDetail(raw: RawRqcRecordDetail): RqcDetail {
   const runObj = Array.isArray(raw.production_run) ? raw.production_run[0] ?? null : raw.production_run;
@@ -1136,6 +1156,7 @@ function flattenRqcDetail(raw: RawRqcRecordDetail): RqcDetail {
     shipment_number: raw.shipment_number, manufacturer: raw.manufacturer,
     sku_code: raw.sku_code_snapshot, sku_version: raw.sku_version_snapshot,
     total_fg_pallets: runObj?.total_fg_pallets ?? null,
+    total_pallets_produced: runObj ? sumRunPalletsProduced(runObj) : null,
     fg_pallets_generated: raw.fg_pallets_generated,
     table_person_number: raw.table_person_number,
     production_run_machines: (runObj?.machines || [])

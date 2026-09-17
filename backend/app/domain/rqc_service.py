@@ -149,6 +149,20 @@ class RqcError(Exception):
     pass
 
 
+def _run_total_pallets_produced(run: models.ProductionRun) -> int:
+    """Production's own count of FG pallets actually produced for this run,
+    per machine + shift (migration 0039, task section 1) -- summed across
+    every machine entry belonging to every Material Consumption record that
+    feeds this run. This is the hard ceiling create_approval_entry checks
+    RQC's approved pallets against; never total_fg_pallets (legacy/unused as
+    of migration 0030) and never derived from RQC's own numbers."""
+    total = 0
+    for mc in run.material_consumptions:
+        for e in mc.machine_entries:
+            total += int(e.pallets_produced or 0)
+    return total
+
+
 def find_linked_ipqc_by_shipment_number(db: Session, shipment_number: str) -> models.IpqcRecord | None:
     """The Shipment Number -> Production -> IPQC lookup used both at RQC
     creation and (read-only) whenever an RQC record is opened, so the same
@@ -256,6 +270,26 @@ def create_approval_entry(
     approved_pallets = int(approved_pallets or 0)
     if approved_pallets <= 0:
         raise RqcError("Approved Pallets must be greater than 0.")
+
+    # Task requirement (2026-09-17): RQC may only approve pallets that
+    # Production actually produced -- never more. Production's own count
+    # (MaterialConsumptionMachineEntry.pallets_produced, summed across every
+    # machine entry that fed this run) is the hard ceiling; the sum of every
+    # approval entry ever recorded for this shipment (this one included)
+    # must never exceed it. Only enforced when a Production Run is actually
+    # linked -- an unlinked RQC record (no match found at create_rqc time)
+    # has no produced count to compare against, so it isn't blocked here.
+    run = rqc.production_run
+    if run is not None:
+        total_produced = _run_total_pallets_produced(run)
+        already_approved = sum(int(e.approved_pallets or 0) for e in rqc.approval_entries)
+        if already_approved + approved_pallets > total_produced:
+            remaining = max(total_produced - already_approved, 0)
+            raise RqcError(
+                f"Only {remaining} pallet(s) remain unapproved for this Production Run "
+                f"({total_produced} produced, {already_approved} already approved). "
+                f"Reduce Approved Pallets for this entry, or check Production's FG Pallets Generated."
+            )
 
     table_person_number = (table_person_number or rqc.table_person_number or "").strip() or None
 

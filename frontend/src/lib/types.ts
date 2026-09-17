@@ -907,6 +907,11 @@ export interface RqcDetail {
   // fg_pallets_generated below, RQC's own editable field and the value
   // FG QR Generation actually uses.
   total_fg_pallets: number | null;
+  // Production's own count -- sum of pallets_produced across every machine
+  // entry feeding the linked run (migration 0039, task section 1). RQC's
+  // approved pallets (fg_pallets_generated below) may never exceed this;
+  // null when there's no linked Production Run to sum.
+  total_pallets_produced: number | null;
   // "Number of FG Pallets Generated" -- as of migration 0039 this is a
   // denormalized running total (sum of approval_entries[].approved_pallets),
   // kept in sync by the backend purely for cheap display/back-compat.
