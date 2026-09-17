@@ -7,7 +7,8 @@ import { cachedList, invalidateListCache, listCacheKey } from "@/lib/listCache";
 import { useImmediateThenDebounced } from "@/lib/useImmediateThenDebounced";
 import type { RqcListItem, RqcDetail } from "@/lib/types";
 import RqcDetailPanel from "@/components/rqc/RqcDetailPanel";
-import NewRqcPanel from "@/components/rqc/NewRqcPanel";
+import RqcWizard from "@/components/rqc/RqcWizard";
+import CoaEntryPanel from "@/components/rqc/CoaEntryPanel";
 import MoreMenu from "@/components/inward-vehicle-inspection/MoreMenu";
 import ConfirmDialog from "@/components/inward-vehicle-inspection/ConfirmDialog";
 import Pagination from "@/components/Pagination";
@@ -48,6 +49,7 @@ function RqcPageContent() {
   const [openRecord, setOpenRecord] = useState<RqcDetail | null>(null);
   const [panelMode, setPanelMode] = useState<"view" | "edit">("edit");
   const [showNewPanel, setShowNewPanel] = useState(false);
+  const [coaShipmentNumber, setCoaShipmentNumber] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<RqcListItem | null>(null);
   const [deleteBlockedMsg, setDeleteBlockedMsg] = useState<string | null>(null);
 
@@ -176,12 +178,12 @@ function RqcPageContent() {
           <thead>
             <tr>
               <th>Shipment Number</th><th>SKU Code</th><th>SKU Version</th>
-              <th>Manufacturer</th><th>Status</th><th>Date</th><th></th>
+              <th>Manufacturer</th><th>Status</th><th>Date</th><th>COA</th><th></th>
             </tr>
           </thead>
           <tbody>
             {records.length === 0 ? (
-              <tr className="empty-row"><td colSpan={7}>{loading ? "Loading…" : "No records match your search/filters."}</td></tr>
+              <tr className="empty-row"><td colSpan={8}>{loading ? "Loading…" : "No records match your search/filters."}</td></tr>
             ) : (
               records.map((r) => {
                 // Same convention as IPQC/Production: while a record is
@@ -204,6 +206,13 @@ function RqcPageContent() {
                     <td>{r.manufacturer || "—"}</td>
                     <td><span className={`badge ${r.status === "approved" ? "approved" : r.status === "hold" ? "hold" : r.status === "pending" ? "pending" : "draft"}`}>{r.status.charAt(0).toUpperCase() + r.status.slice(1)}</span></td>
                     <td>{r.date ? r.date.slice(0, 10) : "—"}</td>
+                    <td onClick={(e) => e.stopPropagation()}>
+                      {r.shipment_number ? (
+                        <a className="btn-tertiary" style={{ cursor: "pointer" }} onClick={() => setCoaShipmentNumber(r.shipment_number)}>
+                          COA
+                        </a>
+                      ) : "—"}
+                    </td>
                     <td onClick={(e) => e.stopPropagation()}>
                       <MoreMenu
                         canEdit={!!perms?.can_fill_section}
@@ -233,13 +242,22 @@ function RqcPageContent() {
       )}
 
       {showNewPanel && (
-        <NewRqcPanel
-          onClose={() => setShowNewPanel(false)}
-          onCreated={(id) => {
+        <RqcWizard
+          onClose={() => { setShowNewPanel(false); refreshAfterMutation(); }}
+          onSaved={(id) => {
             setShowNewPanel(false);
             refreshAfterMutation();
-            openDetail(id, "edit");
+            openDetail(id, "view");
           }}
+        />
+      )}
+
+      {coaShipmentNumber && (
+        <CoaEntryPanel
+          shipmentNumber={coaShipmentNumber}
+          canEdit={!!perms?.can_fill_section}
+          onClose={() => setCoaShipmentNumber(null)}
+          onSaved={() => {}}
         />
       )}
 

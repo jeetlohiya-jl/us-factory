@@ -2,10 +2,10 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import type { RqcDetail, RqcDefectResult, RqcCoaObservation, RqcApprovalEntry, Machine } from "@/lib/types";
-import { RQC_DEFECT_GROUPS, RQC_COA_BASE, RQC_COA_FUNCTIONAL, RQC_COA_PACKING, RQC_COA_PRINTING } from "@/lib/types";
-import type { RqcCoaParamDef } from "@/lib/types";
+import { RQC_DEFECT_GROUPS } from "@/lib/types";
 import { api } from "@/lib/api";
 import HoldReleaseSection from "@/components/HoldReleaseSection";
+import { coaListToMap } from "@/components/rqc/CoaShared";
 
 function Kv({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -31,56 +31,6 @@ function ResultBadge({ found, reject }: { found: number | null; reject: number }
       {isNotOk ? "NOT OK" : "OK"}
       <span className="calc-tag">calc</span>
     </span>
-  );
-}
-
-function coaKey(group: string, sr: number) {
-  return `${group}:${sr}`;
-}
-
-function coaListToMap(observations: RqcCoaObservation[]): Record<string, RqcCoaObservation> {
-  return Object.fromEntries(observations.map((o) => [coaKey(o.coa_group, o.sr), o]));
-}
-
-function CoaTable({
-  title, group, params, values, editable, onChange,
-}: {
-  title: string;
-  group: string;
-  params: RqcCoaParamDef[];
-  values: Record<string, RqcCoaObservation>;
-  editable: boolean;
-  onChange: (group: string, sr: number, value: string) => void;
-}) {
-  return (
-    <div className="detail-card">
-      <h3>{title}</h3>
-      <table className="qc-obs-table">
-        <thead>
-          <tr><th>Parameter</th><th>Specification</th><th>Observation</th></tr>
-        </thead>
-        <tbody>
-          {params.map((p) => {
-            const obs = values[coaKey(group, p.sr)];
-            return (
-              <tr key={p.sr}>
-                <td>{p.param}</td>
-                <td>{p.spec}</td>
-                <td>
-                  {editable ? (
-                    <input
-                      type="text" placeholder="Observation"
-                      value={obs?.observation ?? ""}
-                      onChange={(e) => onChange(group, p.sr, e.target.value)}
-                    />
-                  ) : (obs?.observation || "—")}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
   );
 }
 
@@ -123,7 +73,6 @@ export default function RqcDetailPanel({
   mode: "view" | "edit";
   onEdit?: () => void;
 }) {
-  const [manufacturer, setManufacturer] = useState(record.manufacturer || "");
   // Migration 0039 -- the incremental approval ledger. Kept as local state
   // (not derived straight from the `record` prop) so "+ Add Approval
   // Entry" can refresh it in place without closing the panel, unlike the
@@ -155,17 +104,26 @@ export default function RqcDetailPanel({
   // all, so every approval entry on it fell back to an unattributed
   // machine -- the Batch Code then showed the placeholder "M00" segment
   // instead of a real machine number, and never had a real machine to
-  // name in the first place. Source the full active Machines list (same
-  // master data Production/Material Consumption already use), not just
-  // record.production_run_machines, so this works for a standalone record
-  // too; pre-select when the linked run has exactly one machine, purely
-  // for convenience -- it's still an explicit, changeable choice.
-  const [machines, setMachines] = useState<Machine[]>([]);
+  // name in the first place.
+  //
+  // 2026-09-17 correction: the dropdown must only ever offer the machines
+  // actually selected on the linked Production Run (record.
+  // production_run_machines) -- never the full Machines master list --
+  // since RQC pallets can only realistically have come off one of those.
+  // The full active-Machines list is fetched, and used, ONLY as a fallback
+  // for a genuinely unlinked record (no Production Run at all, so there is
+  // nothing to scope to); it's never mixed in when a run IS linked.
+  const [allMachines, setAllMachines] = useState<Machine[]>([]);
+  const machineOptions: { id: string; code: string }[] =
+    record.production_run_machines.length > 0 ? record.production_run_machines : allMachines;
   const [entryMachineId, setEntryMachineId] = useState(
     record.production_run_machines.length === 1 ? record.production_run_machines[0].id : ""
   );
   useEffect(() => {
-    api.machines().then(setMachines).catch(() => setMachines([]));
+    if (record.production_run_machines.length === 0) {
+      api.machines().then(setAllMachines).catch(() => setAllMachines([]));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function setEntryAllocationCount(machineId: string, value: string) {
@@ -250,7 +208,13 @@ export default function RqcDetailPanel({
   const [defects, setDefects] = useState<Record<number, RqcDefectResult>>(
     Object.fromEntries(record.defect_results.map((d) => [d.defect_sr, d]))
   );
-  const [coa, setCoa] = useState<Record<string, RqcCoaObservation>>(coaListToMap(record.coa_observations));
+  // 2026-09-17, item 7 -- COA is no longer edited from this form; it moved
+  // to its own per-shipment flow (CoaEntryPanel / backend/app/api/
+  // rqc_coa.py). This is kept, untouched, purely so an existing legacy
+  // record's already-saved (rqc_record_id-linked) COA observations
+  // round-trip unchanged through the save payload below instead of being
+  // silently wiped -- there is no UI here to view or edit them any more.
+  const [coa] = useState<Record<string, RqcCoaObservation>>(coaListToMap(record.coa_observations));
   const [saving, setSaving] = useState<"draft" | "final" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -275,17 +239,25 @@ export default function RqcDetailPanel({
   function setRemarks(sr: number, value: string) {
     setDefects((prev) => ({ ...prev, [sr]: { defect_sr: sr, found: prev[sr]?.found ?? null, remarks: value } }));
   }
-  function setCoaValue(group: string, sr: number, value: string) {
-    setCoa((prev) => ({ ...prev, [coaKey(group, sr)]: { coa_group: group, sr, observation: value } }));
-  }
-
   async function handleSave(saveMode: "draft" | "final") {
     setSaving(saveMode);
     setError(null);
     try {
       await api.saveRqc(record.id, {
-        manufacturer: manufacturer || null,
+        manufacturer: record.manufacturer || null,
         overall_result: overallResult || null,
+        // This panel only ever edits the defect grid/COA/Overall Result --
+        // the per-activity fields (Approved Pallets, Table/Person Number,
+        // Number Tested, Machine, Shift, Date) are unchanged here, so they
+        // round-trip through exactly as loaded (this panel is now only
+        // reached for pre-existing/legacy records; the RqcWizard is what
+        // sets these on new records).
+        fg_pallets_generated: record.fg_pallets_generated,
+        table_person_number: record.table_person_number,
+        pallets_tested: record.pallets_tested,
+        machine_id: record.machine_id,
+        shift: record.activity_shift,
+        activity_date: record.activity_date,
         save_mode: saveMode,
         defect_results: Object.values(defects).filter((d) => d.found !== null || !!d.remarks),
         coa_observations: Object.values(coa).filter((o) => !!o.observation),
@@ -401,7 +373,7 @@ export default function RqcDetailPanel({
                     <label>Machine</label>
                     <select value={entryMachineId} onChange={(e) => setEntryMachineId(e.target.value)}>
                       <option value="">Select a machine…</option>
-                      {machines.map((m) => (
+                      {machineOptions.map((m) => (
                         <option key={m.id} value={m.id}>{m.code}</option>
                       ))}
                     </select>
@@ -466,11 +438,10 @@ export default function RqcDetailPanel({
             <div className="detail-grid">
               <Kv label="SKU Code" value={record.sku_code ? <span className="mono">{record.sku_code}</span> : "—"} />
               <Kv label="SKU Version" value={record.sku_version} />
-              <Kv label="Manufacturer Name" value={
-                editable ? (
-                  <input type="text" value={manufacturer} placeholder="e.g. Cirkla Manufacturing" onChange={(e) => setManufacturer(e.target.value)} />
-                ) : (record.manufacturer || "—")
-              } />
+              {/* Manufacturer is no longer user-entered -- always "Cirkla
+                  INC" (rqc_service.RQC_MANUFACTURER_PLACEHOLDER), set
+                  server-side at creation. Read-only everywhere. */}
+              <Kv label="Manufacturer Name" value={record.manufacturer || "—"} />
               <Kv label="Status" value={<StatusBadge status={record.status} />} />
             </div>
           </div>
@@ -544,10 +515,9 @@ export default function RqcDetailPanel({
             </div>
           </div>
 
-          <CoaTable title="COA — Base Material" group="base" params={RQC_COA_BASE} values={coa} editable={editable} onChange={setCoaValue} />
-          <CoaTable title="COA — Functional Parameters" group="functional" params={RQC_COA_FUNCTIONAL} values={coa} editable={editable} onChange={setCoaValue} />
-          <CoaTable title="COA — Packing Details" group="packing" params={RQC_COA_PACKING} values={coa} editable={editable} onChange={setCoaValue} />
-          <CoaTable title="COA — Printing & Labelling" group="printing" params={RQC_COA_PRINTING} values={coa} editable={editable} onChange={setCoaValue} />
+          {/* 2026-09-17, item 7 -- COA moved out of the main RQC form into
+              its own per-shipment flow (see the RQC list's COA column/
+              action, and CoaEntryPanel). Nothing rendered here any more. */}
 
           {showContextCards && (
             <div className="detail-card">

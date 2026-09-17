@@ -5,6 +5,7 @@ import type { ProductionDetail, Machine } from "@/lib/types";
 import { QC_CATEGORY_LABELS } from "@/lib/types";
 import { formatTime12h, nowHHMM } from "@/components/material-consumption/Wizard";
 import { api } from "@/lib/api";
+import ConsumptionConfirmModal from "@/components/production/ConsumptionConfirmModal";
 
 const CATEGORY_LABELS = QC_CATEGORY_LABELS;
 
@@ -146,6 +147,10 @@ export default function ProductionDetailPanel({
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Phase 5 -- shown right before the real save, per the user's explicit
+  // direction that saving Production must never implicitly mean "all raw
+  // material consumed" any more. See ConsumptionConfirmModal.
+  const [showConsumptionConfirm, setShowConsumptionConfirm] = useState(false);
 
   function setAttrEdit(entryId: string, key: AttrKey, value: string) {
     setAttrEdits((prev) => ({ ...prev, [entryId]: { ...prev[entryId], [key]: value } }));
@@ -530,7 +535,7 @@ export default function ProductionDetailPanel({
         <div className="sp-foot">
           <button className="btn btn-ghost" onClick={onClose}>Close</button>
           {editable && (
-            <button className="btn btn-primary" disabled={saving} onClick={handleSave}>
+            <button className="btn btn-primary" disabled={saving} onClick={() => setShowConsumptionConfirm(true)}>
               {saving ? "Saving…" : "Save"}
             </button>
           )}
@@ -539,6 +544,13 @@ export default function ProductionDetailPanel({
           )}
         </div>
       </div>
+      {showConsumptionConfirm && (
+        <ConsumptionConfirmModal
+          record={record}
+          onCancel={() => setShowConsumptionConfirm(false)}
+          onConfirm={() => { setShowConsumptionConfirm(false); handleSave(); }}
+        />
+      )}
     </>
   );
 }

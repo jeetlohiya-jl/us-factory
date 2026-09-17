@@ -47,7 +47,11 @@ from app.db import models
 # No real upstream source for Manufacturer on RQC (same as IPQC) -- the
 # prototype's own RQC form treats it as a plain, user-editable text field
 # seeded with a placeholder. Matches IPQC_MANUFACTURER_PLACEHOLDER's pattern.
-RQC_MANUFACTURER_PLACEHOLDER = "Cirkla Manufacturing (placeholder)"
+# 2026-09-17: Manufacturer is no longer user-entered anywhere in RQC -- it's
+# always this fixed value, matching the fact every RQC activity happens at
+# this one Cirkla US factory. create_rqc below ignores any caller-supplied
+# manufacturer and always uses this constant.
+RQC_MANUFACTURER_PLACEHOLDER = "Cirkla INC"
 
 # Transcribed verbatim from the prototype's RQC_DEFECT_GROUPS. Independent
 # sr numbering space from IPQC_DEFECTS (1-15, not reused/shared) -- this was
@@ -250,26 +254,24 @@ def create_rqc(db: Session, shipment_number: str, manufacturer: str | None = Non
     record is created; there is no auto-creation from Material Consumption
     or IPQC anymore.
 
-    shipment_number is required and must be unique (enforced at the DB
-    level by rqc_records_shipment_number_key -- this find-first is a
-    friendly pre-check, not the actual guarantee). It is the business key
-    used to identify the linked Production Run / IPQC record: first via the
-    already-existing IPQC.shipment_number snapshot (find_linked_ipqc_by_shipment_number),
-    and -- since IPQC is optional -- falling back to the Production Run
-    directly (find_linked_production_run_by_shipment_number) when no IPQC
-    record matches. Never re-derives Shipment Number / SKU Code / SKU
-    Version from scratch, and never creates a duplicate Production/IPQC
-    record. No match at all is not an error: the RQC record still gets
-    created, simply unlinked (Production Run / IPQC UUIDs null) until a
-    matching upstream record exists.
+    2026-09-17: shipment_number is required but is NO LONGER unique across
+    RQC records -- each call creates a brand-new activity record, and the
+    same shipment legitimately gets many of these over time (a fresh batch
+    of pallets tested/approved on a new date). It is the business key used
+    to identify the linked Production Run / IPQC record: first via the
+    already-existing IPQC.shipment_number snapshot
+    (find_linked_ipqc_by_shipment_number), and -- since IPQC is optional --
+    falling back to the Production Run directly
+    (find_linked_production_run_by_shipment_number) when no IPQC record
+    matches. Never re-derives Shipment Number / SKU Code / SKU Version from
+    scratch, and never creates a duplicate Production/IPQC record. No match
+    at all is not an error: the RQC record still gets created, simply
+    unlinked (Production Run / IPQC UUIDs null) until a matching upstream
+    record exists.
     """
     shipment_number = (shipment_number or "").strip()
     if not shipment_number:
         raise RqcError("Shipment Number is required.")
-
-    existing = db.query(models.RqcRecord).filter(models.RqcRecord.shipment_number == shipment_number).first()
-    if existing:
-        raise RqcError(f'Shipment Number "{shipment_number}" already exists.')
 
     ipqc = find_linked_ipqc_by_shipment_number(db, shipment_number)
     # IPQC is optional -- when there's no IPQC match, fall back one hop
@@ -302,7 +304,9 @@ def create_rqc(db: Session, shipment_number: str, manufacturer: str | None = Non
         sku_version_snapshot=(
             ipqc.sku_version_snapshot if ipqc else (run.sku_version.version if run and run.sku_version else None)
         ),
-        manufacturer=manufacturer or RQC_MANUFACTURER_PLACEHOLDER,
+        # manufacturer param is accepted for API-payload-shape backward
+        # compatibility only -- ignored. Always the fixed constant now.
+        manufacturer=RQC_MANUFACTURER_PLACEHOLDER,
         fg_pallets_generated=default_fg_pallets,
         status="pending",
     )

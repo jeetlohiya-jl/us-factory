@@ -296,8 +296,16 @@ class QuantityIn(schemas.BaseModel):
 @router.put("/{mc_id}/pallets/{row_id}/quantity", response_model=schemas.MaterialConsumptionDetailOut)
 def set_pallet_quantity(
     mc_id: uuid.UUID, row_id: uuid.UUID, body: QuantityIn,
-    db: Session = Depends(get_db), _perm=Depends(require("edit")),
+    db: Session = Depends(get_db),
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    _perm=Depends(require("edit")),
 ):
+    """2026-09-17: fully_consumed may now be flipped even after this
+    record's own status has moved past 'draft' -- see
+    svc.update_pallet_consumption's docstring for the lifecycle-reversal
+    logic that keeps the pallet's own live lifecycle_status honest when
+    this happens. Quantity/Unit are unaffected -- still draft-only,
+    enforced inside the service call below."""
     mc = _get_or_404(db, mc_id)
     qty = None
     if body.quantity is not None:
@@ -306,7 +314,10 @@ def set_pallet_quantity(
         except (InvalidOperation, ValueError):
             raise HTTPException(status_code=422, detail="Invalid quantity.")
     try:
-        svc.update_pallet_consumption(db, mc, row_id, quantity=qty, unit=body.unit, fully_consumed=body.fully_consumed)
+        svc.update_pallet_consumption(
+            db, mc, row_id, quantity=qty, unit=body.unit, fully_consumed=body.fully_consumed,
+            actor_user_id=current_user.user_id,
+        )
         db.commit()
     except svc.MaterialConsumptionError as e:
         db.rollback()

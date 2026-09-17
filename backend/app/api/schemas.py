@@ -599,18 +599,24 @@ class RqcMachineAllocationOut(BaseModel):
 class RqcSaveIn(BaseModel):
     manufacturer: Optional[str] = None
     overall_result: Optional[str] = None
-    # Migration 0039 -- fg_pallets_generated and machine_allocations are no
-    # longer written by this route. They're superseded by the incremental
-    # RQC Approval Entries ledger (see RqcApprovalEntryIn / POST
-    # /{record_id}/approval-entries below); fg_pallets_generated is now a
-    # denormalized sum maintained by rqc_service.create_approval_entry, and
-    # machine_allocations are scoped per entry. Both fields are kept,
-    # Optional and accepted-but-ignored, only so an older/cached frontend
-    # build that still sends them doesn't 422 -- api/rqc.py's save route no
-    # longer reads either one.
+    # 2026-09-17 -- un-deprecated as of the per-activity RQC redesign. Each
+    # RqcRecord is now one activity (Page 3 of the wizard: Date/Machine/
+    # Shift/Approved Pallets/Table-Person Number), so fg_pallets_generated
+    # ("Approved Pallets") and table_person_number are written directly onto
+    # this record again -- no more approval-entries-ledger indirection for
+    # new records (that ledger, RqcApprovalEntryIn below, stays in place
+    # untouched, serving only already-existing historical records).
+    # machine_allocations is kept only for backward compatibility with any
+    # still-open old-style panel/entry; the wizard writes machine_id
+    # directly instead (a single machine per activity, no splitting).
     fg_pallets_generated: Optional[int] = None
     table_person_number: Optional[str] = None
     machine_allocations: list[RqcMachineAllocationIn] = []
+    # New per-activity fields (Phase 2/3 of the RQC redesign).
+    pallets_tested: Optional[int] = None
+    machine_id: Optional[uuid.UUID] = None
+    shift: Optional[str] = None
+    activity_date: Optional[str] = None
     # 'draft' always saves as Draft (Save Draft button); 'final' computes
     # Approved/Hold from whether any defect's Found >= that defect group's
     # reject number across the whole grid (Save button) -- matches
@@ -629,13 +635,20 @@ class RqcSaveOut(BaseModel):
     machine_allocations: list[RqcMachineAllocationOut] = []
     manufacturer: Optional[str] = None
     overall_result: Optional[str] = None
+    pallets_tested: Optional[int] = None
+    machine_id: Optional[uuid.UUID] = None
+    shift: Optional[str] = None
+    activity_date: Optional[str] = None
     defect_results: list[RqcDefectResultOut] = []
     coa_observations: list[RqcCoaObservationOut] = []
 
 
 class RqcCreateIn(BaseModel):
-    # Manual "+ New Record" creation -- the only way an RQC record is
-    # created. Shipment Number is required and must be unique.
+    # Manual "+ New Record" creation, and Page 1 of the RQC wizard. Shipment
+    # Number is required but, as of the per-activity redesign (migration
+    # 0041), no longer unique across RQC records -- a shipment can have many
+    # activity records (one per date/machine/shift batch), each created via
+    # this same route.
     shipment_number: str
     manufacturer: Optional[str] = None
 
@@ -664,6 +677,25 @@ class RqcApprovalEntryOut(BaseModel):
     machine_allocations: list[RqcMachineAllocationOut] = []
     fg_qr_batch_id: Optional[uuid.UUID] = None
     fg_pallets_generated: Optional[int] = None
+
+
+# 2026-09-17 -- COA, decoupled from RqcRecord: one entry per SHIPMENT (never
+# per RQC activity record, never more than one per shipment -- see
+# RqcCoaEntry's class docstring). find-or-create by shipment_number (POST),
+# atomic whole-table save (PUT), same shape as RqcSaveIn's own
+# coa_observations list.
+class RqcCoaEntryCreateIn(BaseModel):
+    shipment_number: str
+
+
+class RqcCoaEntrySaveIn(BaseModel):
+    coa_observations: list[RqcCoaObservationIn] = []
+
+
+class RqcCoaEntryOut(BaseModel):
+    id: uuid.UUID
+    shipment_number: str
+    coa_observations: list[RqcCoaObservationOut] = []
 
 
 # ---------------------------------------------------------------------------

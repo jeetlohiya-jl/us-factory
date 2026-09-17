@@ -1,10 +1,12 @@
 """
 RQC (Final Quality Control) -- the quality gate between IPQC and FG QR
-Generation. Records are created MANUALLY ONLY, via "+ New Record" (the POST
-route below, backed by rqc_service.create_rqc) -- there is no auto-creation
-from Material Consumption/IPQC. Shipment Number is the required, unique,
-user-entered key used to resolve the Production Run / IPQC link (see
-rqc_service.create_rqc). List/detail reads are Supabase-direct (see
+Generation. Records are created MANUALLY ONLY, via "+ New Record" / the RQC
+wizard (the POST route below, backed by rqc_service.create_rqc) -- there is
+no auto-creation from Material Consumption/IPQC. Shipment Number is
+required but, as of the per-activity redesign (migration 0041), NOT unique
+-- it's the user-entered key used to resolve the Production Run / IPQC link
+(see rqc_service.create_rqc), and a shipment can have many activity records
+over time. List/detail reads are Supabase-direct (see
 frontend/src/lib/api.ts); this router handles the one create route plus the
 one atomic save: Manufacturer, the full 15-item defect grid (Found/
 Remarks), the 4 COA observation tables, and Overall Result -- and, when
@@ -15,7 +17,6 @@ one is actually linked).
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from app.db.session import get_db
@@ -50,6 +51,10 @@ def _serialize_save(rec: models.RqcRecord) -> schemas.RqcSaveOut:
         id=rec.id, status=rec.status, manufacturer=rec.manufacturer, overall_result=rec.overall_result,
         fg_pallets_generated=rec.fg_pallets_generated,
         table_person_number=rec.table_person_number,
+        pallets_tested=rec.pallets_tested,
+        machine_id=rec.machine_id,
+        shift=rec.shift,
+        activity_date=rec.activity_date,
         machine_allocations=[
             schemas.RqcMachineAllocationOut(
                 machine_id=a.machine_id, machine=a.machine.code if a.machine else None, fg_pallets_count=a.fg_pallets_count,
@@ -77,7 +82,11 @@ def create_rqc_record(
     """Manual "+ New Record" creation -- see rqc_service.create_rqc for the
     Shipment Number -> IPQC/Production lookup. Cancel on the frontend never
     calls this route at all (no draft is created just by opening the
-    panel), so there is nothing to discard on Cancel here."""
+    panel), so there is nothing to discard on Cancel here.
+
+    2026-09-17: Shipment Number is no longer unique (rqc_records_shipment_
+    number_key was dropped, migration 0041) -- each call creates a new
+    activity record, so there is no more "already exists" 409 case here."""
     shipment_number = (payload.shipment_number or "").strip()
     if not shipment_number:
         raise HTTPException(status_code=422, detail="Shipment Number is required.")
@@ -87,11 +96,6 @@ def create_rqc_record(
     except rqc_service.RqcError as e:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
-    except IntegrityError as e:
-        db.rollback()
-        if "rqc_records_shipment_number_key" in str(e.orig):
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f'Shipment Number "{shipment_number}" already exists.')
-        raise
     db.refresh(rec)
     return schemas.RqcCreateOut(id=rec.id, shipment_number=rec.shipment_number, status=rec.status)
 
@@ -138,27 +142,34 @@ def save_rqc_record(
     _perm: models.ModulePermission = Depends(require("fill_section")),
 ):
     """
-    The single transactional write for RQC: atomically saves Manufacturer,
-    Number of FG Pallets Generated, the full defect grid (Found/Remarks per
-    defect_sr), the 4 COA observation tables, and Overall Result --
+    The single transactional write for RQC: atomically saves the full defect
+    grid (Found/Remarks per defect_sr), the 4 COA observation tables (legacy
+    per-record COA -- see rqc-coa-entries for the new per-shipment flow),
+    Overall Result, Number of Pallets (pallets_tested), and this activity's
+    own Date/Machine/Shift/Approved Pallets (Page 3 of the RQC wizard) --
     replacing both child lists wholesale, same semantics as IPQC's
-    check-block save.
+    check-block save. Manufacturer is always the fixed placeholder
+    (rqc_service.RQC_MANUFACTURER_PLACEHOLDER) -- never taken from the
+    payload, even if an older cached frontend still sends one.
 
     Status, no invented model:
     - save_mode='draft' -> status='draft' unconditionally (Save Draft).
     - save_mode='final' -> 'hold' if any defect's Found >= that defect's own
       group reject threshold, else 'approved' (Save) -- rqcOverallStatus().
 
-    Migration 0039: this route no longer touches fg_pallets_generated or
-    machine_allocations, and no longer triggers FG QR Generation. Both are
-    now owned by the incremental RQC Approval Entries ledger -- see
-    rqc_service.create_approval_entry and the POST /{record_id}/
-    approval-entries route below. Wholesale-deleting machine_allocations
-    here would have destroyed every approval entry's own per-machine split
-    on every ordinary form save, since those rows are now entry-scoped
-    (rqc_machine_allocations.rqc_approval_entry_id) -- so that block is
-    gone entirely, along with the fg_pallets_generated overwrite and the
-    FG-QR-generation trigger.
+    2026-09-17 (per-activity RQC redesign): this route now writes
+    pallets_tested/machine_id/shift/activity_date directly onto the record,
+    and fg_pallets_generated/table_person_number are un-deprecated -- since
+    each RqcRecord is now one self-contained activity (not a shipment-wide
+    container), Page 3's "Approved Pallets" belongs on THIS record, not on
+    a separate approval-entries ledger row. machine_allocations is left
+    untouched here (kept only for the old, still-live panel on pre-existing
+    records that used the ledger; the wizard never sends it). When a save
+    lands on 'approved', this route now also triggers this record's own FG
+    QR Generation (get_or_create_fg_qr_for_rqc_record) -- one batch per
+    RqcRecord, idempotent via the partial unique index on
+    qr_generation_records.source_rqc_record_id, mirroring exactly what the
+    approval-entries route below already does for the older ledger path.
 
     Everything else on the record (Shipment Number, SKU Code/Version, the
     Production Run / IPQC link) is autopopulated at creation and read-only
@@ -176,8 +187,24 @@ def save_rqc_record(
     if not rec:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="RQC record not found.")
 
-    rec.manufacturer = payload.manufacturer
+    rec.manufacturer = rqc_service.RQC_MANUFACTURER_PLACEHOLDER
     rec.overall_result = payload.overall_result
+    rec.fg_pallets_generated = payload.fg_pallets_generated
+    rec.table_person_number = payload.table_person_number
+    rec.pallets_tested = payload.pallets_tested
+    rec.machine_id = payload.machine_id
+    rec.shift = payload.shift
+    rec.activity_date = payload.activity_date
+
+    if (
+        payload.pallets_tested is not None
+        and payload.fg_pallets_generated is not None
+        and payload.fg_pallets_generated > payload.pallets_tested
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="Approved Pallets cannot exceed Number of Pallets (tested).",
+        )
 
     # Replace only the two child lists this route still owns -- same
     # pattern as IPQC's blocks. Machine allocations are NOT touched here
@@ -201,7 +228,14 @@ def save_rqc_record(
         "hold" if rqc_service.has_any_reject(payload.defect_results) else "approved"
     )
 
-    db.commit()
+    try:
+        if rec.status == "approved" and rec.fg_pallets_generated:
+            qr_generation_service.get_or_create_fg_qr_for_rqc_record(db, rec)
+        db.commit()
+    except qr_generation_service.QrGenerationError as e:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+
     db.refresh(rec)
     return _serialize_save(rec)
 

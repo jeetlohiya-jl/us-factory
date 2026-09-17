@@ -939,18 +939,44 @@ export interface RqcDetail {
   status: string;
   defect_results: RqcDefectResult[];
   coa_observations: RqcCoaObservation[];
+  // 2026-09-17 -- per-activity fields (RQC redesign, migration 0041/0042).
+  // Each RqcRecord is now one dated inspection/approval activity: Number of
+  // Pallets (tested), the one Machine these pallets came from, this
+  // activity's own Shift and Date -- distinct from `shift`/`date` above,
+  // which are the linked Production Run's values, shown as read-only
+  // context/defaults on Page 1 of the wizard.
+  pallets_tested: number | null;
+  machine_id: string | null;
+  activity_shift: string | null;
+  activity_date: string | null;
 }
 
 // Payload for api.saveRqc -- the single atomic write for RQC (backend/
-// app/api/rqc.py's PUT route). Migration 0039: fg_pallets_generated and
-// machine_allocations are no longer written by this call (approval entries
-// have their own route) -- kept here only if still sent for back-compat;
-// the backend now ignores both on this route.
+// app/api/rqc.py's PUT route). 2026-09-17: fg_pallets_generated,
+// table_person_number, pallets_tested, machine_id, shift and activity_date
+// are all written again (per-activity RQC redesign) -- manufacturer is
+// still accepted for back-compat but the backend always overwrites it with
+// the fixed "Cirkla INC" placeholder regardless of what's sent.
 export interface RqcSavePayload {
   manufacturer: string | null;
   overall_result: string | null;
+  fg_pallets_generated: number | null;
+  table_person_number: string | null;
+  pallets_tested: number | null;
+  machine_id: string | null;
+  shift: string | null;
+  activity_date: string | null;
   save_mode: "draft" | "final";
   defect_results: RqcDefectResult[];
+  coa_observations: RqcCoaObservation[];
+}
+
+// 2026-09-17 -- COA, decoupled from RqcRecord: one entry per SHIPMENT (see
+// backend/app/api/rqc_coa.py). Find-or-create by shipment_number (POST),
+// atomic whole-table save (PUT).
+export interface RqcCoaEntry {
+  id: string;
+  shipment_number: string;
   coa_observations: RqcCoaObservation[];
 }
 

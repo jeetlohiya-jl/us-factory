@@ -309,6 +309,72 @@ def get_or_create_fg_qr_for_rqc_approval_entry(
     return rec
 
 
+def get_or_create_fg_qr_for_rqc_record(db: Session, rqc: models.RqcRecord) -> models.QrGenerationRecord:
+    """
+    2026-09-17 -- the FG QR trigger for the current (per-activity) RQC
+    workflow: RQC moved from "one record per Shipment Number, many approval
+    entries underneath" to "one record per activity" (see RqcRecord's class
+    docstring). This is the direct successor to
+    get_or_create_fg_qr_for_rqc_approval_entry above, one level up -- same
+    shape, same idempotency pattern (a partial unique index on
+    source_rqc_record_id, migration 0042, is the hard backstop; this
+    find-first makes a retried/duplicate final-save a no-op), same
+    Production-Run-optional fallback (a standalone RQC record with no
+    linked run still gets a real batch, sourced from its own SKU snapshot/
+    shipment_number).
+
+    Called from api/rqc.py's save route the moment THIS record's own status
+    reaches 'approved', sized to exactly this record's own
+    fg_pallets_generated (= "Approved Pallets", entered on Page 3 of the
+    RQC wizard) -- never any other record's count, never a shipment-wide
+    running total. The approval-entry ledger's own trigger function above
+    is untouched and keeps serving already-existing historical records.
+    """
+    run = rqc.production_run
+
+    existing = (
+        db.query(models.QrGenerationRecord)
+        .filter(models.QrGenerationRecord.source_rqc_record_id == rqc.id)
+        .first()
+    )
+    if existing:
+        return existing
+
+    if run:
+        sku_code = run.sku_code.code if run.sku_code else None
+        sku_version = run.sku_version.version if run.sku_version else None
+        shipment_number = _derive_run_shipment_number(run) or rqc.shipment_number
+        category = run.category
+        sku_code_id = run.sku_code_id
+        sku_version_id = run.sku_version_id
+    else:
+        sku_code = rqc.sku_code_snapshot
+        sku_version = rqc.sku_version_snapshot
+        shipment_number = rqc.shipment_number
+        category = None
+        sku_code_id = rqc.sku_code_id
+        sku_version_id = rqc.sku_version_id
+
+    rec = models.QrGenerationRecord(
+        batch_display_id=pallet_service.next_batch_display_id(db, "fg"),
+        qr_type="fg",
+        category=category,
+        source_production_run_id=run.id if run else None,
+        source_rqc_record_id=rqc.id,
+        shipment_number=shipment_number,
+        sku_code_id=sku_code_id,
+        sku_version_id=sku_version_id,
+        sku_code_snapshot=sku_code,
+        sku_version_snapshot=sku_version,
+        country_code="US",
+        quantity=int(rqc.fg_pallets_generated or 0),
+        status="pending",
+    )
+    db.add(rec)
+    db.flush()
+    return rec
+
+
 def _create_pallet_row(
     db: Session, rec: models.QrGenerationRecord,
     source_machine_id=None, batch_code: str | None = None,
@@ -401,12 +467,42 @@ def generate_pallets(db: Session, rec: models.QrGenerationRecord, actor_user_id=
                 pallets.append(_create_pallet_row(
                     db, rec, source_machine_id=machine.id if machine else None, batch_code=batch_code,
                 ))
-    elif rec.qr_type == "fg" and rec.source_production_run and rec.source_production_run.rqc_record:
+    elif rec.qr_type == "fg" and rec.source_rqc_record:
+        # 2026-09-17 -- current per-activity flow: this batch belongs to
+        # exactly one RqcRecord, which directly carries the one Machine
+        # this activity's pallets came from (Page 3 of the RQC wizard) --
+        # no allocation-splitting needed, unlike the approval-entry
+        # ledger's own branch above, since one activity = one machine by
+        # design. machine may still be None for a standalone record with
+        # no linked Production Run to choose a machine from at all --
+        # build_batch_code already renders the placeholder machine segment
+        # for that case, same as the approval-entry path does.
+        rqc = rec.source_rqc_record
+        run = rqc.production_run
+        machine = rqc.machine
+        combo_number = batch_code_service.next_combo_number(db, rec.shipment_number)
+        rec.combo_number = combo_number
+        sku_number = rec.sku_code.batch_number if rec.sku_code else None
+        batch_code = batch_code_service.build_batch_code(
+            sku_number=sku_number, shipment_number=rec.shipment_number, combo_number=combo_number,
+            production_date=rqc.activity_date or (run.production_date if run else None),
+            shift=rqc.shift or (run.shift if run else None),
+            table_person_number=rqc.table_person_number,
+            machine_number=(machine.batch_number if machine else None),
+        )
+        for _ in range(rec.quantity):
+            pallets.append(_create_pallet_row(
+                db, rec, source_machine_id=machine.id if machine else None, batch_code=batch_code,
+            ))
+    elif rec.qr_type == "fg" and rec.source_production_run and rec.source_production_run.rqc_records:
         # Legacy whole-run path -- pre-migration-0039 batches, and the
         # dev/test manual "from Production Run" endpoint / Hold & Release's
         # Release action, which still use the RqcRecord-wide total/split.
-        # Unchanged.
-        rqc = rec.source_production_run.rqc_record
+        # 2026-09-17: a run can now have many RQC activity records (see
+        # RqcRecord's class docstring) -- this legacy path takes the most
+        # recently created one as its best-effort "the" record, same
+        # convention as api/fg_qr.py's manual escape hatch.
+        rqc = rec.source_production_run.rqc_records[-1]
         try:
             allocations = batch_code_service.resolve_machine_allocations(db, rqc)
         except batch_code_service.BatchCodeError as e:
