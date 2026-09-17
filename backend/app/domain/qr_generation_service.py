@@ -180,9 +180,20 @@ def get_or_create_fg_qr_for_production_run(
     shipment_number = _derive_run_shipment_number(run)
     quantity = int(fg_pallets_generated) if fg_pallets_generated is not None else int(run.total_fg_pallets or 0)
 
+    # Migration 0039: excludes entry-driven batches from this lookup -- this
+    # function now only ever finds/manages the legacy "one batch for the
+    # whole run" row (still used by the dev/test manual endpoint and Hold &
+    # Release's Release action, both unrelated to the new incremental RQC
+    # Approval Entry flow below). Without this filter, calling this
+    # function after entries already exist for the run would find the
+    # FIRST entry's own batch and "refresh" it with this whole-run
+    # quantity -- corrupting entry-driven data it has no business touching.
     existing = (
         db.query(models.QrGenerationRecord)
-        .filter(models.QrGenerationRecord.source_production_run_id == run.id)
+        .filter(
+            models.QrGenerationRecord.source_production_run_id == run.id,
+            models.QrGenerationRecord.source_rqc_approval_entry_id.is_(None),
+        )
         .first()
     )
     if existing:
@@ -217,6 +228,62 @@ def get_or_create_fg_qr_for_production_run(
         # from -- unlike RM, FG's country is never vendor-dependent.
         country_code="US",
         quantity=quantity,
+        status="pending",
+    )
+    db.add(rec)
+    db.flush()
+    return rec
+
+
+def get_or_create_fg_qr_for_rqc_approval_entry(
+    db: Session, entry: models.RqcApprovalEntry,
+) -> models.QrGenerationRecord:
+    """
+    Migration 0039 -- the FG QR trigger for the current RQC workflow: each
+    RQC Approval Entry (one date + operator + approved-pallets event, see
+    api/rqc.py's POST .../approval-entries route) gets its own FG QR batch
+    the moment it's recorded, sized to exactly that entry's own
+    approved_pallets -- never the whole shipment's running total, never
+    Production's total_fg_pallets/pallets_produced. Idempotent the same way
+    get_or_create_fg_qr_for_production_run is: the partial unique index on
+    source_rqc_approval_entry_id is the hard backstop; this find-first
+    makes a retried/duplicate POST for the same entry a no-op. Unlike the
+    legacy function, there is no "refresh while pending" branch -- an
+    approval entry is immutable once created (no edit route), so there is
+    nothing to refresh; a found existing batch is returned exactly as-is.
+    """
+    run = entry.rqc_record.production_run if entry.rqc_record else None
+    if not run:
+        raise QrGenerationError(
+            "This RQC record isn't linked to a Production Run (no Inward QC / Material Consumption record was "
+            "found for this Shipment Number yet) -- FG QR Generation needs a Production Run for SKU/shift/machine context."
+        )
+
+    existing = (
+        db.query(models.QrGenerationRecord)
+        .filter(models.QrGenerationRecord.source_rqc_approval_entry_id == entry.id)
+        .first()
+    )
+    if existing:
+        return existing
+
+    sku_code = run.sku_code.code if run.sku_code else None
+    sku_version = run.sku_version.version if run.sku_version else None
+    shipment_number = _derive_run_shipment_number(run) or (entry.rqc_record.shipment_number if entry.rqc_record else None)
+
+    rec = models.QrGenerationRecord(
+        batch_display_id=pallet_service.next_batch_display_id(db, "fg"),
+        qr_type="fg",
+        category=run.category,
+        source_production_run_id=run.id,
+        source_rqc_approval_entry_id=entry.id,
+        shipment_number=shipment_number,
+        sku_code_id=run.sku_code_id,
+        sku_version_id=run.sku_version_id,
+        sku_code_snapshot=sku_code,
+        sku_version_snapshot=sku_version,
+        country_code="US",
+        quantity=int(entry.approved_pallets),
         status="pending",
     )
     db.add(rec)
@@ -290,7 +357,37 @@ def generate_pallets(db: Session, rec: models.QrGenerationRecord, actor_user_id=
         raise QrGenerationError("Enter a quantity greater than 0 before generating QR codes.")
 
     pallets: list[models.Pallet] = []
-    if rec.qr_type == "fg" and rec.source_production_run and rec.source_production_run.rqc_record:
+    if rec.qr_type == "fg" and rec.source_rqc_approval_entry:
+        # Migration 0039 -- current flow: this batch belongs to exactly one
+        # RQC Approval Entry, and its own machine split/table-person number
+        # are what determine each pallet's Batch Code, never the parent
+        # RqcRecord's (possibly since-changed) values.
+        entry = rec.source_rqc_approval_entry
+        run = entry.rqc_record.production_run if entry.rqc_record else None
+        try:
+            allocations = batch_code_service.resolve_machine_allocations_for_entry(db, entry)
+        except batch_code_service.BatchCodeError as e:
+            raise QrGenerationError(e.message)
+        combo_number = batch_code_service.next_combo_number(db, rec.shipment_number)
+        rec.combo_number = combo_number
+        sku_number = rec.sku_code.batch_number if rec.sku_code else None
+        table_person_number = entry.table_person_number or (entry.rqc_record.table_person_number if entry.rqc_record else None)
+        for machine, count in allocations:
+            batch_code = batch_code_service.build_batch_code(
+                sku_number=sku_number, shipment_number=rec.shipment_number, combo_number=combo_number,
+                production_date=(run.production_date if run else None), shift=(run.shift if run else None),
+                table_person_number=table_person_number,
+                machine_number=(machine.batch_number if machine else None),
+            )
+            for _ in range(count):
+                pallets.append(_create_pallet_row(
+                    db, rec, source_machine_id=machine.id if machine else None, batch_code=batch_code,
+                ))
+    elif rec.qr_type == "fg" and rec.source_production_run and rec.source_production_run.rqc_record:
+        # Legacy whole-run path -- pre-migration-0039 batches, and the
+        # dev/test manual "from Production Run" endpoint / Hold & Release's
+        # Release action, which still use the RqcRecord-wide total/split.
+        # Unchanged.
         rqc = rec.source_production_run.rqc_record
         try:
             allocations = batch_code_service.resolve_machine_allocations(db, rqc)

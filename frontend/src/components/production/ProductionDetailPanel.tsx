@@ -44,12 +44,17 @@ type EditableWastage = { machine_id: string | null; trays: number | null; reason
 // setAttrEdit/machine_entry_attributes) instead of a separate flow -- it's
 // the exact same shape (one value per machine entry per field).
 type AttrKey = "machine_no" | "auto_padding" | "container_order_no" | "weight" | "pcs_per_sleeve" | "sleeve_per_case" | "total_pcs_per_pallet" | "pad_type" | "pad_color" | "case_type"
-  | "rejection_damage" | "rejection_misplaced_glue" | "rejection_misplaced_pad" | "rejection_glue_on_pad" | "rejection_pad_placement_direction" | "rejection_adhesion_issue";
+  | "rejection_damage" | "rejection_misplaced_glue" | "rejection_misplaced_pad" | "rejection_glue_on_pad" | "rejection_pad_placement_direction" | "rejection_adhesion_issue"
+  | "pallets_produced";
 
 // Production Details rows, matching the prototype's PROD_ATTRIBUTES exactly
 // (label text included) -- one row per attribute, one column per machine.
 // Section 12 adds Machine No./Auto Padding/Container Order No. (brand new)
 // and makes every backend-populated attribute editable via `attrKey`.
+// Pallets Produced (migration 0039) gets its own dedicated "FG Pallets
+// Generated" card below instead of a row here -- it's the figure RQC and FG
+// QR Generation actually key off, so it's called out on its own rather than
+// buried in this reference table.
 const PROD_DETAIL_ROWS: { label: string; attrKey?: AttrKey; get: (e: ProductionDetail["machine_entries"][number]) => React.ReactNode }[] = [
   { label: "SKU Name", get: (e) => e.sku_code },
   { label: "Machine No.", attrKey: "machine_no", get: (e) => e.machine_no },
@@ -134,6 +139,7 @@ export default function ProductionDetailPanel({
           rejection_glue_on_pad: e.rejection_classification.glue_on_pad ? String(e.rejection_classification.glue_on_pad) : "",
           rejection_pad_placement_direction: e.rejection_classification.pad_placement_direction ? String(e.rejection_classification.pad_placement_direction) : "",
           rejection_adhesion_issue: e.rejection_classification.adhesion_issue ? String(e.rejection_classification.adhesion_issue) : "",
+          pallets_produced: e.pallets_produced ? String(e.pallets_produced) : "",
         },
       ])
     )
@@ -156,6 +162,7 @@ export default function ProductionDetailPanel({
   const editable = isEdit && canEdit;
   const totalPcsPerPallet = sumProductionDetails(record.machine_entries, "prod_total_pcs_per_pallet");
   const totalRejections = sumRejections(record.rejection_classification);
+  const totalPalletsProduced = record.total_pallets_produced;
 
   const runMachines = Array.from(new Set(record.machine_entries.map((e) => e.machine).filter((m): m is string => !!m)));
 
@@ -233,6 +240,7 @@ export default function ProductionDetailPanel({
                 <Kv label="Operator" value={record.operator} />
                 <Kv label="Status" value={<StatusBadge status={record.status} />} />
                 <Kv label="Total PCS/Pallet" value={totalPcsPerPallet ?? "—"} />
+                <Kv label="Total Pallets Produced" value={totalPalletsProduced} />
                 <Kv label="Total Rejections" value={totalRejections} />
                 <Kv
                   label="Completed By"
@@ -433,14 +441,53 @@ export default function ProductionDetailPanel({
             )}
           </div>
 
-          <div className="detail-card">
-            <h3>FG Pallets</h3>
-            <div className="field">
-              <label>Total Quantity Generated</label>
-              <div className="detail-kv-value">{record.total_fg_pallets || "—"}</div>
-              <div className="hint-text">Now entered in RQC's "Quantity Generated" field -- no longer editable here.</div>
+          {/* Migration 0039, task section 1 -- FG pallets actually produced,
+              per machine, for this run's shift. This is Production's own
+              count and the real source of truth for "how many pallets did
+              we make" -- RQC then approves out of this pool (never more
+              than what's recorded here), and only RQC-approved pallets ever
+              reach FG QR Generation. See ProductionMachineEntry.
+              pallets_produced / rqc_service.create_approval_entry. */}
+          {record.machine_entries.length > 0 && (
+            <div className="detail-card">
+              <h3>Pallets Produced</h3>
+              <div className="hint-text" style={{ marginBottom: 10 }}>
+                Per machine, for this run&apos;s shift. RQC approves pallets out of this total --
+                it can never approve more than what&apos;s recorded here.
+              </div>
+              <div style={{ overflowX: "auto" }}>
+                <table className="qc-obs-table">
+                  <thead>
+                    <tr>
+                      <th>Machine</th>
+                      {record.machine_entries.map((e, i) => <th key={e.machine_consumption_id}>{e.machine || `Machine #${i + 1}`}</th>)}
+                      <th style={{ width: 100 }}>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>Pallets Produced</td>
+                      {record.machine_entries.map((e) => (
+                        <td key={e.machine_consumption_id} style={{ width: 110 }}>
+                          {editable ? (
+                            <input
+                              type="number"
+                              min={0}
+                              value={attrEdits[e.machine_consumption_id]?.pallets_produced ?? ""}
+                              onChange={(ev) => setAttrEdit(e.machine_consumption_id, "pallets_produced", ev.target.value)}
+                            />
+                          ) : (
+                            e.pallets_produced || 0
+                          )}
+                        </td>
+                      ))}
+                      <td><strong>{totalPalletsProduced}</strong></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>
+          )}
 
           {!isEdit && (
             <div className="detail-card">

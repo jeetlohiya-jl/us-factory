@@ -119,15 +119,16 @@ def save_rqc_record(
     - save_mode='final' -> 'hold' if any defect's Found >= that defect's own
       group reject threshold, else 'approved' (Save) -- rqcOverallStatus().
 
-    When a final save results in 'approved', this is the single trigger
-    point for FG QR Generation to auto-populate for this run -- reusing
-    get_or_create_fg_qr_for_production_run (now passed this record's own
-    fg_pallets_generated explicitly, rather than reading
-    production_runs.total_fg_pallets -- see migration 0030), just called
-    from here instead of unconditionally from Production's own save route.
-    Idempotent either way (partial unique index on source_production_run_id
-    is the hard backstop), so re-saving an already-approved RQC record is a
-    safe no-op on the FG QR side.
+    Migration 0039: this route no longer touches fg_pallets_generated or
+    machine_allocations, and no longer triggers FG QR Generation. Both are
+    now owned by the incremental RQC Approval Entries ledger -- see
+    rqc_service.create_approval_entry and the POST /{record_id}/
+    approval-entries route below. Wholesale-deleting machine_allocations
+    here would have destroyed every approval entry's own per-machine split
+    on every ordinary form save, since those rows are now entry-scoped
+    (rqc_machine_allocations.rqc_approval_entry_id) -- so that block is
+    gone entirely, along with the fg_pallets_generated overwrite and the
+    FG-QR-generation trigger.
 
     Everything else on the record (Shipment Number, SKU Code/Version, the
     Production Run / IPQC link) is autopopulated at creation and read-only
@@ -147,23 +148,15 @@ def save_rqc_record(
 
     rec.manufacturer = payload.manufacturer
     rec.overall_result = payload.overall_result
-    rec.fg_pallets_generated = payload.fg_pallets_generated
-    rec.table_person_number = payload.table_person_number
 
-    # Replace all three child lists wholesale -- same pattern as IPQC's blocks.
+    # Replace only the two child lists this route still owns -- same
+    # pattern as IPQC's blocks. Machine allocations are NOT touched here
+    # (see docstring above): they belong to individual approval entries.
     for existing in list(rec.defect_results):
         db.delete(existing)
     for existing in list(rec.coa_observations):
         db.delete(existing)
-    for existing in list(rec.machine_allocations):
-        db.delete(existing)
     db.flush()
-
-    for a in payload.machine_allocations:
-        if a.fg_pallets_count > 0:
-            db.add(models.RqcMachineAllocation(
-                rqc_record_id=rec.id, machine_id=a.machine_id, fg_pallets_count=a.fg_pallets_count,
-            ))
 
     for d in payload.defect_results:
         db.add(models.RqcDefectResult(
@@ -178,11 +171,72 @@ def save_rqc_record(
         "hold" if rqc_service.has_any_reject(payload.defect_results) else "approved"
     )
 
-    if rec.status == "approved" and rec.production_run:
-        qr_generation_service.get_or_create_fg_qr_for_production_run(
-            db, rec.production_run, fg_pallets_generated=rec.fg_pallets_generated,
-        )
-
     db.commit()
     db.refresh(rec)
     return _serialize_save(rec)
+
+
+@router.post("/{record_id}/approval-entries", response_model=schemas.RqcApprovalEntryOut, status_code=status.HTTP_201_CREATED)
+def create_rqc_approval_entry(
+    record_id: uuid.UUID,
+    payload: schemas.RqcApprovalEntryIn,
+    db: Session = Depends(get_db),
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    # Same gate as the main save route -- this is the staff-facing "record
+    # today's RQC activity" action.
+    _perm: models.ModulePermission = Depends(require("fill_section")),
+):
+    """
+    Migration 0039 -- records ONE incremental RQC approval activity (task
+    sections 2-6): a Date + Operator (the logged-in user) + Approved
+    Pallets count, optionally split across machines. Never overwrites a
+    prior entry; a shipment can accumulate many of these over time.
+
+    When this record is already linked to a Production Run, this is the
+    trigger point for FG QR Generation -- one batch for exactly this
+    entry's own approved_pallets, via get_or_create_fg_qr_for_rqc_approval_entry
+    (idempotent: a partial unique index on source_rqc_approval_entry_id is
+    the hard backstop, so retrying the same entry is a safe no-op).
+    """
+    rec = (
+        db.query(models.RqcRecord)
+        .options(joinedload(models.RqcRecord.production_run))
+        .filter(models.RqcRecord.id == record_id)
+        .first()
+    )
+    if not rec:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="RQC record not found.")
+
+    try:
+        entry = rqc_service.create_approval_entry(
+            db, rec,
+            entry_date=payload.entry_date,
+            approved_pallets=payload.approved_pallets,
+            operator_user_id=current_user.user_id,
+            table_person_number=payload.table_person_number,
+            machine_allocations=[(str(a.machine_id), a.fg_pallets_count) for a in payload.machine_allocations],
+        )
+
+        fg_qr_batch_id = None
+        if rec.production_run:
+            batch = qr_generation_service.get_or_create_fg_qr_for_rqc_approval_entry(db, entry)
+            fg_qr_batch_id = batch.id
+
+        db.commit()
+    except (rqc_service.RqcError, qr_generation_service.QrGenerationError) as e:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+
+    db.refresh(entry)
+    return schemas.RqcApprovalEntryOut(
+        id=entry.id, entry_date=entry.entry_date, operator_user_id=entry.operator_user_id,
+        approved_pallets=entry.approved_pallets, table_person_number=entry.table_person_number,
+        machine_allocations=[
+            schemas.RqcMachineAllocationOut(
+                machine_id=a.machine_id, machine=a.machine.code if a.machine else None, fg_pallets_count=a.fg_pallets_count,
+            )
+            for a in entry.machine_allocations
+        ],
+        fg_qr_batch_id=fg_qr_batch_id,
+        fg_pallets_generated=rec.fg_pallets_generated,
+    )

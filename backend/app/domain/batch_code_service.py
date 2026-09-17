@@ -138,3 +138,42 @@ def resolve_machine_allocations(db: Session, rqc: models.RqcRecord) -> list[tupl
         "This Production Run spans multiple machines -- split Number of FG Pallets Generated across "
         "them in the RQC record's Machine Allocation section before generating QR codes."
     )
+
+
+def resolve_machine_allocations_for_entry(db: Session, entry: models.RqcApprovalEntry) -> list[tuple[models.Machine, int]]:
+    """
+    Migration 0039 -- same shape/purpose as resolve_machine_allocations
+    above, but scoped to ONE RQC Approval Entry's own approved_pallets
+    instead of a whole RqcRecord's single fg_pallets_generated total. Each
+    entry's own machine_allocations rows (RqcMachineAllocation.
+    rqc_approval_entry_id) must fully account for THAT entry's count --
+    never mixed with any other entry's split, since different approval
+    activities for the same shipment can legitimately have come off
+    different machines.
+    """
+    total = int(entry.approved_pallets or 0)
+    if total <= 0:
+        raise BatchCodeError("Approved Pallets must be greater than 0 before generating QR codes for this entry.")
+
+    explicit = [(a.machine, a.fg_pallets_count) for a in entry.machine_allocations if a.fg_pallets_count > 0]
+    if explicit:
+        allocated_total = sum(count for _, count in explicit)
+        if allocated_total != total:
+            raise BatchCodeError(
+                f"Machine allocation for this RQC approval entry adds up to {allocated_total}, "
+                f"but Approved Pallets is {total}. Correct the per-machine split before generating QR codes."
+            )
+        return explicit
+
+    run = entry.rqc_record.production_run if entry.rqc_record else None
+    run_machines = [rm.machine for rm in run.machines] if run else []
+    if len(run_machines) == 1:
+        return [(run_machines[0], total)]
+    if not run_machines:
+        raise BatchCodeError(
+            "This Production Run has no machine on record -- add a Machine Allocation on this RQC approval entry before generating QR codes."
+        )
+    raise BatchCodeError(
+        "This Production Run spans multiple machines -- split Approved Pallets across them on this "
+        "RQC approval entry before generating QR codes."
+    )

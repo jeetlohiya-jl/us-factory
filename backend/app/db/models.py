@@ -641,32 +641,107 @@ class RqcRecord(Base):
     machine_allocations = relationship(
         "RqcMachineAllocation", back_populates="rqc_record", cascade="all, delete-orphan",
     )
+    # Migration 0039 -- RQC's incremental-approval redesign. RqcRecord stays
+    # ONE row per Shipment Number (created manually, never recreated per MC/
+    # Production run -- see the class docstring above); this is now the
+    # ledger of every separate approval activity recorded against it. See
+    # RqcApprovalEntry's own docstring for why this exists as a real child
+    # table instead of just editing fg_pallets_generated in place.
+    approval_entries = relationship(
+        "RqcApprovalEntry", back_populates="rqc_record", cascade="all, delete-orphan",
+        order_by="RqcApprovalEntry.entry_date",
+    )
+
+
+class RqcApprovalEntry(Base):
+    """
+    Migration 0039 -- one row per incremental RQC approval activity for a
+    Shipment Number. Per the task's explicit example: the same shipment can
+    have RQC activity on multiple dates by different operators (today
+    Operator A approves 4 pallets, tomorrow Operator B approves 3 more, the
+    day after Operator C approves 5 more) -- each is its own fact, never
+    collapsed into or overwriting one cumulative total. RqcRecord.
+    fg_pallets_generated is kept in sync as a denormalized SUM of every
+    entry's approved_pallets (see rqc_service.create_approval_entry) purely
+    for cheap display/backward compatibility -- entries here are the real
+    source of truth.
+
+    Each entry independently drives its own FG QR Generation batch (see
+    qr_generation_service.get_or_create_fg_qr_for_rqc_approval_entry),
+    keyed for idempotency on THIS entry's id (QrGenerationRecord.
+    source_rqc_approval_entry_id, partial-unique) -- never on the Shipment
+    Number or the whole RqcRecord, so a later entry for the same shipment
+    creates its OWN additional batch/pallets instead of colliding with or
+    regenerating an earlier entry's already-issued pallets. Entries are
+    immutable once created (no edit route) -- exactly matching "do not
+    overwrite the previous approved quantity."
+
+    operator_user_id is the person who saved this entry (auto-stamped from
+    the authenticated user, same convention as ProductionRun.completed_by/
+    IpqcRecord equivalents elsewhere) -- never a free-text name field.
+    table_person_number defaults to the parent RqcRecord's own value (kept
+    there as a convenience "last used" default for the next entry's form)
+    but each entry keeps its own copy, since the FG Storage Batch Code
+    needs whichever value was actually in effect for the specific pallets
+    THIS entry releases -- never recomputed later even if the record-level
+    default subsequently changes.
+    """
+    __tablename__ = "rqc_approval_entries"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    rqc_record_id = Column(UUID(as_uuid=True), ForeignKey("rqc_records.id", ondelete="CASCADE"), nullable=False)
+    entry_date = Column(Text, nullable=False)
+    operator_user_id = Column(UUID(as_uuid=True), ForeignKey("app_users.id"), nullable=True)
+    approved_pallets = Column(Integer, nullable=False)
+    table_person_number = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+    rqc_record = relationship("RqcRecord", back_populates="approval_entries")
+    operator = relationship("AppUser")
+    machine_allocations = relationship(
+        "RqcMachineAllocation", back_populates="approval_entry", cascade="all, delete-orphan",
+    )
+    fg_qr_batch = relationship("QrGenerationRecord", back_populates="source_rqc_approval_entry", uselist=False)
 
 
 class RqcMachineAllocation(Base):
     """
-    Section 11 -- how many of this RQC's fg_pallets_generated came off each
+    Section 11, extended by migration 0039 -- how many pallets came off each
     machine. Exists because a Production Run can span multiple machines
     (see ProductionRunMachine), but the FG Storage Batch Code's Machine
     segment names the ONE specific machine that produced each pallet -- a
     level of detail this app has never tracked before pallet generation.
-    For a single-machine run there is exactly one row (the whole count);
-    for a multi-machine run the operator splits the total across machines
-    on the RQC form. The sum matching fg_pallets_generated is enforced in
-    application code (rqc_service), not a DB constraint, so it can be
-    edited freely while the RQC record is still in progress.
+
+    As of migration 0039 this is scoped per RqcApprovalEntry (one entry's
+    own approved_pallets split across machines), not per whole RqcRecord --
+    each incremental approval can legitimately have come off a different
+    machine mix than an earlier or later one. rqc_record_id is kept
+    (denormalized from the owning entry) purely so a row can still be
+    queried/joined by RqcRecord directly without going through the entry;
+    rqc_approval_entry_id is the real scope for the uniqueness and
+    sum-must-match-approved_pallets checks (batch_code_service.
+    resolve_machine_allocations_for_entry). For a single-machine run there
+    is exactly one row per entry (the whole count); for a multi-machine run
+    the operator splits that entry's total across machines when recording
+    it. The sum matching is enforced in application code, not a DB
+    constraint, so it can be corrected before Generate QR is clicked.
     """
     __tablename__ = "rqc_machine_allocations"
     id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
     rqc_record_id = Column(UUID(as_uuid=True), ForeignKey("rqc_records.id", ondelete="CASCADE"), nullable=False)
+    rqc_approval_entry_id = Column(UUID(as_uuid=True), ForeignKey("rqc_approval_entries.id", ondelete="CASCADE"), nullable=True)
     machine_id = Column(UUID(as_uuid=True), ForeignKey("machines.id"), nullable=False)
     fg_pallets_count = Column(Integer, nullable=False, default=0)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
     rqc_record = relationship("RqcRecord", back_populates="machine_allocations")
+    approval_entry = relationship("RqcApprovalEntry", back_populates="machine_allocations")
     machine = relationship("Machine")
 
-    __table_args__ = (UniqueConstraint("rqc_record_id", "machine_id"),)
+    # No table-level unique constraint declared here anymore (migration
+    # 0039 replaces the old unique(rqc_record_id, machine_id) with a
+    # partial index scoped to rqc_approval_entry_id -- see the migration --
+    # since the same (record, machine) pair now legitimately recurs across
+    # multiple entries).
 
 
 class RqcDefectResult(Base):
@@ -729,6 +804,16 @@ class QrGenerationRecord(Base):
     category = Column(Text, nullable=True)
     source_inward_qc_id = Column(UUID(as_uuid=True), ForeignKey("inward_qc_records.id"), nullable=True)
     source_production_run_id = Column(UUID(as_uuid=True), ForeignKey("production_runs.id"), nullable=True)
+    # Migration 0039 -- set only for a batch created from ONE RQC Approval
+    # Entry (the new incremental-approval flow); null for a batch created
+    # via the older whole-run path (the dev/test-only manual "from
+    # Production Run" endpoint, or Hold & Release's Release action). This,
+    # not source_production_run_id, is what a batch's idempotency is keyed
+    # on going forward -- see the partial unique index in migration 0039
+    # and get_or_create_fg_qr_for_rqc_approval_entry -- so a Production Run
+    # can legitimately have MANY FG batches (one per approval entry) even
+    # though it can still have at most one legacy whole-run batch.
+    source_rqc_approval_entry_id = Column(UUID(as_uuid=True), ForeignKey("rqc_approval_entries.id", ondelete="SET NULL"), nullable=True)
     shipment_number = Column(Text, nullable=True)
     sku_code_id = Column(UUID(as_uuid=True), ForeignKey("sku_codes.id"), nullable=True)
     sku_version_id = Column(UUID(as_uuid=True), ForeignKey("sku_versions.id"), nullable=True)
@@ -751,6 +836,7 @@ class QrGenerationRecord(Base):
 
     source_inward_qc = relationship("InwardQcRecord")
     source_production_run = relationship("ProductionRun")
+    source_rqc_approval_entry = relationship("RqcApprovalEntry", back_populates="fg_qr_batch")
     sku_code = relationship("SkuCode")
     sku_version = relationship("SkuVersion")
     pallets = relationship("Pallet", back_populates="source_qr_generation", order_by="Pallet.created_at")
@@ -917,6 +1003,19 @@ class MaterialConsumptionMachineEntry(Base):
     rejection_glue_on_pad = Column(Numeric, nullable=False, default=0)
     rejection_pad_placement_direction = Column(Numeric, nullable=False, default=0)
     rejection_adhesion_issue = Column(Numeric, nullable=False, default=0)
+    # Migration 0039 -- FG pallets actually produced on THIS machine, for
+    # THIS Material Consumption record's shift (MaterialConsumption.shift
+    # is the shift, shared by every machine entry on that record). This is
+    # the real per-shift-per-machine production count the Production
+    # section now shows (one column per machine, same as Rejection
+    # Classification/Production Details) -- it replaces
+    # ProductionRun.total_fg_pallets as Production's own "how many did we
+    # make" figure. It is deliberately NOT what drives FG QR Generation
+    # quantity -- that is RQC's own approved_pallets per approval entry
+    # (RqcApprovalEntry) -- Production records what was made, RQC records
+    # what QC actually approved for release, and the two are intentionally
+    # allowed to differ.
+    pallets_produced = Column(Integer, nullable=False, default=0)
 
     material_consumption = relationship("MaterialConsumption", back_populates="machine_entries")
     machine = relationship("Machine")

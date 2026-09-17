@@ -436,6 +436,11 @@ class ProductionMachineEntryAttributesIn(BaseModel):
     rejection_glue_on_pad: Optional[str] = None
     rejection_pad_placement_direction: Optional[str] = None
     rejection_adhesion_issue: Optional[str] = None
+    # Migration 0039, task section 1 -- FG pallets actually produced on this
+    # machine entry (per shift + machine, same "one column per machine"
+    # pattern as Rejection Classification). None-means-"don't touch",
+    # empty/omitted means 0 -- same convention as the rejection_* fields.
+    pallets_produced: Optional[str] = None
 
 
 class ProductionSaveIn(BaseModel):
@@ -594,16 +599,17 @@ class RqcMachineAllocationOut(BaseModel):
 class RqcSaveIn(BaseModel):
     manufacturer: Optional[str] = None
     overall_result: Optional[str] = None
-    # "Number of FG Pallets Generated" -- entered at the top of this form as
-    # of migration 0030 (moved out of Production). Source of truth for FG
-    # QR Generation's quantity; see api/rqc.py's save route.
+    # Migration 0039 -- fg_pallets_generated and machine_allocations are no
+    # longer written by this route. They're superseded by the incremental
+    # RQC Approval Entries ledger (see RqcApprovalEntryIn / POST
+    # /{record_id}/approval-entries below); fg_pallets_generated is now a
+    # denormalized sum maintained by rqc_service.create_approval_entry, and
+    # machine_allocations are scoped per entry. Both fields are kept,
+    # Optional and accepted-but-ignored, only so an older/cached frontend
+    # build that still sends them doesn't 422 -- api/rqc.py's save route no
+    # longer reads either one.
     fg_pallets_generated: Optional[int] = None
-    # Section 11 -- brand-new field, never derived from the logged-in user.
     table_person_number: Optional[str] = None
-    # Section 11 -- how fg_pallets_generated splits across the Production
-    # Run's machines. Empty is fine for a single-machine run (auto-resolved
-    # at QR-generate time); a multi-machine run needs this filled in before
-    # QR codes can be generated (see batch_code_service.resolve_machine_allocations).
     machine_allocations: list[RqcMachineAllocationIn] = []
     # 'draft' always saves as Draft (Save Draft button); 'final' computes
     # Approved/Hold from whether any defect's Found >= that defect group's
@@ -638,6 +644,26 @@ class RqcCreateOut(BaseModel):
     id: uuid.UUID
     shipment_number: str
     status: str
+
+
+# Migration 0039 -- one incremental RQC approval activity (task sections
+# 2-6). Immutable once created -- no PUT/PATCH route, only POST.
+class RqcApprovalEntryIn(BaseModel):
+    entry_date: str
+    approved_pallets: int
+    table_person_number: Optional[str] = None
+    machine_allocations: list[RqcMachineAllocationIn] = []
+
+
+class RqcApprovalEntryOut(BaseModel):
+    id: uuid.UUID
+    entry_date: str
+    operator_user_id: Optional[uuid.UUID] = None
+    approved_pallets: int
+    table_person_number: Optional[str] = None
+    machine_allocations: list[RqcMachineAllocationOut] = []
+    fg_qr_batch_id: Optional[uuid.UUID] = None
+    fg_pallets_generated: Optional[int] = None
 
 
 # ---------------------------------------------------------------------------

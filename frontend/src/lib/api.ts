@@ -8,7 +8,7 @@ import type {
   Vendor, Machine, MaterialConsumptionListItem, MaterialConsumptionDetail, SecondaryMaterialCategory,
   MaterialConsumptionPalletRow, ProductionListItem, ProductionDetail, ProductionMachineEntry, ProductionSavePayload,
   IpqcListItem, IpqcDetail, IpqcSavePayload,
-  RqcListItem, RqcDetail, RqcSavePayload,
+  RqcListItem, RqcDetail, RqcSavePayload, RqcApprovalEntryPayload,
   CustomerShipmentListItem, CustomerShipmentDetail, CustomerShipmentCreatePayload, CustomerShipmentCreateResult,
   ShipmentPickingListItem, ShipmentPickingDetail,
   OviListItem, OviDetail, OviSavePayload, OviImageType, OviImage,
@@ -796,6 +796,8 @@ type RawProdMachineEntry = {
   // Rejection Classification, per machine entry (migration 0038).
   rejection_damage: number | string; rejection_misplaced_glue: number | string; rejection_misplaced_pad: number | string;
   rejection_glue_on_pad: number | string; rejection_pad_placement_direction: number | string; rejection_adhesion_issue: number | string;
+  // Pallets Produced, per machine entry (migration 0039, task section 1).
+  pallets_produced: number | string;
 };
 
 // sku_version_ref is the SKU-derived Production Details lookup (migration
@@ -809,7 +811,8 @@ const PRODUCTION_MACHINE_ENTRY_SELECT =
   "sku_version_ref:sku_versions(prod_weight,prod_pcs_per_sleeve,prod_sleeve_per_case,prod_total_pcs_per_pallet,prod_total_pallets,prod_target_shots,prod_pad_type,prod_pad_color,prod_case_type)," +
   "override_weight,override_pcs_per_sleeve,override_sleeve_per_case,override_total_pcs_per_pallet,override_pad_type,override_pad_color,override_case_type," +
   "machine_no,auto_padding,container_order_no," +
-  "rejection_damage,rejection_misplaced_glue,rejection_misplaced_pad,rejection_glue_on_pad,rejection_pad_placement_direction,rejection_adhesion_issue";
+  "rejection_damage,rejection_misplaced_glue,rejection_misplaced_pad,rejection_glue_on_pad,rejection_pad_placement_direction,rejection_adhesion_issue," +
+  "pallets_produced";
 
 type RawProdMc = { id: string; status: string; machine_entries: RawProdMachineEntry[] };
 
@@ -903,6 +906,7 @@ function flattenProductionDetail(raw: RawProductionRunDetail): ProductionDetail 
           pad_placement_direction: Number(e.rejection_pad_placement_direction) || 0,
           adhesion_issue: Number(e.rejection_adhesion_issue) || 0,
         },
+        pallets_produced: Number(e.pallets_produced) || 0,
       });
     }
   }
@@ -915,6 +919,7 @@ function flattenProductionDetail(raw: RawProductionRunDetail): ProductionDetail 
     sku_codes: skuCodes.join(", "),
     machine_entries: machineEntries,
     total_fg_pallets: raw.total_fg_pallets ?? 0,
+    total_pallets_produced: machineEntries.reduce((sum, e) => sum + e.pallets_produced, 0),
     // Aggregated across every machine entry -- the per-entry values (each
     // entry's own rejection_classification above) are the source of truth
     // and what's actually edited; this total is display-only (General
@@ -1071,42 +1076,93 @@ async function listRqcSb(
 type RawRqcDefectResult = { defect_sr: number; found: number | string | null; remarks: string | null };
 type RawRqcCoaObservation = { coa_group: string; sr: number; observation: string | null };
 type RawRqcMachineAllocation = { machine_id: string; fg_pallets_count: number; machine: { code: string } | null };
+// Migration 0039 -- one incremental approval activity, with its own scoped
+// machine_allocations and (at most one, via uq_qr_source_rqc_approval_entry)
+// FG QR batch, embedded purely for a status readout.
+type RawRqcApprovalEntry = {
+  id: string; entry_date: string; operator_user_id: string | null; approved_pallets: number;
+  table_person_number: string | null; created_at: string | null;
+  operator: { full_name: string | null } | { full_name: string | null }[] | null;
+  machine_allocations: RawRqcMachineAllocation[];
+  fg_qr_batch: { status: string } | { status: string }[] | null;
+};
+// Migration 0039 (produced-vs-approved) -- just enough of the linked
+// Production Run's own Material Consumption -> machine_entries chain to sum
+// pallets_produced client-side for display (the real enforcement is
+// server-side, in rqc_service.create_approval_entry -- this is purely a
+// "how many are left to approve" readout).
+type RawRqcRunMc = { machine_entries: { pallets_produced: number | string | null }[] };
+type RawRqcProductionRun = {
+  run_number: string; total_fg_pallets: number; shift: string | null; production_date: string | null;
+  machines: { machine: { id: string; code: string } | null }[] | null;
+  material_consumptions: RawRqcRunMc[] | null;
+};
 type RawRqcRecordDetail = {
   id: string; production_run_id: string | null; shipment_number: string | null; manufacturer: string | null;
   sku_code_snapshot: string | null; sku_version_snapshot: string | null; overall_result: string | null; status: string;
   ipqc_record_id: string | null; fg_pallets_generated: number | null; table_person_number: string | null;
-  production_run: {
-    run_number: string; total_fg_pallets: number; shift: string | null; production_date: string | null;
-    machines: { machine: { id: string; code: string } | null }[] | null;
-  } | {
-    run_number: string; total_fg_pallets: number; shift: string | null; production_date: string | null;
-    machines: { machine: { id: string; code: string } | null }[] | null;
-  }[] | null;
+  production_run: RawRqcProductionRun | RawRqcProductionRun[] | null;
   machine_allocations: RawRqcMachineAllocation[];
+  approval_entries: RawRqcApprovalEntry[];
   defect_results: RawRqcDefectResult[];
   coa_observations: RawRqcCoaObservation[];
 };
 
 const RQC_DETAIL_SELECT =
   "id,production_run_id,shipment_number,manufacturer,sku_code_snapshot,sku_version_snapshot,overall_result,status,ipqc_record_id,fg_pallets_generated,table_person_number," +
-  "production_run:production_runs(run_number,total_fg_pallets,shift,production_date,machines:production_run_machines(machine:machines(id,code)))," +
+  "production_run:production_runs(run_number,total_fg_pallets,shift,production_date,machines:production_run_machines(machine:machines(id,code))," +
+  "material_consumptions(machine_entries:material_consumption_machine_entries(pallets_produced)))," +
   "machine_allocations:rqc_machine_allocations(machine_id,fg_pallets_count,machine:machines(code))," +
+  "approval_entries:rqc_approval_entries(id,entry_date,operator_user_id,approved_pallets,table_person_number,created_at," +
+  "operator:app_users(full_name),machine_allocations:rqc_machine_allocations(machine_id,fg_pallets_count,machine:machines(code))," +
+  "fg_qr_batch:qr_generation_records(status))," +
   "defect_results:rqc_defect_results(defect_sr,found,remarks)," +
   "coa_observations:rqc_coa_observations(coa_group,sr,observation)";
 
+/** Sum of Production's own pallets_produced across every machine entry
+ * feeding this run -- the hard ceiling RQC's approved pallets are checked
+ * against server-side (rqc_service._run_total_pallets_produced mirrors this
+ * exact aggregation). */
+function sumRunPalletsProduced(run: RawRqcProductionRun | null): number {
+  let total = 0;
+  for (const mc of run?.material_consumptions || []) {
+    for (const e of mc.machine_entries || []) {
+      total += Number(e.pallets_produced) || 0;
+    }
+  }
+  return total;
+}
+
 function flattenRqcDetail(raw: RawRqcRecordDetail): RqcDetail {
   const runObj = Array.isArray(raw.production_run) ? raw.production_run[0] ?? null : raw.production_run;
+  const entries = (raw.approval_entries || [])
+    .map((e) => {
+      const op = Array.isArray(e.operator) ? e.operator[0] ?? null : e.operator;
+      const batch = Array.isArray(e.fg_qr_batch) ? e.fg_qr_batch[0] ?? null : e.fg_qr_batch;
+      return {
+        id: e.id, entry_date: e.entry_date, operator_user_id: e.operator_user_id,
+        operator_name: op?.full_name ?? null, approved_pallets: e.approved_pallets,
+        table_person_number: e.table_person_number, created_at: e.created_at,
+        machine_allocations: (e.machine_allocations || []).map((a) => ({
+          machine_id: a.machine_id, machine: a.machine?.code ?? null, fg_pallets_count: a.fg_pallets_count,
+        })),
+        fg_qr_status: batch?.status ?? null,
+      };
+    })
+    .sort((a, c) => (a.entry_date < c.entry_date ? -1 : a.entry_date > c.entry_date ? 1 : (a.created_at || "").localeCompare(c.created_at || "")));
   return {
     id: raw.id, production_run_id: raw.production_run_id, production_run_number: runObj?.run_number ?? null,
     ipqc_id: raw.ipqc_record_id,
     shipment_number: raw.shipment_number, manufacturer: raw.manufacturer,
     sku_code: raw.sku_code_snapshot, sku_version: raw.sku_version_snapshot,
     total_fg_pallets: runObj?.total_fg_pallets ?? null,
+    total_pallets_produced: runObj ? sumRunPalletsProduced(runObj) : null,
     fg_pallets_generated: raw.fg_pallets_generated,
     table_person_number: raw.table_person_number,
     production_run_machines: (runObj?.machines || [])
       .filter((m) => m.machine)
       .map((m) => ({ id: m.machine!.id, code: m.machine!.code })),
+    approval_entries: entries,
     machine_allocations: (raw.machine_allocations || []).map((a) => ({
       machine_id: a.machine_id, machine: a.machine?.code ?? null, fg_pallets_count: a.fg_pallets_count,
     })),
@@ -2156,10 +2212,20 @@ export const api = {
       body: JSON.stringify(payload),
     });
     invalidateListCache("rqc");
-    // A save that reaches Approved auto-creates/refreshes the FG QR
-    // Generation record for this run (see api/rqc.py's save route) --
-    // invalidate its list cache too so the new Pending record shows up
-    // without a hard refresh.
+    return res;
+  },
+  // Migration 0039 -- records one incremental RQC approval activity (date +
+  // operator + approved pallet count) and, when the record is already
+  // linked to a Production Run, creates that entry's own FG QR Generation
+  // batch (idempotent -- re-posting the same entry never duplicates it).
+  // Replaces the old "save reaches Approved -> auto-create FG QR for the
+  // whole run" behavior.
+  createRqcApprovalEntry: async (id: string, payload: RqcApprovalEntryPayload) => {
+    const res = await request<{ id: string; fg_qr_batch_id: string | null }>(`/api/v1/rqc-records/${id}/approval-entries`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    invalidateListCache("rqc");
     invalidateListCache("fg-qr");
     return res;
   },

@@ -149,6 +149,20 @@ class RqcError(Exception):
     pass
 
 
+def _run_total_pallets_produced(run: models.ProductionRun) -> int:
+    """Production's own count of FG pallets actually produced for this run,
+    per machine + shift (migration 0039, task section 1) -- summed across
+    every machine entry belonging to every Material Consumption record that
+    feeds this run. This is the hard ceiling create_approval_entry checks
+    RQC's approved pallets against; never total_fg_pallets (legacy/unused as
+    of migration 0030) and never derived from RQC's own numbers."""
+    total = 0
+    for mc in run.material_consumptions:
+        for e in mc.machine_entries:
+            total += int(e.pallets_produced or 0)
+    return total
+
+
 def find_linked_ipqc_by_shipment_number(db: Session, shipment_number: str) -> models.IpqcRecord | None:
     """The Shipment Number -> Production -> IPQC lookup used both at RQC
     creation and (read-only) whenever an RQC record is opened, so the same
@@ -214,3 +228,94 @@ def create_rqc(db: Session, shipment_number: str, manufacturer: str | None = Non
     db.add(rec)
     db.flush()
     return rec
+
+
+def create_approval_entry(
+    db: Session,
+    rqc: models.RqcRecord,
+    *,
+    entry_date: str,
+    approved_pallets: int,
+    operator_user_id: str | None,
+    table_person_number: str | None = None,
+    machine_allocations: list[tuple[str, int]] | None = None,
+) -> models.RqcApprovalEntry:
+    """
+    Migration 0039 -- records ONE incremental RQC approval activity (see
+    RqcApprovalEntry's own docstring for the full reasoning). This function
+    only creates the entry row and its own machine-allocation split, and
+    keeps rqc.fg_pallets_generated in sync as a running SUM of every entry
+    (denormalized display/backward-compat total -- entries remain the real
+    source of truth). It deliberately does NOT touch FG QR Generation --
+    that's a separate, explicit call to
+    qr_generation_service.get_or_create_fg_qr_for_rqc_approval_entry from
+    the route, keeping "record an approval" and "trigger FG QR" as two
+    distinct, independently-testable steps, same separation of concerns
+    create_rqc/the RQC save route already have.
+
+    entry_date, approved_pallets are required. approved_pallets must be
+    positive (also a DB check constraint, backstop). table_person_number
+    defaults to the RqcRecord's own last-used value when not given, and is
+    also written back onto the record afterward so the RQC form's Batch
+    Code Details card shows "last used" as the default for the next entry.
+    machine_allocations is [(machine_id, count), ...]; validated for
+    sum == approved_pallets only later, at actual QR-generation time
+    (batch_code_service.resolve_machine_allocations_for_entry) -- same
+    "don't block recording the approval itself" reasoning the legacy
+    whole-record allocation always used.
+    """
+    entry_date = (entry_date or "").strip()
+    if not entry_date:
+        raise RqcError("Date is required.")
+    approved_pallets = int(approved_pallets or 0)
+    if approved_pallets <= 0:
+        raise RqcError("Approved Pallets must be greater than 0.")
+
+    # Task requirement (2026-09-17): RQC may only approve pallets that
+    # Production actually produced -- never more. Production's own count
+    # (MaterialConsumptionMachineEntry.pallets_produced, summed across every
+    # machine entry that fed this run) is the hard ceiling; the sum of every
+    # approval entry ever recorded for this shipment (this one included)
+    # must never exceed it. Only enforced when a Production Run is actually
+    # linked -- an unlinked RQC record (no match found at create_rqc time)
+    # has no produced count to compare against, so it isn't blocked here.
+    run = rqc.production_run
+    if run is not None:
+        total_produced = _run_total_pallets_produced(run)
+        already_approved = sum(int(e.approved_pallets or 0) for e in rqc.approval_entries)
+        if already_approved + approved_pallets > total_produced:
+            remaining = max(total_produced - already_approved, 0)
+            raise RqcError(
+                f"Only {remaining} pallet(s) remain unapproved for this Production Run "
+                f"({total_produced} produced, {already_approved} already approved). "
+                f"Reduce Approved Pallets for this entry, or check Production's FG Pallets Generated."
+            )
+
+    table_person_number = (table_person_number or rqc.table_person_number or "").strip() or None
+
+    entry = models.RqcApprovalEntry(
+        rqc_record_id=rqc.id,
+        entry_date=entry_date,
+        operator_user_id=operator_user_id,
+        approved_pallets=approved_pallets,
+        table_person_number=table_person_number,
+    )
+    db.add(entry)
+    db.flush()
+
+    for machine_id, count in (machine_allocations or []):
+        if count and count > 0:
+            db.add(models.RqcMachineAllocation(
+                rqc_record_id=rqc.id, rqc_approval_entry_id=entry.id,
+                machine_id=machine_id, fg_pallets_count=count,
+            ))
+
+    # Keep the record-level fields in sync: total = sum of every entry ever
+    # recorded (this one included -- rqc.approval_entries re-reads from the
+    # DB here since it's already flushed above), table_person_number =
+    # this entry's own value as the new "last used" default.
+    db.expire(rqc, ["approval_entries"])
+    rqc.fg_pallets_generated = sum(int(e.approved_pallets or 0) for e in rqc.approval_entries)
+    rqc.table_person_number = table_person_number or rqc.table_person_number
+    db.flush()
+    return entry
