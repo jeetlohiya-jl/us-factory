@@ -6,7 +6,7 @@ import os
 from app.core.config import get_settings
 from app.api import (
     reference, inward_vehicle_inspections, me, inward_qc,
-    rm_qr, rm_storage, fg_qr, fg_storage, production, ipqc, rqc, locations, vendors, skus,
+    rm_qr, rm_storage, fg_qr, fg_storage, production, ipqc, rqc, rqc_coa, locations, vendors, skus,
     machines, material_consumption, users, customer_shipment, shipment_picking,
     outward_vehicle_inspection, traceability, hold_release,
 )
@@ -39,6 +39,7 @@ app.include_router(fg_storage.router)
 app.include_router(production.router)
 app.include_router(ipqc.router)
 app.include_router(rqc.router)
+app.include_router(rqc_coa.router)
 app.include_router(customer_shipment.router)
 app.include_router(shipment_picking.router)
 app.include_router(outward_vehicle_inspection.router)

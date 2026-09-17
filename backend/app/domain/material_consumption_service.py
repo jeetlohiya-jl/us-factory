@@ -291,20 +291,77 @@ def remove_pallet(db: Session, mc: models.MaterialConsumption, row_id) -> None:
 def update_pallet_consumption(
     db: Session, mc: models.MaterialConsumption, row_id,
     quantity: Decimal | None = None, unit: str | None = None, fully_consumed: bool | None = None,
+    actor_user_id=None,
 ) -> models.MaterialConsumptionPallet:
     """
     Edits an already-scanned pallet row's Quantity/Unit/"Fully Consumed"
     flag -- used both for secondary materials (which have always been
     editable this way) and, as of Section 8, for primary pallets too, since
     the whole point of partial consumption is that the operator can say
-    "actually only used half of this" after the initial scan. mc.status
-    must still be 'draft' -- a saved record's consumption is locked in.
+    "actually only used half of this" after the initial scan.
+
+    2026-09-17: Quantity/Unit are still draft-only -- once mc.status is
+    'saved', those numbers are locked in exactly as before. But
+    fully_consumed may now still be flipped after save too (per the user's
+    explicit direction: saving a Production record does not mean the whole
+    of the raw material picked for it was consumed -- that's decided
+    separately, by this toggle, whenever it's actually known). This is
+    surfaced as a confirmation step when Production itself is saved (see
+    ProductionDetailPanel.tsx's save-confirmation modal), but the same
+    route/toggle works standalone too.
+
+    Flipping fully_consumed after save also has to keep the pallet's own
+    live lifecycle_status in sync with reality, since finalize() already
+    moved every originally-fully-consumed pallet to lifecycle_status
+    'consumed' (see finalize()'s own pallet loop) and left every partial
+    draw at 'stored':
+    - True -> False ("actually not fully consumed after all"): reverse the
+      'consumed' event -- lifecycle_status goes back to 'stored' and a new
+      'reopened_for_consumption' event is logged, so the pallet becomes
+      scannable again on a later Material Consumption record. Only
+      meaningful when the pallet is *currently* 'consumed' (its own prior
+      finalize/toggle) -- skipped otherwise (e.g. it was already a partial
+      draw, still 'stored', nothing to reverse).
+    - False -> True ("actually it was fully consumed"): record the
+      'consumed' lifecycle event now, same as finalize() does for a
+      pallet that was fully consumed from the start.
+    No cumulative/remaining-quantity tracking is introduced here -- the
+    user explicitly simplified this to just the Yes/No toggle plus
+    rescanning ("let's just ask if fully consumed or not... that's it").
     """
-    if mc.status != "draft":
-        raise MaterialConsumptionError("This Material Consumption record has already been saved and cannot be changed.")
     row = next((p for p in _all_pallets(mc) if p.id == row_id), None)
     if not row:
         raise MaterialConsumptionError("Pallet not found on this record.")
+
+    if mc.status != "draft":
+        if quantity is not None or unit is not None:
+            raise MaterialConsumptionError(
+                "Quantity/Unit can only be changed while this record is still a draft."
+            )
+        if fully_consumed is None:
+            raise MaterialConsumptionError("This Material Consumption record has already been saved and cannot be changed.")
+        if fully_consumed != row.fully_consumed:
+            if fully_consumed:
+                pallet_service.record_lifecycle_event(
+                    db, row.pallet, "consumed", actor_user_id=actor_user_id,
+                    consumed_by_module="material_consumption", consumed_by_record=str(mc.id),
+                )
+            elif row.pallet.lifecycle_status == "consumed":
+                # Same shape as finalize()'s own partial-draw branch: log
+                # the event under its own descriptive stage name WITHOUT
+                # going through record_lifecycle_event (which would stamp
+                # lifecycle_status to match the event's own stage,
+                # "reopened_for_consumption", instead of the real target
+                # status "stored") -- set lifecycle_status directly instead.
+                db.add(models.PalletLifecycleEvent(
+                    pallet_id=row.pallet.id, stage="reopened_for_consumption", actor_user_id=actor_user_id,
+                    event_metadata={"consumed_by_module": "material_consumption", "consumed_by_record": str(mc.id)},
+                ))
+                row.pallet.lifecycle_status = "stored"
+            row.fully_consumed = fully_consumed
+        db.flush()
+        return row
+
     if quantity is not None:
         row.quantity = quantity
     if unit is not None:

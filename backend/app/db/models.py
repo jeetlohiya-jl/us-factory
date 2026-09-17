@@ -423,7 +423,14 @@ class ProductionRun(Base):
     machines = relationship("ProductionRunMachine", back_populates="production_run", cascade="all, delete-orphan")
     material_consumptions = relationship("MaterialConsumption", back_populates="production_run")
     ipqc_record = relationship("IpqcRecord", back_populates="production_run", uselist=False)
-    rqc_record = relationship("RqcRecord", back_populates="production_run", uselist=False)
+    # 2026-09-17: no longer uselist=False -- a Production Run can now have
+    # MANY RqcRecords (one per activity, see RqcRecord's class docstring),
+    # not just one. Kept ordered oldest-first for the handful of legacy
+    # call sites (api/fg_qr.py's manual "from Production Run" escape hatch,
+    # qr_generation_service's pre-migration-0039 whole-run path) that read
+    # a single "the" RQC record off a run -- those now take the most
+    # recent (`rqc_records[-1]`) as their best-effort "current" record.
+    rqc_records = relationship("RqcRecord", back_populates="production_run", order_by="RqcRecord.created_at")
     wastage_entries = relationship(
         "ProductionWastageEntry", back_populates="production_run",
         cascade="all, delete-orphan", order_by="ProductionWastageEntry.sort_order",
@@ -579,21 +586,36 @@ class RqcRecord(Base):
     (a shipment number entered before its IPQC record exists is still a
     valid, linkable-later RQC record).
 
-    production_run_id is therefore nullable and no longer unique -- RQC is
-    no longer "one record per Production Run" auto-derived from it; it is
-    "one record per Shipment Number", manually created.
+    production_run_id is therefore nullable, and (as of 2026-09-17) neither
+    it nor shipment_number is unique any more: RQC moved from "one record
+    per Shipment Number" (with many approval-activity child rows
+    underneath) to "one record per ACTIVITY" -- a fresh batch of pallets
+    tested and (partially) approved on a given date/machine/shift. The same
+    Shipment Number legitimately gets a brand-new RqcRecord every time more
+    pallets are generated and tested, rather than a new RqcApprovalEntry
+    row under one shared record (see RqcApprovalEntry's own docstring --
+    that ledger now only serves records created before this change).
 
     The quality gate between IPQC and FG QR Generation: only once *this*
     record's own status is 'approved' -- via its own save route, after its
-    own inspection requirements are completed -- does the existing FG QR
-    Generation record get created for the run (only possible when a
-    Production Run was actually linked).
+    own inspection requirements are completed -- does an FG QR Generation
+    batch get created for THIS record's own approved pallets
+    (qr_generation_service.get_or_create_fg_qr_for_rqc_record).
 
     sku_code/version are autopopulated at creation from the matched IPQC
     record when one exists, and never re-entered. Manufacturer has no
-    upstream source in this app (same as the HTML prototype's own
-    plain-text field) so it's seeded with a placeholder and left genuinely
-    user-editable.
+    upstream source in this app and is always the fixed
+    RQC_MANUFACTURER_PLACEHOLDER value ("Cirkla INC") -- no longer
+    user-entered (was, until 2026-09-17).
+
+    machine_id/shift/pallets_tested (2026-09-17, "Page 2"/"Page 3" of the
+    RQC wizard): this activity's own Machine (scoped in the UI to the
+    linked Production Run's actual machines), Shift, and Number of Pallets
+    TESTED -- distinct from fg_pallets_generated below, which is how many
+    of those tested pallets were actually APPROVED (e.g. 4 tested, 3
+    approved). machine_id/shift default-suggest from the linked Production
+    Run in the UI but are stored explicitly per record, since different
+    activities on the same shipment can span different shifts/machines.
 
     fg_pallets_generated (migration 0030) is "Number of FG Pallets
     Generated", entered at the top of THIS form -- it replaced
@@ -612,8 +634,18 @@ class RqcRecord(Base):
     sku_version_id = Column(UUID(as_uuid=True), ForeignKey("sku_versions.id"), nullable=True)
     sku_code_snapshot = Column(Text, nullable=True)
     sku_version_snapshot = Column(Text, nullable=True)
+    # No longer unique as of 2026-09-17 -- see class docstring. Indexed
+    # (idx_rqc_records_shipment_number, migration 0041) since it's still
+    # the lookup key for the IPQC/Production Run fallback and for COA.
     shipment_number = Column(Text, nullable=False)
     manufacturer = Column(Text, nullable=True)
+    # 2026-09-17 -- this activity's own machine/shift/date (see class
+    # docstring). activity_date follows the same "text, ISO YYYY-MM-DD"
+    # convention as production_date/entry_date elsewhere in this app.
+    machine_id = Column(UUID(as_uuid=True), ForeignKey("machines.id"), nullable=True)
+    shift = Column(Text, nullable=True)
+    activity_date = Column(Text, nullable=True)
+    pallets_tested = Column(Integer, nullable=True)
     # Free-text summary field, genuinely user-entered -- never computed,
     # matching the prototype's #rqc-f-overall-result exactly (separate from
     # `status`, which IS computed from the defect grid below).
@@ -626,10 +658,11 @@ class RqcRecord(Base):
     status = Column(Text, nullable=False, default="pending")
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
-    production_run = relationship("ProductionRun", back_populates="rqc_record")
+    production_run = relationship("ProductionRun", back_populates="rqc_records")
     ipqc_record = relationship("IpqcRecord")
     sku_code = relationship("SkuCode")
     sku_version = relationship("SkuVersion")
+    machine = relationship("Machine")
     defect_results = relationship(
         "RqcDefectResult", back_populates="rqc_record",
         cascade="all, delete-orphan", order_by="RqcDefectResult.defect_sr",
@@ -765,23 +798,56 @@ class RqcDefectResult(Base):
     __table_args__ = (UniqueConstraint("rqc_record_id", "defect_sr"),)
 
 
+class RqcCoaEntry(Base):
+    """
+    2026-09-17 -- COA moved out of the main RQC form into its own flow, one
+    COA record per SHIPMENT (never per RQC activity record, and never more
+    than one per shipment -- confirmed explicitly: "COA remains same for
+    one full shipment, we need not have multiple entries for it"). This is
+    what decouples COA from the now-multiplying RqcRecord rows (see
+    RqcRecord's class docstring): a shipment can have many RQC activity
+    records over time, but exactly one COA entry.
+    """
+    __tablename__ = "rqc_coa_entries"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    shipment_number = Column(Text, nullable=False, unique=True)
+    created_by = Column(UUID(as_uuid=True), ForeignKey("app_users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    observations = relationship(
+        "RqcCoaObservation", back_populates="coa_entry", cascade="all, delete-orphan",
+    )
+
+
 class RqcCoaObservation(Base):
     """One Observation value for one COA parameter row, within one of the
     four fixed COA tables (coa_group: 'base' | 'functional' | 'packing' |
     'printing' -- RQC_COA_BASE/FUNCTIONAL/PACKING/PRINTING in
     rqc_service.py / frontend types.ts). Parameter/Specification text is
     static reference data, not stored per record, same as the defect
-    grid's type/classification text."""
+    grid's type/classification text.
+
+    2026-09-17 -- COA moved to its own per-shipment flow (RqcCoaEntry,
+    above). rqc_record_id is now nullable/legacy: existing rows created
+    before this change keep it and are still readable off their original
+    RqcRecord exactly as before; every NEW row uses rqc_coa_entry_id
+    instead and is never linked to a specific RqcRecord at all."""
     __tablename__ = "rqc_coa_observations"
     id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
-    rqc_record_id = Column(UUID(as_uuid=True), ForeignKey("rqc_records.id", ondelete="CASCADE"), nullable=False)
+    rqc_record_id = Column(UUID(as_uuid=True), ForeignKey("rqc_records.id", ondelete="CASCADE"), nullable=True)
+    rqc_coa_entry_id = Column(UUID(as_uuid=True), ForeignKey("rqc_coa_entries.id", ondelete="CASCADE"), nullable=True)
     coa_group = Column(Text, nullable=False)
     sr = Column(Integer, nullable=False)
     observation = Column(Text, nullable=True)
 
     rqc_record = relationship("RqcRecord", back_populates="coa_observations")
+    coa_entry = relationship("RqcCoaEntry", back_populates="observations")
 
-    __table_args__ = (UniqueConstraint("rqc_record_id", "coa_group", "sr"),)
+    __table_args__ = (
+        UniqueConstraint("rqc_record_id", "coa_group", "sr", name="rqc_coa_observations_rqc_record_id_coa_group_sr_key"),
+        UniqueConstraint("rqc_coa_entry_id", "coa_group", "sr", name="rqc_coa_observations_coa_entry_group_sr_key"),
+    )
 
 
 class Location(Base):
@@ -814,6 +880,14 @@ class QrGenerationRecord(Base):
     # can legitimately have MANY FG batches (one per approval entry) even
     # though it can still have at most one legacy whole-run batch.
     source_rqc_approval_entry_id = Column(UUID(as_uuid=True), ForeignKey("rqc_approval_entries.id", ondelete="SET NULL"), nullable=True)
+    # 2026-09-17 -- the current flow: set for a batch created from ONE
+    # per-activity RqcRecord (see get_or_create_fg_qr_for_rqc_record). Null
+    # for a batch created via the older approval-entry ledger above, or the
+    # legacy whole-run path -- both still exist, serving only
+    # already-existing historical records. Idempotency backstop: a partial
+    # unique index on this column (migration 0042) blocks more than one
+    # batch per RqcRecord.
+    source_rqc_record_id = Column(UUID(as_uuid=True), ForeignKey("rqc_records.id", ondelete="SET NULL"), nullable=True)
     shipment_number = Column(Text, nullable=True)
     sku_code_id = Column(UUID(as_uuid=True), ForeignKey("sku_codes.id"), nullable=True)
     sku_version_id = Column(UUID(as_uuid=True), ForeignKey("sku_versions.id"), nullable=True)
@@ -837,6 +911,7 @@ class QrGenerationRecord(Base):
     source_inward_qc = relationship("InwardQcRecord")
     source_production_run = relationship("ProductionRun")
     source_rqc_approval_entry = relationship("RqcApprovalEntry", back_populates="fg_qr_batch")
+    source_rqc_record = relationship("RqcRecord")
     sku_code = relationship("SkuCode")
     sku_version = relationship("SkuVersion")
     pallets = relationship("Pallet", back_populates="source_qr_generation", order_by="Pallet.created_at")

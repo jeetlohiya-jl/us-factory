@@ -112,7 +112,7 @@ def create_fg_qr_from_run(
     directly since the Production module itself is out of scope."""
     run = (
         db.query(models.ProductionRun)
-        .options(joinedload(models.ProductionRun.rqc_record))
+        .options(joinedload(models.ProductionRun.rqc_records))
         .filter(models.ProductionRun.id == run_id)
         .first()
     )
@@ -122,12 +122,17 @@ def create_fg_qr_from_run(
     # FG QR Generation), not on Production's own status -- Production
     # output passing final QC is what makes it FG-eligible, not merely
     # being recorded. This endpoint is a manual escape hatch (normally RQC
-    # approval triggers this automatically -- see api/rqc.py's save route)
-    # so it must honor the same gate, not bypass it.
-    if not run.rqc_record or run.rqc_record.status != "approved":
-        raise HTTPException(status_code=422, detail="Only a Production Run whose RQC record is Approved can feed FG QR Generation.")
+    # approval triggers this automatically -- see api/rqc.py's save route,
+    # which as of the 2026-09-17 per-activity redesign calls
+    # get_or_create_fg_qr_for_rqc_record directly, not this whole-run path)
+    # so it must honor the same gate, not bypass it. A run can now have
+    # many RQC activity records -- this legacy endpoint takes the most
+    # recently created one as its best-effort "the" record.
+    rqc = run.rqc_records[-1] if run.rqc_records else None
+    if not rqc or rqc.status != "approved":
+        raise HTTPException(status_code=422, detail="Only a Production Run whose (most recent) RQC record is Approved can feed FG QR Generation.")
     rec = qr_generation_service.get_or_create_fg_qr_for_production_run(
-        db, run, fg_pallets_generated=run.rqc_record.fg_pallets_generated if run.rqc_record else None,
+        db, run, fg_pallets_generated=rqc.fg_pallets_generated,
     )
     db.commit()
     return serialize_qr_detail(_get_or_404(db, rec.id))

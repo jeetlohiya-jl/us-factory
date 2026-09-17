@@ -8,7 +8,7 @@ import type {
   Vendor, Machine, MaterialConsumptionListItem, MaterialConsumptionDetail, SecondaryMaterialCategory,
   MaterialConsumptionPalletRow, ProductionListItem, ProductionDetail, ProductionMachineEntry, ProductionSavePayload,
   IpqcListItem, IpqcDetail, IpqcSavePayload,
-  RqcListItem, RqcDetail, RqcSavePayload, RqcApprovalEntryPayload,
+  RqcListItem, RqcDetail, RqcSavePayload, RqcApprovalEntryPayload, RqcCoaEntry, RqcCoaObservation,
   CustomerShipmentListItem, CustomerShipmentDetail, CustomerShipmentCreatePayload, CustomerShipmentCreateResult,
   ShipmentPickingListItem, ShipmentPickingDetail,
   OviListItem, OviDetail, OviSavePayload, OviImageType, OviImage,
@@ -1101,6 +1101,7 @@ type RawRqcRecordDetail = {
   id: string; production_run_id: string | null; shipment_number: string | null; manufacturer: string | null;
   sku_code_snapshot: string | null; sku_version_snapshot: string | null; overall_result: string | null; status: string;
   ipqc_record_id: string | null; fg_pallets_generated: number | null; table_person_number: string | null;
+  pallets_tested: number | null; machine_id: string | null; shift: string | null; activity_date: string | null;
   production_run: RawRqcProductionRun | RawRqcProductionRun[] | null;
   machine_allocations: RawRqcMachineAllocation[];
   approval_entries: RawRqcApprovalEntry[];
@@ -1110,6 +1111,7 @@ type RawRqcRecordDetail = {
 
 const RQC_DETAIL_SELECT =
   "id,production_run_id,shipment_number,manufacturer,sku_code_snapshot,sku_version_snapshot,overall_result,status,ipqc_record_id,fg_pallets_generated,table_person_number," +
+  "pallets_tested,machine_id,shift,activity_date," +
   "production_run:production_runs(run_number,total_fg_pallets,shift,production_date,machines:production_run_machines(machine:machines(id,code))," +
   "material_consumptions(machine_entries:material_consumption_machine_entries(pallets_produced)))," +
   "machine_allocations:rqc_machine_allocations(machine_id,fg_pallets_count,machine:machines(code))," +
@@ -1172,6 +1174,10 @@ function flattenRqcDetail(raw: RawRqcRecordDetail): RqcDetail {
       .map((d) => ({ defect_sr: d.defect_sr, found: d.found == null ? null : Number(d.found), remarks: d.remarks }))
       .sort((a, c) => a.defect_sr - c.defect_sr),
     coa_observations: (raw.coa_observations || []).map((o) => ({ coa_group: o.coa_group, sr: o.sr, observation: o.observation })),
+    pallets_tested: raw.pallets_tested,
+    machine_id: raw.machine_id,
+    activity_shift: raw.shift,
+    activity_date: raw.activity_date,
   };
 }
 
@@ -2088,6 +2094,20 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ quantity, unit: opts?.unit, fully_consumed: opts?.fullyConsumed }),
     }),
+  // 2026-09-17 -- the "unlock after save" flip: flips Fully Consumed on an
+  // already-scanned pallet row WITHOUT touching Quantity/Unit, so it works
+  // even after the Material Consumption record itself has been saved (see
+  // material_consumption_service.update_pallet_consumption's docstring for
+  // the lifecycle-reversal it does server-side). Deliberately omits
+  // `quantity` from the body entirely -- sending it (even unchanged) would
+  // trip the new "Quantity/Unit can only be changed while draft" guard on a
+  // saved record, since the backend can't tell "unchanged" from "changed"
+  // once the value is present in the payload at all.
+  setMaterialConsumptionPalletFullyConsumed: (id: string, rowId: string, fullyConsumed: boolean) =>
+    request<MaterialConsumptionDetail>(`/api/v1/material-consumption/${id}/pallets/${rowId}/quantity`, {
+      method: "PUT",
+      body: JSON.stringify({ fully_consumed: fullyConsumed }),
+    }),
   saveMaterialConsumptionDraft: (id: string) =>
     request<MaterialConsumptionDetail>(`/api/v1/material-consumption/${id}/save-draft`, { method: "POST" }),
   finalizeMaterialConsumption: async (id: string) => {
@@ -2248,6 +2268,34 @@ export const api = {
     invalidateListCache("rqc");
     invalidateListCache("fg-qr");
     return res;
+  },
+
+  // 2026-09-17 -- COA, decoupled from RqcRecord: one entry per shipment
+  // (backend/app/api/rqc_coa.py). Find-or-create by shipment_number never
+  // 409s -- opening "+ New Record"/"View/Edit" for the same shipment twice
+  // just returns the one existing entry.
+  createOrGetRqcCoaEntry: async (shipmentNumber: string) => {
+    return request<RqcCoaEntry>("/api/v1/rqc-coa-entries", {
+      method: "POST",
+      body: JSON.stringify({ shipment_number: shipmentNumber }),
+    });
+  },
+  saveRqcCoaEntry: async (id: string, coaObservations: RqcCoaObservation[]) => {
+    return request<RqcCoaEntry>(`/api/v1/rqc-coa-entries/${id}`, {
+      method: "PUT",
+      body: JSON.stringify({ coa_observations: coaObservations }),
+    });
+  },
+  // Used by the RQC list's COA column to show "+ New Record" vs.
+  // "View/Edit" per shipment without a 404 bubbling up as an error --
+  // returns null instead of throwing when none exists yet.
+  getRqcCoaEntryByShipment: async (shipmentNumber: string): Promise<RqcCoaEntry | null> => {
+    try {
+      return await request<RqcCoaEntry>(`/api/v1/rqc-coa-entries/by-shipment/${encodeURIComponent(shipmentNumber)}`);
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404) return null;
+      throw e;
+    }
   },
 
   // -- Customer Shipment / Shipment Picking ------------------------------
