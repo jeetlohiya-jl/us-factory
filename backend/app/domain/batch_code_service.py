@@ -140,7 +140,7 @@ def resolve_machine_allocations(db: Session, rqc: models.RqcRecord) -> list[tupl
     )
 
 
-def resolve_machine_allocations_for_entry(db: Session, entry: models.RqcApprovalEntry) -> list[tuple[models.Machine, int]]:
+def resolve_machine_allocations_for_entry(db: Session, entry: models.RqcApprovalEntry) -> list[tuple[models.Machine | None, int]]:
     """
     Migration 0039 -- same shape/purpose as resolve_machine_allocations
     above, but scoped to ONE RQC Approval Entry's own approved_pallets
@@ -166,6 +166,14 @@ def resolve_machine_allocations_for_entry(db: Session, entry: models.RqcApproval
         return explicit
 
     run = entry.rqc_record.production_run if entry.rqc_record else None
+    # 2026-09-17 -- a standalone RQC record (no linked Production Run --
+    # see rqc_service.create_rqc's "no match is not an error" behavior)
+    # has no machine to attribute this entry to. That's not an error: fall
+    # back to a single unattributed allocation (machine=None) rather than
+    # blocking FG QR Generation -- build_batch_code already renders a
+    # placeholder machine segment for a None machine_number.
+    if run is None:
+        return [(None, total)]
     run_machines = [rm.machine for rm in run.machines] if run else []
     if len(run_machines) == 1:
         return [(run_machines[0], total)]

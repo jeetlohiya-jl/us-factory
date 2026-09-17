@@ -105,6 +105,14 @@ create unique index if not exists uq_qr_source_rqc_approval_entry
 -- =========================================================================
 -- Backfill: preserve already-recorded approvals as history
 -- =========================================================================
+-- This backfill reads rqc_records.fg_pallets_generated and .table_person_
+-- number -- both added by EARLIER migrations (0030, 0033 respectively), not
+-- this one. Re-adding them here too (if not exists) makes 0039 safe to run
+-- even on a database where those two migrations were skipped or only
+-- partially applied, instead of failing with "column does not exist".
+alter table rqc_records add column if not exists fg_pallets_generated integer;
+alter table rqc_records add column if not exists table_person_number text;
+
 -- Any RqcRecord that already had a positive fg_pallets_generated under the
 -- old single-total model gets exactly one synthetic approval entry
 -- carrying that same total, dated to when the record was created, so the

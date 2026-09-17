@@ -163,6 +163,33 @@ def _run_total_pallets_produced(run: models.ProductionRun) -> int:
     return total
 
 
+BLOCKED_DELETE_MESSAGE = (
+    "This RQC record can't be deleted because at least one of its approval entries has already "
+    "generated FG QR codes/pallets. Deleting it would orphan real, already-issued pallets."
+)
+
+
+def blocked_delete_reason(db: Session, rqc: models.RqcRecord) -> str | None:
+    """Returns a friendly block message if deleting this record would
+    orphan a real, already-generated FG QR batch (source_rqc_approval_
+    entry_id is ondelete=SET NULL, not CASCADE, so the batch and any real
+    physical pallets under it would survive the delete but lose their link
+    back to this record -- surfaced here as a block rather than letting
+    that happen silently). A record whose entries only have still-pending
+    (never-generated) batches, or no batches at all, deletes freely --
+    cascade (approval_entries relationship, cascade='all, delete-orphan')
+    removes those pending batches' links along with everything else."""
+    exists = (
+        db.query(models.QrGenerationRecord.id)
+        .join(models.RqcApprovalEntry, models.QrGenerationRecord.source_rqc_approval_entry_id == models.RqcApprovalEntry.id)
+        .filter(models.RqcApprovalEntry.rqc_record_id == rqc.id, models.QrGenerationRecord.status == "generated")
+        .first()
+    )
+    if exists:
+        return BLOCKED_DELETE_MESSAGE
+    return None
+
+
 def find_linked_ipqc_by_shipment_number(db: Session, shipment_number: str) -> models.IpqcRecord | None:
     """The Shipment Number -> Production -> IPQC lookup used both at RQC
     creation and (read-only) whenever an RQC record is opened, so the same

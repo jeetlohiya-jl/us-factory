@@ -251,13 +251,20 @@ def get_or_create_fg_qr_for_rqc_approval_entry(
     legacy function, there is no "refresh while pending" branch -- an
     approval entry is immutable once created (no edit route), so there is
     nothing to refresh; a found existing batch is returned exactly as-is.
+
+    2026-09-17 update: a Production Run link is no longer required. RQC
+    records can legitimately be created before (or without ever getting) a
+    matching IPQC/Production Run -- see rqc_service.create_rqc's "no match
+    is not an error" behavior -- and the task requirement is that approved
+    pallets flow to FG QR Generation regardless. When no run is linked,
+    this falls back to the RqcRecord's own SKU snapshot/shipment_number
+    (still real, user-visible data -- never fabricated), and
+    batch_code_service.resolve_machine_allocations_for_entry likewise falls
+    back to an unattributed machine (batch code gets the placeholder
+    machine segment) instead of raising.
     """
-    run = entry.rqc_record.production_run if entry.rqc_record else None
-    if not run:
-        raise QrGenerationError(
-            "This RQC record isn't linked to a Production Run (no Inward QC / Material Consumption record was "
-            "found for this Shipment Number yet) -- FG QR Generation needs a Production Run for SKU/shift/machine context."
-        )
+    rqc = entry.rqc_record
+    run = rqc.production_run if rqc else None
 
     existing = (
         db.query(models.QrGenerationRecord)
@@ -267,19 +274,30 @@ def get_or_create_fg_qr_for_rqc_approval_entry(
     if existing:
         return existing
 
-    sku_code = run.sku_code.code if run.sku_code else None
-    sku_version = run.sku_version.version if run.sku_version else None
-    shipment_number = _derive_run_shipment_number(run) or (entry.rqc_record.shipment_number if entry.rqc_record else None)
+    if run:
+        sku_code = run.sku_code.code if run.sku_code else None
+        sku_version = run.sku_version.version if run.sku_version else None
+        shipment_number = _derive_run_shipment_number(run) or (rqc.shipment_number if rqc else None)
+        category = run.category
+        sku_code_id = run.sku_code_id
+        sku_version_id = run.sku_version_id
+    else:
+        sku_code = rqc.sku_code_snapshot if rqc else None
+        sku_version = rqc.sku_version_snapshot if rqc else None
+        shipment_number = rqc.shipment_number if rqc else None
+        category = None
+        sku_code_id = rqc.sku_code_id if rqc else None
+        sku_version_id = rqc.sku_version_id if rqc else None
 
     rec = models.QrGenerationRecord(
         batch_display_id=pallet_service.next_batch_display_id(db, "fg"),
         qr_type="fg",
-        category=run.category,
-        source_production_run_id=run.id,
+        category=category,
+        source_production_run_id=run.id if run else None,
         source_rqc_approval_entry_id=entry.id,
         shipment_number=shipment_number,
-        sku_code_id=run.sku_code_id,
-        sku_version_id=run.sku_version_id,
+        sku_code_id=sku_code_id,
+        sku_version_id=sku_version_id,
         sku_code_snapshot=sku_code,
         sku_version_snapshot=sku_version,
         country_code="US",
