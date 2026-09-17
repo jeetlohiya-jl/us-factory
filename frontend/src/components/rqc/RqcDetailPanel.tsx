@@ -1,7 +1,7 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import type { RqcDetail, RqcDefectResult, RqcCoaObservation, RqcApprovalEntry } from "@/lib/types";
+import type { RqcDetail, RqcDefectResult, RqcCoaObservation, RqcApprovalEntry, Machine } from "@/lib/types";
 import { RQC_DEFECT_GROUPS, RQC_COA_BASE, RQC_COA_FUNCTIONAL, RQC_COA_PACKING, RQC_COA_PRINTING } from "@/lib/types";
 import type { RqcCoaParamDef } from "@/lib/types";
 import { api } from "@/lib/api";
@@ -146,6 +146,28 @@ export default function RqcDetailPanel({
   const [addingEntry, setAddingEntry] = useState(false);
   const [entryError, setEntryError] = useState<string | null>(null);
 
+  // Which machine these pallets actually came from -- always asked now
+  // (2026-09-17), not just when the linked Production Run happens to span
+  // more than one machine. Before this, a single-machine run silently
+  // auto-assigned its one machine (fine), but a standalone RQC record (no
+  // linked Production Run at all -- IPQC/Production Run are optional, see
+  // rqc_service.create_rqc) had no machine list to auto-assign from at
+  // all, so every approval entry on it fell back to an unattributed
+  // machine -- the Batch Code then showed the placeholder "M00" segment
+  // instead of a real machine number, and never had a real machine to
+  // name in the first place. Source the full active Machines list (same
+  // master data Production/Material Consumption already use), not just
+  // record.production_run_machines, so this works for a standalone record
+  // too; pre-select when the linked run has exactly one machine, purely
+  // for convenience -- it's still an explicit, changeable choice.
+  const [machines, setMachines] = useState<Machine[]>([]);
+  const [entryMachineId, setEntryMachineId] = useState(
+    record.production_run_machines.length === 1 ? record.production_run_machines[0].id : ""
+  );
+  useEffect(() => {
+    api.machines().then(setMachines).catch(() => setMachines([]));
+  }, []);
+
   function setEntryAllocationCount(machineId: string, value: string) {
     setEntryAllocations((prev) => ({ ...prev, [machineId]: value }));
   }
@@ -190,15 +212,21 @@ export default function RqcDetailPanel({
       setEntryError(`Allocated ${entryAllocationTotal}, but Approved Pallets is ${approved}. These must match.`);
       return;
     }
+    if (!isMultiMachine && !entryMachineId) {
+      setEntryError("Select which Machine these pallets came from.");
+      return;
+    }
     setAddingEntry(true);
     try {
       await api.createRqcApprovalEntry(record.id, {
         entry_date: entryDate,
         approved_pallets: approved,
         table_person_number: entryTablePerson || null,
-        machine_allocations: Object.entries(entryAllocations)
-          .filter(([, v]) => Number(v) > 0)
-          .map(([machine_id, v]) => ({ machine_id, fg_pallets_count: Number(v) })),
+        machine_allocations: isMultiMachine
+          ? Object.entries(entryAllocations)
+              .filter(([, v]) => Number(v) > 0)
+              .map(([machine_id, v]) => ({ machine_id, fg_pallets_count: Number(v) }))
+          : [{ machine_id: entryMachineId, fg_pallets_count: approved }],
       });
       // Keep the panel open -- unlike the main Save button -- and refetch
       // this record so the new entry (and its FG QR batch status once
@@ -209,6 +237,7 @@ export default function RqcDetailPanel({
       setTotalProduced(fresh.total_pallets_produced);
       setEntryApproved("");
       setEntryAllocations({});
+      setEntryMachineId(record.production_run_machines.length === 1 ? record.production_run_machines[0].id : "");
       onSaved();
     } catch (e) {
       setEntryError(e instanceof Error ? e.message : "Failed to record this approval entry");
@@ -367,6 +396,17 @@ export default function RqcDetailPanel({
                     />
                   </div>
                 </div>
+                {!isMultiMachine && (
+                  <div className="field" style={{ marginTop: 14, maxWidth: 260 }}>
+                    <label>Machine</label>
+                    <select value={entryMachineId} onChange={(e) => setEntryMachineId(e.target.value)}>
+                      <option value="">Select a machine…</option>
+                      {machines.map((m) => (
+                        <option key={m.id} value={m.id}>{m.code}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 {isMultiMachine && (
                   <div style={{ marginTop: 14 }}>
                     <div className="section-label">Machine Allocation</div>
