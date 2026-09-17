@@ -450,7 +450,7 @@ export default function ProductionDetailPanel({
               pallets_produced / rqc_service.create_approval_entry. */}
           {record.machine_entries.length > 0 && (
             <div className="detail-card">
-              <h3>FG Pallets Generated</h3>
+              <h3>Pallets Produced</h3>
               <div className="hint-text" style={{ marginBottom: 10 }}>
                 Per machine, for this run&apos;s shift. RQC approves pallets out of this total --
                 it can never approve more than what&apos;s recorded here.
@@ -466,7 +466,7 @@ export default function ProductionDetailPanel({
                   </thead>
                   <tbody>
                     <tr>
-                      <td>FG Pallets Generated</td>
+                      <td>Pallets Produced</td>
                       {record.machine_entries.map((e) => (
                         <td key={e.machine_consumption_id} style={{ width: 110 }}>
                           {editable ? (
