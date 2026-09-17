@@ -10,9 +10,21 @@ unique, user-entered key: create_rqc uses it to look up the IPQC record
 already carrying that same shipment_number (IPQC's own shipment_number is
 itself a locked-in snapshot from Material Consumption) and, when a match
 exists, links to its real Production Run / IPQC UUIDs and snapshots its
-SKU -- never creating a duplicate Production or IPQC record. No match is not
-an error: the RQC record is still created (Pending, unlinked), since the
-matching upstream record may not exist yet.
+SKU -- never creating a duplicate Production or IPQC record.
+
+2026-09-17 -- IPQC is optional (a shipment can validly reach RQC without one
+ever being filled in). When there is no IPQC match, create_rqc now falls
+back one hop further upstream to the Production Run itself, via
+find_linked_production_run_by_shipment_number: the same shipment number is
+already reachable there too, carried on whichever primary RM pallet was
+consumed into it (set back at Inward VI/QC time), with no new manual-entry
+field needed anywhere -- see that function's docstring. This is what lets
+Shift/Date/SKU Code/SKU Version populate for an RQC record even when IPQC
+was skipped for its shipment.
+
+No match at all (neither IPQC nor Production Run) is still not an error:
+the RQC record is still created (Pending, unlinked), since the matching
+upstream record may not exist yet.
 
 RQC does not touch pallets at all: it reuses Production's own
 total_fg_pallets count. Once an RQC record is saved as Approved,
@@ -205,6 +217,34 @@ def find_linked_ipqc_by_shipment_number(db: Session, shipment_number: str) -> mo
     )
 
 
+def find_linked_production_run_by_shipment_number(db: Session, shipment_number: str) -> models.ProductionRun | None:
+    """Fallback used only when no IPQC record matches (IPQC is optional --
+    see find_linked_ipqc_by_shipment_number above and create_rqc's
+    docstring). The same shipment number is reachable one hop further
+    upstream without IPQC at all: every primary RM pallet consumed by a
+    Material Consumption record carries its own shipment_number (set back
+    at Inward VI/QC time -- the exact same field
+    material_consumption_service._derive_shipment_number already reads),
+    and each Material Consumption record is attached to exactly one
+    Production Run (MaterialConsumption.production_run_id). Most-recently-
+    consumed match wins, same tie-break convention as the IPQC lookup."""
+    return (
+        db.query(models.ProductionRun)
+        .join(models.MaterialConsumption, models.MaterialConsumption.production_run_id == models.ProductionRun.id)
+        .join(
+            models.MaterialConsumptionPallet,
+            models.MaterialConsumptionPallet.material_consumption_id == models.MaterialConsumption.id,
+        )
+        .join(models.Pallet, models.MaterialConsumptionPallet.pallet_id == models.Pallet.id)
+        .filter(
+            models.MaterialConsumptionPallet.role == "primary",
+            models.Pallet.shipment_number == shipment_number,
+        )
+        .order_by(models.MaterialConsumptionPallet.created_at.desc())
+        .first()
+    )
+
+
 def create_rqc(db: Session, shipment_number: str, manufacturer: str | None = None) -> models.RqcRecord:
     """Manual creation (the "+ New Record" flow) -- the only way an RQC
     record is created; there is no auto-creation from Material Consumption
@@ -213,13 +253,15 @@ def create_rqc(db: Session, shipment_number: str, manufacturer: str | None = Non
     shipment_number is required and must be unique (enforced at the DB
     level by rqc_records_shipment_number_key -- this find-first is a
     friendly pre-check, not the actual guarantee). It is the business key
-    used to identify the linked Production Run / IPQC record, via the
-    already-existing IPQC.shipment_number snapshot (never re-deriving
-    Shipment Number / SKU Code / SKU Version from scratch, and never
-    creating a duplicate Production/IPQC record) -- see
-    find_linked_ipqc_by_shipment_number. No match is not an error: the RQC
-    record still gets created, simply unlinked (Production Run / IPQC UUIDs
-    null) until a matching upstream record exists.
+    used to identify the linked Production Run / IPQC record: first via the
+    already-existing IPQC.shipment_number snapshot (find_linked_ipqc_by_shipment_number),
+    and -- since IPQC is optional -- falling back to the Production Run
+    directly (find_linked_production_run_by_shipment_number) when no IPQC
+    record matches. Never re-derives Shipment Number / SKU Code / SKU
+    Version from scratch, and never creates a duplicate Production/IPQC
+    record. No match at all is not an error: the RQC record still gets
+    created, simply unlinked (Production Run / IPQC UUIDs null) until a
+    matching upstream record exists.
     """
     shipment_number = (shipment_number or "").strip()
     if not shipment_number:
@@ -230,24 +272,36 @@ def create_rqc(db: Session, shipment_number: str, manufacturer: str | None = Non
         raise RqcError(f'Shipment Number "{shipment_number}" already exists.')
 
     ipqc = find_linked_ipqc_by_shipment_number(db, shipment_number)
+    # IPQC is optional -- when there's no IPQC match, fall back one hop
+    # further upstream to the Production Run itself (see
+    # find_linked_production_run_by_shipment_number's docstring). When
+    # ipqc does match, ipqc.production_run is exactly the same run its own
+    # shipment_number snapshot was derived from, so this stays a single
+    # "run" variable either way.
+    run = ipqc.production_run if ipqc else find_linked_production_run_by_shipment_number(db, shipment_number)
+
     # Best-effort default only, for continuity with whatever Production had
     # already recorded (back when it still collected this input) -- not a
     # live link. Once saved here, this record's own fg_pallets_generated is
     # what every downstream reader (FG QR Generation) uses; Production's
     # own total_fg_pallets is never read again after this one seed.
-    default_fg_pallets = (
-        ipqc.production_run.total_fg_pallets
-        if ipqc and ipqc.production_run and ipqc.production_run.total_fg_pallets
-        else None
-    )
+    default_fg_pallets = run.total_fg_pallets if run and run.total_fg_pallets else None
+
     rec = models.RqcRecord(
         shipment_number=shipment_number,
-        production_run_id=ipqc.production_run_id if ipqc else None,
+        production_run_id=run.id if run else None,
         ipqc_record_id=ipqc.id if ipqc else None,
-        sku_code_id=ipqc.sku_code_id if ipqc else None,
-        sku_version_id=ipqc.sku_version_id if ipqc else None,
-        sku_code_snapshot=ipqc.sku_code_snapshot if ipqc else None,
-        sku_version_snapshot=ipqc.sku_version_snapshot if ipqc else None,
+        # IPQC's own snapshot wins when IPQC exists (it's the locked-in
+        # source of truth once filled in); the Production-Run fallback only
+        # kicks in when there's no IPQC record to defer to.
+        sku_code_id=(ipqc.sku_code_id if ipqc else (run.sku_code_id if run else None)),
+        sku_version_id=(ipqc.sku_version_id if ipqc else (run.sku_version_id if run else None)),
+        sku_code_snapshot=(
+            ipqc.sku_code_snapshot if ipqc else (run.sku_code.code if run and run.sku_code else None)
+        ),
+        sku_version_snapshot=(
+            ipqc.sku_version_snapshot if ipqc else (run.sku_version.version if run and run.sku_version else None)
+        ),
         manufacturer=manufacturer or RQC_MANUFACTURER_PLACEHOLDER,
         fg_pallets_generated=default_fg_pallets,
         status="pending",
