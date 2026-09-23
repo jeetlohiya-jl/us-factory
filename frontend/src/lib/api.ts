@@ -228,6 +228,47 @@ async function qrGetDetail(qrType: "rm" | "fg", id: string): Promise<QrGeneratio
   };
 }
 
+/**
+ * Factory Module 4 -- looks up the (at most one, per the partial unique
+ * index on qr_generation_records.source_rqc_record_id, migration 0042) FG
+ * QR batch already auto-generated for this specific RQC activity record,
+ * for the combined RQC + FG QR page to show/print inline right after a save
+ * reaches 'approved'. Returns null (not a thrown 404) when none exists yet
+ * -- unlike qrGetDetail's by-id lookup, "no batch for this record" is an
+ * expected, common state (e.g. status is still draft/hold/pending), not an
+ * error.
+ */
+async function getFgQrBySourceRqcRecordId(rqcRecordId: string): Promise<QrGenerationDetail | null> {
+  const { data, error } = await supabase
+    .from("qr_generation_records")
+    .select(
+      "id,batch_display_id,qr_type,category,shipment_number,sku_code_snapshot,sku_version_snapshot,country_code,quantity,status,created_at,generated_at," +
+        "source_inward_qc_id,source_production_run_id," +
+        `pallets(${PALLET_SELECT})`
+    )
+    .eq("source_rqc_record_id", rqcRecordId)
+    .eq("qr_type", "fg")
+    .maybeSingle();
+  if (error) throw new ApiError(500, error.message);
+  if (!data) return null;
+  const raw = data as unknown as {
+    id: string; batch_display_id: string; qr_type: "rm" | "fg"; category: string | null; shipment_number: string | null;
+    sku_code_snapshot: string | null; sku_version_snapshot: string | null; country_code: string | null; quantity: number;
+    status: "pending" | "generated"; created_at: string; generated_at: string | null;
+    source_inward_qc_id: string | null; source_production_run_id: string | null;
+    pallets: RawPallet[];
+  };
+  return {
+    id: raw.id, batch_display_id: raw.batch_display_id, qr_type: raw.qr_type, category: raw.category,
+    shipment_number: raw.shipment_number, sku_code_snapshot: raw.sku_code_snapshot, sku_version_snapshot: raw.sku_version_snapshot,
+    country_code: raw.country_code, quantity: raw.quantity, status: raw.status, created_at: raw.created_at,
+    generated_at: raw.generated_at, source_locked: !!(raw.source_inward_qc_id || raw.source_production_run_id),
+    source_inward_qc_id: raw.source_inward_qc_id, source_production_run_id: raw.source_production_run_id,
+    source_display_id: null,
+    pallets: (raw.pallets || []).map(flattenPallet),
+  };
+}
+
 async function pendingPalletsQuery(
   palletType: "rm" | "fg",
   params: { search?: string; sku?: string; page?: number }
@@ -1055,15 +1096,27 @@ async function getIpqcSb(id: string): Promise<IpqcDetail> {
 type RawRqcListItem = {
   id: string; shipment_number: string | null; sku_code_snapshot: string | null; sku_version_snapshot: string | null;
   manufacturer: string | null; status: string; created_at: string | null;
+  // Additive (Factory Module 4) -- see RqcListItem's own comment.
+  machine: { code: string } | { code: string }[] | null;
+  shift: string | null; activity_date: string | null; pallets_tested: number | string | null;
+  fg_pallets_generated: number | string | null; table_person_number: string | null;
 };
 
-const RQC_LIST_SELECT = "id,shipment_number,sku_code_snapshot,sku_version_snapshot,manufacturer,status,created_at";
+const RQC_LIST_SELECT =
+  "id,shipment_number,sku_code_snapshot,sku_version_snapshot,manufacturer,status,created_at," +
+  "machine:machines(code),shift,activity_date,pallets_tested,fg_pallets_generated,table_person_number";
 
 function flattenRqcListItem(raw: RawRqcListItem): RqcListItem {
+  const machine = Array.isArray(raw.machine) ? raw.machine[0] ?? null : raw.machine;
   return {
     id: raw.id, shipment_number: raw.shipment_number,
     sku_code: raw.sku_code_snapshot, sku_version: raw.sku_version_snapshot,
     manufacturer: raw.manufacturer, status: raw.status, date: raw.created_at,
+    machine: machine?.code ?? null,
+    activity_shift: raw.shift, activity_date: raw.activity_date,
+    pallets_tested: raw.pallets_tested == null ? null : Number(raw.pallets_tested),
+    fg_pallets_generated: raw.fg_pallets_generated == null ? null : Number(raw.fg_pallets_generated),
+    table_person_number: raw.table_person_number,
   };
 }
 
@@ -2242,6 +2295,13 @@ export const api = {
   listRqc: (params: { search?: string; status?: string; page?: number } = {}) =>
     cachedList(listCacheKey("rqc", params), () => listRqcSb(params)),
   getRqc: (id: string) => getRqcSb(id),
+  // Factory Module 4 -- the combined RQC + FG QR page's own lookup of the FG
+  // QR batch (if any) already auto-generated for one specific RQC activity
+  // record. Not cached via cachedList/listCacheKey (it's a single-record
+  // lookup keyed by RQC record id, not a filtered list), and the "fg-qr"
+  // list cache is still invalidated wherever a save can create/change a
+  // batch (see saveRqc below), so a stale read here is never possible.
+  getFgQrForRqcRecord: (rqcRecordId: string) => getFgQrBySourceRqcRecordId(rqcRecordId),
   createRqc: async (payload: { shipment_number: string; manufacturer?: string | null }) => {
     const res = await request<{ id: string; shipment_number: string; status: string }>("/api/v1/rqc-records", {
       method: "POST",
@@ -2256,6 +2316,11 @@ export const api = {
       body: JSON.stringify(payload),
     });
     invalidateListCache("rqc");
+    // A save that reaches 'approved' triggers this record's own FG QR
+    // Generation server-side (get_or_create_fg_qr_for_rqc_record) -- keep
+    // both the shared FG QR list cache and this page's own list in sync so
+    // the newly-generated batch shows up immediately without a hard reload.
+    invalidateListCache("fg-qr");
     return res;
   },
   // Blocked (409) if any approval entry already has a GENERATED FG QR

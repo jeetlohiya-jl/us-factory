@@ -139,6 +139,37 @@ const FACTORY_NAV_ITEMS = [
       <path d="M3 7h18M3 12h18M3 17h18" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
     ),
   },
+  // Module 3 -- Production (WIP -> Finished Goods). Points at the exact
+  // same /production route/page/table US Factory's own sidebar uses (same
+  // ProductionRun rows, same module_permissions scope) -- no second copy.
+  // Production already auto-populates from Material Consumption (Module 2)
+  // via material_consumption_service.find_or_create_production_run, already
+  // exposes per-machine "Pallets Produced" columns, and already uses the
+  // Machine/Shift master-data dropdowns -- Module 3's stated requirements
+  // are satisfied by this one nav entry, same reuse pattern as Module 2.
+  {
+    href: "/production",
+    label: "Production",
+    icon: (
+      <path d="M4 4h16v4H4zM4 10h10v10H4zM16 10h4v10h-4z" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    ),
+  },
+  // Module 4 -- RQC + FG QR Generation, combined into one module/page (per
+  // the explicit "not two separate pages" requirement). This is a genuinely
+  // new Factory-only page (frontend/src/app/rqc-fg-qr/page.tsx) -- unlike
+  // Modules 2/3 it does not point at the existing /rqc or /fg-qr-generation
+  // US Factory routes, since those are two separate pages with the old
+  // 15-item defect list; it reuses the same rqc_records/qr_generation_records
+  // tables and backend routes underneath (module_permissions scope "rqc"),
+  // just with the QMP05-exact 4-item defect list and Factory-specific COA
+  // labels layered on top -- see FactoryRqcWizard/FactoryCoaEntryPanel.
+  {
+    href: "/rqc-fg-qr",
+    label: "RQC & FG QR",
+    icon: (
+      <path d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    ),
+  },
 ];
 
 const SETUP_NAV_ITEMS = [

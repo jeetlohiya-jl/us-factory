@@ -837,6 +837,41 @@ export const RQC_DEFECT_GROUPS: RqcDefectGroupDef[] = [
   ] },
 ];
 
+// Factory OS Module 4 -- the QMP05 spreadsheet's exact 4-item quality
+// testing list ("QMP05 - CIROVERWRAP PADDED FG V0 05.08.2026.xlsx", Quality
+// Testing sheet), used only by the Factory product's combined RQC + FG QR
+// page (frontend/src/app/rqc-fg-qr/page.tsx). This does NOT replace
+// RQC_DEFECT_GROUPS above -- US Factory's own /rqc page keeps the full
+// 15-item list unchanged. All 4 QMP05 items already exist verbatim in
+// RQC_DEFECT_GROUPS (sr 1, 6, 7, 8), with the exact same classification and
+// AQL accept/reject thresholds the QMP05 Sampling Plan sheet specifies
+// (Critical 14/15, Major 21/22) -- so this is a pure filter, not a
+// reinvented numbering space or a new set of thresholds. Item 3 (Placement
+// Side of the Pad) has no acceptance criteria typed into the QMP05 sheet's
+// own row; it is grouped under "Critical" there, so it uses the Critical
+// group's own 14/15 threshold (the same one Stickiness of the Pad uses) --
+// not invented, derived from the QMP05 Sampling Plan sheet's Critical row.
+export const RQC_DEFECT_GROUPS_QMP05: RqcDefectGroupDef[] = RQC_DEFECT_GROUPS
+  .map((group) => ({ ...group, items: group.items.filter((i) => [1, 6, 7, 8].includes(i.sr)) }))
+  .filter((group) => group.items.length > 0);
+
+// QMP05's own Sampling Plan sheet, transcribed verbatim -- shown as a
+// read-only reference table on the Factory RQC page so the user never has
+// to recreate it by hand. Kept clearly separate from "Number of Pallets"
+// (pallets_tested)/"Approved Pallets" (fg_pallets_generated), which are
+// this specific activity's own counts, not the sampling plan itself.
+export interface RqcSamplingPlanRow {
+  level: string;
+  sampleSize: number;
+  aql: number;
+  acceptReject: string;
+}
+export const RQC_SAMPLING_PLAN: RqcSamplingPlanRow[] = [
+  { level: "Minor | Level 1", sampleSize: 800, aql: 4, acceptReject: "53 | 54" },
+  { level: "Major | Level 2", sampleSize: 800, aql: 1.5, acceptReject: "21 | 22" },
+  { level: "Critical | Level 3", sampleSize: 800, aql: 1, acceptReject: "14 | 15" },
+];
+
 export interface RqcCoaParamDef {
   sr: number;
   param: string;
@@ -878,6 +913,23 @@ export const RQC_COA_PRINTING: RqcCoaParamDef[] = [
   { sr: 5, param: "Special Label", spec: "As per approved artwork" },
 ];
 
+// Factory OS Module 4 -- same Base Material COA group as RQC_COA_BASE
+// above, except sr 3's label follows the QMP05 COA sheet exactly ("Tray
+// Weight with Pad (g)", not "with liner"). Used only by the Factory
+// product's FactoryCoaEntryPanel; US Factory's own CoaEntryPanel keeps
+// RQC_COA_BASE unchanged. The Functional/Packing/Printing groups are
+// identical in QMP05, so those three constants above are reused as-is.
+export const RQC_COA_BASE_FACTORY: RqcCoaParamDef[] = [
+  { sr: 1, param: "Tray Colour", spec: "Natural" },
+  { sr: 2, param: "Tray Dimensions (L x W x H) mm", spec: "As per specs" },
+  { sr: 3, param: "Tray Weight with Pad (g)", spec: "As per specs" },
+  { sr: 4, param: "Pad color", spec: "As per specs" },
+  { sr: 5, param: "Base material of Pad", spec: "As per specs" },
+  { sr: 6, param: "Dimensions of Pad", spec: "As per specs" },
+  { sr: 7, param: "Weight of pad with Base material", spec: "As per specs" },
+  { sr: 8, param: "Absorption Rate", spec: "As per specs" },
+];
+
 export interface RqcListItem {
   id: string;
   shipment_number: string | null;
@@ -886,6 +938,18 @@ export interface RqcListItem {
   manufacturer: string | null;
   status: string;
   date: string | null;
+  // Additive (2026-09-23, Factory Module 4) -- this activity's own Machine/
+  // Shift/Date/Number Tested/Approved Pallets/Table-Person, so the Factory
+  // combined RQC + FG QR list can show them without a second query per row.
+  // US Factory's own /rqc list ignores these; nothing about that page reads
+  // them, so this is a pure addition to the existing type/select, not a
+  // behavior change for it.
+  machine: string | null;
+  activity_shift: string | null;
+  activity_date: string | null;
+  pallets_tested: number | null;
+  fg_pallets_generated: number | null;
+  table_person_number: string | null;
 }
 
 export interface RqcDefectResult {
