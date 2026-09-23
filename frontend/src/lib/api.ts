@@ -1,6 +1,7 @@
 import { getAuthHeader } from "./session";
 import { supabase } from "./supabaseClient";
 import { cachedList, invalidateListCache, listCacheKey } from "./listCache";
+import { getCurrentProduct } from "./currentProduct";
 import type {
   InspectionDetail, InspectionListItem, SkuCode, SkuVersion, ChecklistItemRef, MeResponse, Category, ImageType, LineItem,
   QcMeta, QcListItem, QcDetail, QcManualCategory, QcAttributeDefinition, QcFgtrayCriterion, QcSamplingPlanTier,
@@ -410,6 +411,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers: {
       ...(init?.body && !(init.body instanceof FormData) ? { "Content-Type": "application/json" } : {}),
       Authorization: authHeader,
+      ...(getCurrentProduct() ? { "X-Product": getCurrentProduct() as string } : {}),
       ...(init?.headers || {}),
     },
     cache: "no-store",

@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { getCurrentProduct } from "./currentProduct";
 
 /**
  * Real Supabase Auth client (Google OAuth). Requires NEXT_PUBLIC_SUPABASE_URL
@@ -21,4 +22,16 @@ if (!url || !anonKey) {
   );
 }
 
-export const supabase = createClient(url || "", anonKey || "");
+// Every Supabase request carries which product (Factory / US Factory) it
+// comes from, so RLS / RPC permission checks (app_can, migration 0047) use
+// that product's own permissions.
+function productAwareFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const product = getCurrentProduct();
+  if (!product) return fetch(input, init);
+  const headers = new Headers(input instanceof Request ? input.headers : undefined);
+  new Headers(init?.headers).forEach((v, k) => headers.set(k, v));
+  headers.set("x-product", product);
+  return fetch(input, { ...init, headers });
+}
+
+export const supabase = createClient(url || "", anonKey || "", { global: { fetch: productAwareFetch } });

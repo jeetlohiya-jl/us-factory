@@ -8,7 +8,8 @@ import { createContext, useContext } from "react";
  * the page. Defaults to "us_factory" so any page rendered outside the
  * provider keeps its original, unchanged behavior.
  */
-export type Product = "factory" | "us_factory";
+import type { Product } from "./currentProduct";
+export type { Product };
 
 const ProductContext = createContext<Product>("us_factory");
 

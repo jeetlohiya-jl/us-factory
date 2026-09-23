@@ -4,6 +4,7 @@ from fastapi.staticfiles import StaticFiles
 import os
 
 from app.core.config import get_settings
+from app.api import deps
 from app.api import (
     reference, inward_vehicle_inspections, me, inward_qc,
     rm_qr, rm_storage, fg_qr, fg_storage, production, ipqc, rqc, rqc_coa, locations, vendors, skus,
@@ -14,6 +15,18 @@ from app.api import (
 settings = get_settings()
 
 app = FastAPI(title="Cirkla Factory OS API", version="0.1.0")
+
+@app.middleware("http")
+async def product_context(request, call_next):
+    """Which product (Factory / US Factory) this request comes from -- see
+    deps.current_product. Set before the route runs so every permission
+    check in the request sees it."""
+    token = deps.current_product.set((request.headers.get("x-product") or "").strip().lower())
+    try:
+        return await call_next(request)
+    finally:
+        deps.current_product.reset(token)
+
 
 app.add_middleware(
     CORSMiddleware,

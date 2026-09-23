@@ -1,3 +1,5 @@
+import contextvars
+
 from fastapi import Depends, Header, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -5,6 +7,37 @@ from app.core.config import get_settings
 from app.db.session import get_db
 from app.db import models
 from app.adapters.auth.base import AuthenticatedUser
+
+
+# ---------------------------------------------------------------------------
+# Factory and US Factory are two independent working units with separate
+# permissions. Factory's modules 2-6 reuse US Factory's screens and API
+# routes, so the frontend sends which product the person is in (header
+# X-Product, set by main.py's middleware into current_product), and a
+# permission check for a shared module is answered from its Factory row.
+# Keep in sync with app_effective_module() (migration 0047) and
+# frontend/src/lib/currentProduct.ts.
+# ---------------------------------------------------------------------------
+current_product: contextvars.ContextVar[str] = contextvars.ContextVar("current_product", default="")
+
+FACTORY_PERMISSION_MAP = {
+    "rm_storage": "factory_rm_storage",
+    "rm_qr_generation": "goods_receipt",
+    "material_consumption": "factory_material_consumption",
+    "production": "factory_production",
+    "ipqc": "factory_production",
+    "rqc": "factory_rqc_fg_qr",
+    "fg_qr_generation": "factory_rqc_fg_qr",
+    "fg_storage": "factory_fg_storage",
+    "customer_shipment": "factory_goods_outward",
+    "shipment_picking": "factory_goods_outward",
+}
+
+
+def effective_module(module: str) -> str:
+    if current_product.get() == "factory":
+        return FACTORY_PERMISSION_MAP.get(module, module)
+    return module
 
 
 def get_auth_adapter(db: Session = Depends(get_db)):
@@ -69,6 +102,7 @@ def effective_permission(db: Session, user_id, module: str) -> models.ModulePerm
     mirrored on the RLS side: app_can() (migration 0027) no longer
     short-circuits on is_admin either.
     """
+    module = effective_module(module)
     perm = (
         db.query(models.ModulePermission)
         .filter(models.ModulePermission.user_id == user_id, models.ModulePermission.module == module)

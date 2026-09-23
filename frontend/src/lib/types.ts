@@ -185,6 +185,13 @@ export interface ModulePermissionsMap {
   outward_vehicle_inspection: Permissions;
   machine_downtime: Permissions;
   goods_receipt: Permissions;
+  // Factory's own permission rows (migration 0047) -- see lib/currentProduct.ts.
+  factory_rm_storage: Permissions;
+  factory_material_consumption: Permissions;
+  factory_production: Permissions;
+  factory_rqc_fg_qr: Permissions;
+  factory_fg_storage: Permissions;
+  factory_goods_outward: Permissions;
 }
 
 export interface MeResponse {
@@ -206,6 +213,19 @@ export const USER_MODULES: ModuleKey[] = [
   "rm_qr_generation", "rm_storage", "material_consumption", "production", "ipqc", "rqc", "fg_qr_generation", "fg_storage",
   "customer_shipment", "shipment_picking", "outward_vehicle_inspection", "machine_downtime",
   "goods_receipt",
+  "factory_rm_storage", "factory_material_consumption", "factory_production",
+  "factory_rqc_fg_qr", "factory_fg_storage", "factory_goods_outward",
+];
+
+// Setup -> Users groups the permission matrix by product.
+export const US_FACTORY_MODULES: ModuleKey[] = [
+  "inward_vehicle_inspection", "inward_qc",
+  "rm_qr_generation", "rm_storage", "material_consumption", "production", "ipqc", "rqc", "fg_qr_generation", "fg_storage",
+  "customer_shipment", "shipment_picking", "outward_vehicle_inspection", "machine_downtime",
+];
+export const FACTORY_MODULES: ModuleKey[] = [
+  "goods_receipt", "factory_rm_storage", "factory_material_consumption", "factory_production",
+  "factory_rqc_fg_qr", "factory_fg_storage", "factory_goods_outward",
 ];
 
 export interface AppUser {

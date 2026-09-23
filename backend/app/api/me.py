@@ -13,6 +13,9 @@ MODULES = [
     "rm_qr_generation", "rm_storage", "material_consumption", "production", "ipqc", "rqc", "fg_qr_generation", "fg_storage",
     "customer_shipment", "shipment_picking", "outward_vehicle_inspection", "machine_downtime",
     "goods_receipt",
+    # Factory's own permission rows (migration 0047).
+    "factory_rm_storage", "factory_material_consumption", "factory_production",
+    "factory_rqc_fg_qr", "factory_fg_storage", "factory_goods_outward",
 ]
 
 

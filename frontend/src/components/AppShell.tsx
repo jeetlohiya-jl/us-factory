@@ -9,6 +9,7 @@ import { useMe } from "@/lib/useMe";
 import { api, ApiError } from "@/lib/api";
 import type { PortfolioAccessMe } from "@/lib/types";
 import { ProductProvider } from "@/lib/productContext";
+import { setCurrentProduct } from "@/lib/currentProduct";
 
 /**
  * Shell matching the approved prototype's sidebar visual language (brand
@@ -467,6 +468,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   const isFactory = chosenProduct === "factory";
+  // Set synchronously during render (not in an effect) so it's already in
+  // place when the children's own first data fetches run.
+  setCurrentProduct(chosenProduct);
   const activeNavItems = isFactory ? FACTORY_NAV_ITEMS : NAV_ITEMS;
 
   return (
