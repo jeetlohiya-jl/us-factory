@@ -137,61 +137,6 @@ def get_or_create_rm_qr_for_qc(db: Session, qc: models.InwardQcRecord) -> models
     return rec
 
 
-def get_or_create_rm_qr_for_goods_receipt_entry(
-    db: Session, entry: models.GoodsReceiptEntry, actor_user_id=None,
-) -> models.QrGenerationRecord:
-    """
-    Factory Module 1 -- the Goods Receipt equivalent of
-    get_or_create_rm_qr_for_qc: called the moment ONE container/SKU entry is
-    inwarded. Idempotent per entry (find-first here, partial unique index
-    uq_qr_source_goods_receipt_entry as the hard backstop), so a retried or
-    double-clicked Inward never creates a second batch.
-
-    Same RM QR design as every other RM batch -- RMQR-#### batch number,
-    <country>-<suffix>-<yymm>-<seq> pallets from the same shared counters
-    (pallet_service), the vendor's country as the pallet prefix, "US" when
-    unknown. quantity = the entry's own received pallet count, never the
-    PO's ordered quantity.
-    """
-    existing = (
-        db.query(models.QrGenerationRecord)
-        .filter(models.QrGenerationRecord.source_goods_receipt_entry_id == entry.id)
-        .first()
-    )
-    if existing:
-        return existing
-
-    gr = entry.goods_receipt
-    country_code = (gr.vendor.country if gr.vendor and gr.vendor.country else "US").strip().upper()
-    rec = models.QrGenerationRecord(
-        batch_display_id=pallet_service.next_batch_display_id(db, "rm"),
-        qr_type="rm",
-        # Pallet category comes from the SKU master data, so these pallets
-        # pass the same category checks every other RM pallet does
-        # downstream (Material Consumption's primary-tray check, pallet
-        # number suffix PLT/PAD/...).
-        category=entry.sku_code.category if entry.sku_code else None,
-        source_goods_receipt_entry_id=entry.id,
-        # The PO's container (HA1, V6, ...) IS the shipment number the
-        # business uses downstream -- Material Consumption auto-fills its
-        # Shipment Number from the pallet, and Production / IPQC / RQC /
-        # FG QR key on it from there. The PO itself stays reachable via
-        # source_goods_receipt_entry_id -> goods_receipts.po_number.
-        shipment_number=entry.container_name,
-        sku_code_id=entry.sku_code_id,
-        sku_version_id=entry.sku_version_id,
-        sku_code_snapshot=entry.sku_code_snapshot,
-        sku_version_snapshot=entry.sku_version_snapshot,
-        country_code=country_code,
-        quantity=int(entry.pallet_count or 0),
-        status="pending",
-        created_by=actor_user_id,
-    )
-    db.add(rec)
-    db.flush()
-    return rec
-
-
 def _derive_run_shipment_number(run: models.ProductionRun) -> str | None:
     """A Production Run's own shipment_number column is only ever populated
     by the dev/test-only direct-create endpoint -- a run spawned from

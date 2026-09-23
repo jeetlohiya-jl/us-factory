@@ -40,7 +40,7 @@ def serialize_qr_detail(rec: models.QrGenerationRecord) -> schemas.QrGenerationD
         source_display_id = rec.source_production_run.run_number
     elif rec.source_goods_receipt_entry_id and rec.source_goods_receipt_entry:
         e = rec.source_goods_receipt_entry
-        source_display_id = f"{e.goods_receipt.po_number} / {e.container_name}" if e.goods_receipt else e.container_name
+        source_display_id = f"{e.goods_receipt.po_number} / {e.shipment_number}" if e.goods_receipt else e.shipment_number
     return schemas.QrGenerationDetailOut(
         id=rec.id, batch_display_id=rec.batch_display_id, qr_type=rec.qr_type, category=rec.category,
         shipment_number=rec.shipment_number, sku_code_snapshot=rec.sku_code_snapshot,
