@@ -5,7 +5,7 @@ import { getCurrentProduct } from "./currentProduct";
 import type {
   InspectionDetail, InspectionListItem, SkuCode, SkuVersion, ChecklistItemRef, MeResponse, Category, ImageType, LineItem,
   QcMeta, QcListItem, QcDetail, QcManualCategory, QcAttributeDefinition, QcFgtrayCriterion, QcSamplingPlanTier,
-  Pallet, QrGenerationListItem, QrGenerationDetail, StorageRecordDetail, LocationRef, ProductionRun,
+  Pallet, QrGenerationListItem, QrGenerationDetail, StorageRecordDetail, LocationRef, LocationAdmin, ProductionRun,
   Vendor, Machine, MaterialConsumptionListItem, MaterialConsumptionDetail, SecondaryMaterialCategory,
   MaterialConsumptionPalletRow, ProductionListItem, ProductionDetail, ProductionMachineEntry, ProductionSavePayload,
   IpqcListItem, IpqcDetail, IpqcSavePayload,
@@ -2390,6 +2390,33 @@ export const api = {
       () => supabase.from("machines").delete().eq("id", id),
       { fk: "This machine is referenced by an existing Material Consumption or Production record and cannot be deleted. Deactivate it instead." }
     ).then(() => invalidateListCache("ref:machines")),
+
+  // -- Setup -> Locations (migration 0048). Same pattern as machines: plain
+  // master-data CRUD straight to Supabase; RLS confines it to the current
+  // unit and stamps new rows with it. The QR payload is the same JSON the
+  // storage scanners already read ({"t":"location","id":...,"zone":...}).
+  locationsAdmin: (includeInactive = false) =>
+    cachedList(
+      listCacheKey("ref:locations", { includeInactive }),
+      () =>
+        sbRequest<LocationAdmin[]>(() => {
+          let q = supabase.from("locations").select("id, display_id, zone, is_active, qr_url:qr_public_url, qr_payload");
+          if (!includeInactive) q = q.eq("is_active", true);
+          return q.order("display_id") as unknown as Promise<{ data: LocationAdmin[] | null; error: { message: string; code?: string } | null }>;
+        }),
+      REFERENCE_STALE_MS
+    ),
+  createLocation: (displayId: string, zone: string) =>
+    sbVoid(
+      () => supabase.from("locations").insert({
+        display_id: displayId, zone, is_active: true,
+        qr_payload: JSON.stringify({ t: "location", id: displayId, zone }),
+      }),
+      { conflict: `"${displayId}" already exists.`, denied: "You need RM Storage edit permission to add locations." }
+    ).then(() => invalidateListCache("ref:locations")),
+  updateLocation: (id: string, patch: { is_active?: boolean }) =>
+    sbVoid(() => supabase.from("locations").update(patch).eq("id", id))
+      .then(() => invalidateListCache("ref:locations")),
 
   // -- Material Consumption -------------------------------------------------
   // list/detail go direct to Supabase (Phase 2); every draft/scan/finalize

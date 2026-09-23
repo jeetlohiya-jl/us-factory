@@ -485,6 +485,16 @@ export interface LocationRef {
   qr_url: string | null;
 }
 
+/** Setup -> Locations row (migration 0048: per unit). */
+export interface LocationAdmin {
+  id: string;
+  display_id: string;
+  zone: string;
+  is_active: boolean;
+  qr_url: string | null;
+  qr_payload: string | null;
+}
+
 export interface ProductionRun {
   id: string;
   run_number: string;

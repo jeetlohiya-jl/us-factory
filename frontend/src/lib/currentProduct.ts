@@ -27,6 +27,9 @@ export function getCurrentProduct(): Product | null {
  * app_effective_module() (migration 0047) and FACTORY_PERMISSION_MAP in
  * backend/app/api/deps.py. */
 export const FACTORY_PERMISSION_MAP: Partial<Record<ModuleKey, ModuleKey>> = {
+  // Setup -> Vendors / SKU Names are gated on this in US Factory; in
+  // Factory they serve Goods Receipt (RLS mirrors it, migration 0048).
+  inward_vehicle_inspection: "goods_receipt",
   rm_storage: "factory_rm_storage",
   rm_qr_generation: "goods_receipt",
   material_consumption: "factory_material_consumption",

@@ -248,6 +248,13 @@ const SETUP_NAV_ITEMS = [
     ),
   },
   {
+    href: "/locations",
+    label: "Locations",
+    icon: (
+      <path d="M12 21s-7-6.2-7-11.5A7 7 0 0112 2.5a7 7 0 017 7C19 14.8 12 21 12 21zM12 12a2.5 2.5 0 100-5 2.5 2.5 0 000 5z" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    ),
+  },
+  {
     href: "/machines",
     label: "Machines",
     icon: (

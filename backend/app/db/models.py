@@ -8,10 +8,20 @@ from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 
 from app.db.session import Base
+from app.core.product import current_unit
 
 
 def gen_uuid():
     return uuid.uuid4()
+
+
+
+class ProductScoped:
+    """Marker for tables that belong to one working unit (Factory or US
+    Factory). `product` defaults to the unit of the request creating the row,
+    and every ORM query only sees the current unit's rows -- see
+    app/db/product_scope.py and migration 0048."""
+    product = Column(Text, nullable=False, default=current_unit)
 
 
 class AppUser(Base):
@@ -71,7 +81,7 @@ class DisplayIdCounter(Base):
     next_value = Column(Integer, nullable=False, default=1)
 
 
-class SkuCode(Base):
+class SkuCode(ProductScoped, Base):
     __tablename__ = "sku_codes"
     id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
     code = Column(Text, nullable=False, unique=True)
@@ -132,7 +142,7 @@ class SkuVersion(Base):
     __table_args__ = (UniqueConstraint("sku_code_id", "version"),)
 
 
-class Vendor(Base):
+class Vendor(ProductScoped, Base):
     """Vendor master data for the Inward Vehicle Inspection "Vendor Name"
     field, scoped per category (tray/pad/polybag/cfb/glue) since a vendor
     that supplies Padding material may be irrelevant to Glue, etc. Managed
@@ -152,7 +162,7 @@ class Vendor(Base):
     __table_args__ = (UniqueConstraint("category", "name"),)
 
 
-class Machine(Base):
+class Machine(ProductScoped, Base):
     """Machine master data for Material Consumption / Production, following
     the exact same admin-managed-list pattern as Vendor (see Vendor above)
     rather than the prototype's hardcoded MACHINES array duplicated in
@@ -394,7 +404,7 @@ class InwardQcLineItemSnapshot(Base):
     sku_version = relationship("SkuVersion")
 
 
-class ProductionRun(Base):
+class ProductionRun(ProductScoped, Base):
     """
     Minimal Production Run entity — added strictly to give FG QR Generation a
     real upstream source relationship, mirroring the prototype's PROD_RECORDS
@@ -488,7 +498,7 @@ class ProductionWastageEntry(Base):
     machine = relationship("Machine")
 
 
-class IpqcRecord(Base):
+class IpqcRecord(ProductScoped, Base):
     """
     IPQC (In-Process Quality Control) -- auto-created (never duplicated) the
     moment its Production Run's first Material Consumption record is
@@ -588,7 +598,7 @@ class IpqcBlockDefect(Base):
     __table_args__ = (UniqueConstraint("block_id", "defect_sr"),)
 
 
-class RqcRecord(Base):
+class RqcRecord(ProductScoped, Base):
     """
     RQC (Final Quality Control) -- created MANUALLY only, via "+ New Record"
     (see app/api/rqc.py's POST route / rqc_service.create_rqc). Shipment
@@ -867,7 +877,7 @@ class RqcCoaObservation(Base):
     )
 
 
-class Location(Base):
+class Location(ProductScoped, Base):
     __tablename__ = "locations"
     id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
     display_id = Column(Text, nullable=False, unique=True)
@@ -879,7 +889,7 @@ class Location(Base):
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
 
-class QrGenerationRecord(Base):
+class QrGenerationRecord(ProductScoped, Base):
     __tablename__ = "qr_generation_records"
     id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
     batch_display_id = Column(Text, nullable=False, unique=True)
@@ -940,7 +950,7 @@ class QrGenerationRecord(Base):
     pallets = relationship("Pallet", back_populates="source_qr_generation", order_by="Pallet.created_at")
 
 
-class Pallet(Base):
+class Pallet(ProductScoped, Base):
     __tablename__ = "pallets"
     id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
     display_id = Column(Text, nullable=False, unique=True)
@@ -999,7 +1009,7 @@ class PalletLifecycleEvent(Base):
     pallet = relationship("Pallet", back_populates="lifecycle_events")
 
 
-class StorageRecord(Base):
+class StorageRecord(ProductScoped, Base):
     __tablename__ = "storage_records"
     id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
     storage_type = Column(Text, nullable=False)  # 'rm' | 'fg'
@@ -1020,7 +1030,7 @@ class StorageRecord(Base):
     stored_by_user = relationship("AppUser")
 
 
-class MaterialConsumption(Base):
+class MaterialConsumption(ProductScoped, Base):
     """
     One record = one Shift, spanning one or more MACHINES -- each machine
     tracked as its own MaterialConsumptionMachineEntry (own pallet set, own
@@ -1185,7 +1195,7 @@ class MaterialConsumptionPallet(Base):
     pallet = relationship("Pallet")
 
 
-class CustomerShipment(Base):
+class CustomerShipment(ProductScoped, Base):
     """
     Customer Shipment -- the downstream workflow after FG Storage:
       FG Storage -> Customer Shipment -> Shipment Picking
@@ -1234,7 +1244,7 @@ class CustomerShipmentLineItem(Base):
     sku_version = relationship("SkuVersion")
 
 
-class ShipmentPickingRequest(Base):
+class ShipmentPickingRequest(ProductScoped, Base):
     """
     One per CustomerShipmentLineItem (unique constraint on
     customer_shipment_line_item_id backstops this -- never one generic
@@ -1437,7 +1447,7 @@ class HoldReleaseRecord(Base):
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
-class GoodsReceipt(Base):
+class GoodsReceipt(ProductScoped, Base):
     """Factory OS Module 1 -- one Goods Receipt per PO (migrations 0045/0046).
     Every write is a Supabase RPC (goods_receipt_save / _inward / _delete /
     _generate_pallets); `status` is maintained there: draft | pending |

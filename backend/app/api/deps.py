@@ -18,9 +18,10 @@ from app.adapters.auth.base import AuthenticatedUser
 # Keep in sync with app_effective_module() (migration 0047) and
 # frontend/src/lib/currentProduct.ts.
 # ---------------------------------------------------------------------------
-current_product: contextvars.ContextVar[str] = contextvars.ContextVar("current_product", default="")
+from app.core.product import current_product  # noqa: E402  (single shared definition)
 
 FACTORY_PERMISSION_MAP = {
+    "inward_vehicle_inspection": "goods_receipt",  # Setup -> Vendors / SKU Names
     "rm_storage": "factory_rm_storage",
     "rm_qr_generation": "goods_receipt",
     "material_consumption": "factory_material_consumption",

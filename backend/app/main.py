@@ -5,6 +5,7 @@ import os
 
 from app.core.config import get_settings
 from app.api import deps
+from app.db import product_scope  # noqa: F401  (registers the per-unit query scoping)
 from app.api import (
     reference, inward_vehicle_inspections, me, inward_qc,
     rm_qr, rm_storage, fg_qr, fg_storage, production, ipqc, rqc, rqc_coa, locations, vendors, skus,
@@ -26,6 +27,12 @@ async def product_context(request, call_next):
         return await call_next(request)
     finally:
         deps.current_product.reset(token)
+
+
+@app.exception_handler(product_scope.CrossUnitReference)
+async def _cross_unit_reference(request, exc):
+    from fastapi.responses import JSONResponse
+    return JSONResponse(status_code=422, content={"detail": exc.message})
 
 
 app.add_middleware(
