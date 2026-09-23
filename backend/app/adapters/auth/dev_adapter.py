@@ -20,13 +20,23 @@ class DevAuthAdapter(AuthPort):
     def __init__(self, db: Session):
         self.db = db
 
-    def resolve_user(self, authorization_header: str | None) -> AuthenticatedUser | None:
+    def _extract_email(self, authorization_header: str | None) -> str | None:
         if not authorization_header or not authorization_header.startswith("Bearer "):
             return None
         token = authorization_header[len("Bearer "):].strip()
         if not token.startswith("dev:"):
             return None
-        email = token[len("dev:"):]
+        return token[len("dev:"):]
+
+    def resolve_email(self, authorization_header: str | None) -> str | None:
+        # The dev token literally carries the email already -- no app_users
+        # row required, matching SupabaseAuthAdapter.resolve_email's contract.
+        return self._extract_email(authorization_header)
+
+    def resolve_user(self, authorization_header: str | None) -> AuthenticatedUser | None:
+        email = self._extract_email(authorization_header)
+        if not email:
+            return None
         user = self.db.query(models.AppUser).filter(models.AppUser.email == email, models.AppUser.is_active.is_(True)).first()
         if not user:
             return None

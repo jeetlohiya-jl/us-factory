@@ -1005,3 +1005,35 @@ class HoldReleaseOut(BaseModel):
     done_by: Optional[str] = None
     approved_by: Optional[str] = None
     status: str
+
+
+# ---------------------------------------------------------------------------
+# Portfolio Access (post-login "Factory" / "US Factory" picker, admin-managed)
+# ---------------------------------------------------------------------------
+
+class PortfolioAccessMeOut(BaseModel):
+    """What GET /api/v1/portfolio-access/me returns for the signed-in
+    email -- just the two flags the picker needs to decide whether to show
+    itself, skip straight into one product, or show a no-access message."""
+    access_factory: bool
+    access_us_factory: bool
+
+
+class PortfolioAccessOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    email: str
+    access_factory: bool
+    access_us_factory: bool
+    created_at: str
+
+
+class PortfolioAccessIn(BaseModel):
+    email: str
+    access_factory: bool = False
+    access_us_factory: bool = False
+
+
+class PortfolioAccessUpdateIn(BaseModel):
+    access_factory: Optional[bool] = None
+    access_us_factory: Optional[bool] = None

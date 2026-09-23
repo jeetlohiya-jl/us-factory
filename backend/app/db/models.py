@@ -44,6 +44,23 @@ class ModulePermission(Base):
     __table_args__ = (UniqueConstraint("user_id", "module"),)
 
 
+class PortfolioAccess(Base):
+    """Portfolio-level access gate (migration 0043) -- which top-level
+    product(s) ("factory" / "us_factory") a signed-in email may open, shown
+    as the post-login picker. Keyed by email, not app_users.id, on purpose:
+    an email with only Factory access may never get an app_users row in
+    this database at all (this database only runs the US Factory app), so
+    this can't be another boolean column on app_users. See
+    app/api/portfolio_access.py."""
+    __tablename__ = "portfolio_access"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    email = Column(Text, nullable=False, unique=True)
+    access_factory = Column(Boolean, nullable=False, default=False)
+    access_us_factory = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class DisplayIdCounter(Base):
     """Backing store for app.domain.id_counters.next_seq -- one row per
     distinct sequence this app hands out (see that module's docstring for
