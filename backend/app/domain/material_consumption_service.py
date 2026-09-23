@@ -137,6 +137,29 @@ def set_machine_entry_machine(db: Session, mc: models.MaterialConsumption, entry
     db.flush()
 
 
+def _first_primary_shipment_number(mc: models.MaterialConsumption, exclude_row_id=None) -> str | None:
+    for row in sorted(_all_pallets(mc), key=lambda r: (r.machine_entry.sort_order, r.sort_order)):
+        if row.id != exclude_row_id and row.role == "primary" and row.pallet and row.pallet.shipment_number:
+            return row.pallet.shipment_number
+    return None
+
+
+def _sync_ipqc_shipment_number(db: Session, mc: models.MaterialConsumption, old: str | None, new: str | None) -> None:
+    """Keep the auto-created IPQC in step while it's still being filled in.
+    Only touches an IPQC whose shipment number was blank or came from this
+    record (a run spans every MC record on the same date+shift), and never
+    one already on Hold/Approved."""
+    if not mc.production_run_id or old == new:
+        return
+    ipqc = (
+        db.query(models.IpqcRecord)
+        .filter(models.IpqcRecord.production_run_id == mc.production_run_id)
+        .first()
+    )
+    if ipqc and ipqc.status in ("pending", "draft") and (ipqc.shipment_number is None or ipqc.shipment_number == old):
+        ipqc.shipment_number = new
+
+
 def add_primary_pallet(
     db: Session, mc: models.MaterialConsumption, entry: models.MaterialConsumptionMachineEntry,
     raw_scan: str, client_time: str | None = None, actor_user_id=None,
@@ -163,6 +186,15 @@ def add_primary_pallet(
             "Use the matching Secondary Material section instead."
         )
     _assert_pallet_available(pallet)
+
+    # Shipment Number is never typed in -- it comes from the RM pallet
+    # itself (the Goods Receipt container / Inward shipment the pallet was
+    # received on). Set it BEFORE the Production Run / IPQC find-or-create
+    # below, so the IPQC created by this very first scan already carries
+    # it (RQC later matches IPQC by Shipment Number).
+    if not mc.shipment_number and pallet.shipment_number:
+        mc.shipment_number = pallet.shipment_number
+        _sync_ipqc_shipment_number(db, mc, None, mc.shipment_number)
     already_scanned = {p.pallet_id for p in _all_pallets(mc) if p.role == "primary"}
     if pallet.id in already_scanned:
         raise MaterialConsumptionError(f"Pallet {pallet.display_id} has already been scanned into this record.")
@@ -273,6 +305,12 @@ def remove_pallet(db: Session, mc: models.MaterialConsumption, row_id) -> None:
         raise MaterialConsumptionError("Pallet not found on this record.")
     entry = row.machine_entry
     was_primary = row.role == "primary"
+    if was_primary:
+        # Re-derive from what's still scanned, so removing a wrongly
+        # scanned pallet doesn't leave its shipment number behind.
+        old_shipment = mc.shipment_number
+        mc.shipment_number = _first_primary_shipment_number(mc, exclude_row_id=row.id)
+        _sync_ipqc_shipment_number(db, mc, old_shipment, mc.shipment_number)
     db.delete(row)
     db.flush()
     # If the removed pallet was the last primary pallet on this machine
@@ -481,19 +519,11 @@ IPQC_MANUFACTURER_PLACEHOLDER = "Cirkla Manufacturing (placeholder)"
 
 
 def _derive_shipment_number(mc: models.MaterialConsumption) -> str | None:
-    """As of migration 0044, the operator enters Shipment Number themselves
-    on Page 1 (alongside Shift), before any pallet is even scanned -- that
-    value (mc.shipment_number) always wins when present. Falls back to the
-    older behaviour (mirrors the frontend's deriveShipmentNumber in api.ts:
-    the first primary pallet's own shipment_number snapshot, walked in
-    machine/pallet sort order) for any record left blank, so older/incoming
-    records without an explicit entry don't regress."""
-    if mc.shipment_number:
-        return mc.shipment_number
-    for row in sorted(_all_pallets(mc), key=lambda r: (r.machine_entry.sort_order, r.sort_order)):
-        if row.role == "primary" and row.pallet and row.pallet.shipment_number:
-            return row.pallet.shipment_number
-    return None
+    """mc.shipment_number is auto-filled from the first scanned primary RM
+    pallet (see add_primary_pallet / remove_pallet) -- no longer typed in on
+    Page 1. The pallet walk below is the fallback for any older record
+    saved before that, so they don't regress."""
+    return mc.shipment_number or _first_primary_shipment_number(mc)
 
 
 def find_or_create_ipqc(db: Session, run: models.ProductionRun, mc: models.MaterialConsumption) -> models.IpqcRecord:

@@ -172,10 +172,12 @@ def get_or_create_rm_qr_for_goods_receipt_entry(
         # number suffix PLT/PAD/...).
         category=entry.sku_code.category if entry.sku_code else None,
         source_goods_receipt_entry_id=entry.id,
-        # The PO Number is the business-level shipment reference every
-        # downstream stage (Material Consumption, Production, traceability)
-        # already keys on; the container-level precision lives in the FK.
-        shipment_number=gr.po_number,
+        # The PO's container (HA1, V6, ...) IS the shipment number the
+        # business uses downstream -- Material Consumption auto-fills its
+        # Shipment Number from the pallet, and Production / IPQC / RQC /
+        # FG QR key on it from there. The PO itself stays reachable via
+        # source_goods_receipt_entry_id -> goods_receipts.po_number.
+        shipment_number=entry.container_name,
         sku_code_id=entry.sku_code_id,
         sku_version_id=entry.sku_version_id,
         sku_code_snapshot=entry.sku_code_snapshot,

@@ -334,7 +334,7 @@ export default function MaterialConsumptionWizard({
   const allEntriesReady = detail.machine_entries.length > 0 && detail.machine_entries.every(
     (e) => e.machine_id && e.pallets.length > 0 && e.start_time && e.end_time,
   );
-  const canProceedToPage2 = !!detail.shift && !!detail.shipment_number && detail.machine_entries.length > 0 && detail.machine_entries.every((e) => e.machine_id);
+  const canProceedToPage2 = !!detail.shift && detail.machine_entries.length > 0 && detail.machine_entries.every((e) => e.machine_id);
 
   async function handlePrimaryScan(entryId: string, payload: string, quantity: string, unit: QuantityUnit, fullyConsumed: boolean) {
     setBusy(true);
@@ -407,27 +407,6 @@ export default function MaterialConsumptionWizard({
     } catch (e) {
       setDetail(previous);
       setError(e instanceof Error ? e.message : "Failed to save");
-    }
-  }
-
-  // Shipment Number: entered up front here, alongside Shift, rather than
-  // only ever derived later from a scanned pallet's own shipment_number
-  // (that derivation still runs server-side as a fallback for older/blank
-  // records -- see material_consumption_service._derive_shipment_number).
-  // Local-only state while typing (no optimistic round-trip per keystroke);
-  // saved on blur, same debounce-by-blur pattern as free-text fields
-  // elsewhere in this app.
-  const [shipmentNumberDraft, setShipmentNumberDraft] = useState(detail.shipment_number || "");
-  async function handleShipmentNumberBlur() {
-    const value = shipmentNumberDraft.trim();
-    if (value === (detail.shipment_number || "")) return;
-    try {
-      const updated = await api.updateMaterialConsumptionBasic(mcId, { shipment_number: value });
-      setDetail(updated);
-      setShipmentNumberDraft(updated.shipment_number || "");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to save");
-      setShipmentNumberDraft(detail.shipment_number || "");
     }
   }
 
@@ -541,6 +520,7 @@ export default function MaterialConsumptionWizard({
               {/* Operator: never an input -- always whoever's own logged-in
                   session created this record (created_by, stamped server-side
                   at creation time), surfaced here read-only. */}
+              {detail.shipment_number && <> · Shipment {detail.shipment_number}</>}
               {detail.operator && <> · Operator: {detail.operator}</>}
             </div>
           </div>
@@ -560,16 +540,13 @@ export default function MaterialConsumptionWizard({
                     {shifts.map((s) => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>
+                {/* Shipment Number is never typed in: it's filled automatically
+                    from the first scanned RM pallet (the Goods Receipt
+                    container / inward shipment it was received on) --
+                    material_consumption_service.add_primary_pallet. */}
                 <div className="field">
                   <label>Shipment Number</label>
-                  <input
-                    type="text"
-                    disabled={!canEdit}
-                    placeholder="Enter shipment number"
-                    value={shipmentNumberDraft}
-                    onChange={(e) => setShipmentNumberDraft(e.target.value)}
-                    onBlur={handleShipmentNumberBlur}
-                  />
+                  <div className="readonly-val mono">{detail.shipment_number || "Auto-filled from the first scanned RM pallet"}</div>
                 </div>
               </div>
 
