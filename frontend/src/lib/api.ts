@@ -157,7 +157,7 @@ function applyIviFilters(q: PgQuery, params: { search?: string; status?: string;
 }
 
 const PALLET_SELECT =
-  "id,display_id,pallet_type,category,sku_code:sku_code_snapshot,sku_version:sku_version_snapshot,shipment_number,lifecycle_status,qr_url:qr_public_url," +
+  "id,display_id,pallet_type,category,sku_code:sku_code_snapshot,sku_version:sku_version_snapshot,shipment_number,lifecycle_status,qr_url:qr_public_url,qr_payload," +
   "current_location:locations(display_id),storage_record:storage_records(id)";
 
 type RawPallet = {
@@ -173,7 +173,7 @@ function flattenPallet(raw: RawPallet): Pallet {
   return {
     id: raw.id, display_id: raw.display_id, pallet_type: raw.pallet_type, category: raw.category,
     sku_code: raw.sku_code, sku_version: raw.sku_version, shipment_number: raw.shipment_number,
-    lifecycle_status: raw.lifecycle_status, qr_url: raw.qr_url,
+    lifecycle_status: raw.lifecycle_status, qr_url: raw.qr_url, qr_payload: raw.qr_payload ?? null,
     location_display_id: raw.current_location?.display_id ?? null,
     storage_id: storage?.id ?? null,
   };
@@ -205,7 +205,7 @@ async function qrGetDetail(qrType: "rm" | "fg", id: string): Promise<QrGeneratio
       "id,batch_display_id,qr_type,category,shipment_number,sku_code_snapshot,sku_version_snapshot,country_code,quantity,status,created_at,generated_at," +
         "source_inward_qc_id,source_production_run_id,source_goods_receipt_entry_id," +
         "source_inward_qc:inward_qc_records(shipment_number),source_production_run:production_runs(run_number)," +
-        "source_goods_receipt_entry:goods_receipt_entries!qr_generation_records_source_goods_receipt_entry_id_fkey(container_name,goods_receipt:goods_receipts(po_number))," +
+        "source_goods_receipt_entry:goods_receipt_entries!qr_generation_records_source_goods_receipt_entry_id_fkey(shipment_number,goods_receipt:goods_receipts(po_number))," +
         `pallets(${PALLET_SELECT})`
     )
     .eq("id", id)
@@ -218,7 +218,7 @@ async function qrGetDetail(qrType: "rm" | "fg", id: string): Promise<QrGeneratio
     status: "pending" | "generated"; created_at: string; generated_at: string | null;
     source_inward_qc_id: string | null; source_production_run_id: string | null; source_goods_receipt_entry_id: string | null;
     source_inward_qc: { shipment_number: string } | null; source_production_run: { run_number: string } | null;
-    source_goods_receipt_entry: { container_name: string; goods_receipt: { po_number: string } | null } | null;
+    source_goods_receipt_entry: { shipment_number: string; goods_receipt: { po_number: string } | null } | null;
     pallets: RawPallet[];
   };
   const grEntry = raw.source_goods_receipt_entry;
@@ -232,7 +232,7 @@ async function qrGetDetail(qrType: "rm" | "fg", id: string): Promise<QrGeneratio
     source_goods_receipt_entry_id: raw.source_goods_receipt_entry_id,
     source_display_id:
       raw.source_inward_qc?.shipment_number ?? raw.source_production_run?.run_number ??
-      (grEntry ? `${grEntry.goods_receipt?.po_number ?? ""} / ${grEntry.container_name}` : null),
+      (grEntry ? `${grEntry.goods_receipt?.po_number ?? ""} / ${grEntry.shipment_number}` : null),
     pallets: (raw.pallets || []).map(flattenPallet),
   };
 }
@@ -310,7 +310,7 @@ const STORAGE_RECORD_SELECT =
   "location:locations(display_id)," +
   "source_qr_generation:qr_generation_records(batch_display_id)," +
   "source_inward_qc_id,source_production_run_id," +
-  "source_goods_receipt_entry:goods_receipt_entries!storage_records_source_goods_receipt_entry_id_fkey(container_name,goods_receipt:goods_receipts(po_number,vendor_name))," +
+  "source_goods_receipt_entry:goods_receipt_entries!storage_records_source_goods_receipt_entry_id_fkey(goods_receipt:goods_receipts(po_number,vendor_name))," +
   "stored_by_user:app_users!storage_records_stored_by_fkey(full_name)";
 
 type RawStorageRecord = {
@@ -319,7 +319,7 @@ type RawStorageRecord = {
   location: { display_id: string } | null;
   source_qr_generation: { batch_display_id: string } | null;
   source_inward_qc_id: string | null; source_production_run_id: string | null;
-  source_goods_receipt_entry: { container_name: string; goods_receipt: { po_number: string; vendor_name: string } | null } | null;
+  source_goods_receipt_entry: { goods_receipt: { po_number: string; vendor_name: string } | null } | null;
   stored_by_user: { full_name: string } | null;
 };
 
@@ -337,7 +337,6 @@ function flattenStorageRecord(raw: RawStorageRecord): StorageRecordDetail {
     pallet_status: (raw.pallet?.lifecycle_status ?? "generated") as StorageRecordDetail["pallet_status"],
     batch_code: raw.pallet?.batch_code ?? null,
     goods_receipt_po_number: raw.source_goods_receipt_entry?.goods_receipt?.po_number ?? null,
-    goods_receipt_container_name: raw.source_goods_receipt_entry?.container_name ?? null,
     goods_receipt_vendor_name: raw.source_goods_receipt_entry?.goods_receipt?.vendor_name ?? null,
   };
 }
@@ -1860,12 +1859,12 @@ async function qcMetaSb(): Promise<QcMeta> {
 // path to goods_receipt_entries once pallets/storage_records are counted,
 // so the hint keeps PostgREST from ever guessing).
 const GR_LIST_SELECT =
-  "id,po_number,vendor_name,status,created_at," +
+  "id,po_number,category,vendor_name,status,created_at," +
   "entries:goods_receipt_entries(status,pallet_count,sku_code_snapshot)";
 
 const GR_DETAIL_SELECT =
-  "id,po_number,vendor_id,vendor_name,status,created_at,updated_at," +
-  "entries:goods_receipt_entries(id,container_name,container_number,sku_code_id,sku_version_id," +
+  "id,po_number,category,vendor_id,vendor_name,status,created_at,updated_at," +
+  "entries:goods_receipt_entries(id,shipment_number,sku_code_id,sku_version_id," +
   "sku_code:sku_code_snapshot,sku_version:sku_version_snapshot,po_quantity,received_quantity,unit,pallet_count," +
   "status,inwarded_at,sort_order," +
   "qr_batch:qr_generation_records!qr_generation_records_source_goods_receipt_entry_id_fkey(id,batch_display_id,status,quantity))";
@@ -1898,11 +1897,11 @@ async function listGoodsReceiptsSb(params: { search?: string; status?: string; d
     .range((page - 1) * LIST_PAGE_SIZE, page * LIST_PAGE_SIZE - 1);
   if (error) throw new ApiError(500, error.message);
   const rows = (data || []) as unknown as {
-    id: string; po_number: string; vendor_name: string; status: GoodsReceiptListItem["status"]; created_at: string;
+    id: string; po_number: string; category: GoodsReceiptListItem["category"]; vendor_name: string; status: GoodsReceiptListItem["status"]; created_at: string;
     entries: { status: string; pallet_count: number | null; sku_code_snapshot: string | null }[];
   }[];
   const items: GoodsReceiptListItem[] = rows.map((r) => ({
-    id: r.id, po_number: r.po_number, vendor_name: r.vendor_name, status: r.status, created_at: r.created_at,
+    id: r.id, po_number: r.po_number, category: r.category, vendor_name: r.vendor_name, status: r.status, created_at: r.created_at,
     container_count: r.entries.length,
     inwarded_count: r.entries.filter((e) => e.status === "inwarded").length,
     pallet_total: r.entries.reduce((n, e) => n + (e.status === "inwarded" ? e.pallet_count || 0 : 0), 0),
@@ -2805,12 +2804,10 @@ export const api = {
   saveHoldRelease: (id: string, payload: HoldReleaseSavePayload) => saveHoldReleaseSb(id, payload),
 
   // -- Factory OS Module 1: Goods Receipt ----------------------------------
-  // Supabase is the primary backend here: reads are Supabase-direct, and
-  // save / inward / delete are atomic Postgres functions (supabase.rpc,
-  // migration 0045) that each return the fresh GoodsReceiptDetail -- so the
-  // panel updates from the response, one round trip, no refetch. Only pallet
-  // QR generation goes to FastAPI (QR PNG rendering + Storage upload + the
-  // shared RM numbering code).
+  // 100% Supabase: reads are Supabase-direct, and save / inward / delete /
+  // generate-pallets are atomic Postgres functions (supabase.rpc,
+  // migrations 0045/0046). Save and inward return the fresh
+  // GoodsReceiptDetail, so the panel updates from the response.
   listGoodsReceipts: (params: { search?: string; status?: string; date?: string; page?: number } = {}) =>
     listGoodsReceiptsSb(params),
   getGoodsReceipt: (id: string) => getGoodsReceiptSb(id),
@@ -2829,8 +2826,14 @@ export const api = {
     invalidateListCache("goods-receipt");
     return res;
   },
-  generateGoodsReceiptEntryQr: async (id: string, entryId: string) => {
-    const res = await request<QrGenerationDetail>(`/api/v1/goods-receipts/${id}/entries/${entryId}/generate-qr`, { method: "POST" });
+  // One Postgres function inserts the batch + every pallet in a single
+  // transaction (no image uploads -- the browser draws each QR from
+  // qr_payload), then one read returns the batch with its pallets.
+  generateGoodsReceiptEntryQr: async (_id: string, entryId: string) => {
+    const batchId = await sbRequest<string>(() =>
+      supabase.rpc("goods_receipt_generate_pallets", { _entry_id: entryId }) as unknown as Promise<{ data: string | null; error: { message: string; code?: string } | null }>
+    );
+    const res = await qrGetDetail("rm", batchId);
     invalidateListCache("goods-receipt");
     invalidateListCache("rm-storage-pending");
     invalidateListCache("rm-qr");

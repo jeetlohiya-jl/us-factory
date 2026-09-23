@@ -5,6 +5,7 @@ import { useMe } from "@/lib/useMe";
 import { cachedList, invalidateListCache, listCacheKey } from "@/lib/listCache";
 import { useImmediateThenDebounced } from "@/lib/useImmediateThenDebounced";
 import type { GoodsReceiptDetail, GoodsReceiptListItem, SkuCode, Vendor } from "@/lib/types";
+import { INWARD_CATEGORY_LABELS } from "@/lib/types";
 import MoreMenu from "@/components/inward-vehicle-inspection/MoreMenu";
 import ConfirmDialog from "@/components/inward-vehicle-inspection/ConfirmDialog";
 import Pagination from "@/components/Pagination";
@@ -174,17 +175,18 @@ export default function GoodsReceiptPage() {
         <table className="data">
           <thead>
             <tr>
-              <th>PO Number</th><th>Vendor</th><th>SKU(s)</th><th>Containers Inwarded</th>
+              <th>PO Number</th><th>Category</th><th>Vendor</th><th>SKU(s)</th><th>Containers Inwarded</th>
               <th>Pallets Received</th><th>Status</th><th>Date</th><th></th>
             </tr>
           </thead>
           <tbody>
             {items.length === 0 ? (
-              <tr className="empty-row"><td colSpan={8}>{loading ? "Loading…" : "No records match your search/filters."}</td></tr>
+              <tr className="empty-row"><td colSpan={9}>{loading ? "Loading…" : "No records match your search/filters."}</td></tr>
             ) : (
               items.map((r) => (
                 <tr key={r.id} className={r.status === "draft" || r.status === "pending" ? "row-pending" : ""} style={{ cursor: "pointer" }} onClick={() => openRecord(r.id)}>
                   <td className="mono">{r.po_number}</td>
+                  <td>{r.category ? INWARD_CATEGORY_LABELS[r.category] : "—"}</td>
                   <td>{r.vendor_name}</td>
                   <td className="mono">{r.sku_summary || "—"}</td>
                   <td>{r.inwarded_count} / {r.container_count}</td>

@@ -2,7 +2,7 @@
 import { Fragment, useState } from "react";
 import { api } from "@/lib/api";
 import type { GoodsReceiptDetail, GoodsReceiptEntry, QrGenerationDetail, QuantityUnit } from "@/lib/types";
-import { QUANTITY_UNITS } from "@/lib/types";
+import { INWARD_CATEGORY_LABELS, QUANTITY_UNITS } from "@/lib/types";
 import QrGenerationPanel from "@/components/qr-generation/QrGenerationPanel";
 import { GoodsReceiptStatusBadge } from "./GoodsReceiptStatusBadge";
 
@@ -19,13 +19,13 @@ function fmt(n: number | null | undefined) {
   return n == null ? "—" : Number(n).toLocaleString();
 }
 
-type InwardForm = { container_number: string; received_quantity: string; unit: QuantityUnit; pallet_count: string };
+type InwardForm = { received_quantity: string; unit: QuantityUnit; pallet_count: string };
 
 /**
  * Goods Receipt detail -- the receiving screen. Every container x SKU entry
  * is its own row with its own status; "Inward" opens an inline form on
- * THAT row only (Container Number, Quantity Received + Unit, Number of
- * Pallets), and confirming it changes only that entry. Once inwarded, the
+ * THAT row only (Quantity Received + Unit, Number of Pallets), and
+ * confirming it changes only that entry. Once inwarded, the
  * row offers Generate / View QRs, which opens the existing RM QR panel
  * (QrGenerationPanel, unchanged: pallet grid, 2x2in label printing).
  *
@@ -62,7 +62,6 @@ export default function GoodsReceiptDetailPanel({
     setError(null);
     setInwardingId(e.id);
     setForm({
-      container_number: e.container_number || "",
       // Default to the ordered quantity -- the common case is a full
       // container -- but it stays editable for a short delivery.
       received_quantity: String(e.po_quantity),
@@ -75,14 +74,13 @@ export default function GoodsReceiptDetailPanel({
     if (!form) return;
     const pallets = parseInt(form.pallet_count, 10);
     const qty = Number(form.received_quantity);
-    if (!(qty > 0)) { setError(`${e.container_name}: Quantity Received must be greater than 0.`); return; }
-    if (!(pallets >= 1)) { setError(`${e.container_name}: Number of Pallets must be at least 1.`); return; }
+    if (!(qty > 0)) { setError(`${e.shipment_number}: Quantity Received must be greater than 0.`); return; }
+    if (!(pallets >= 1)) { setError(`${e.shipment_number}: Number of Pallets must be at least 1.`); return; }
     setBusy(e.id);
     setError(null);
     try {
       const next = await api.inwardGoodsReceiptEntry(record.id, e.id, {
         received_quantity: qty, unit: form.unit, pallet_count: pallets,
-        container_number: form.container_number.trim() || null,
       });
       apply(next);
       setInwardingId(null);
@@ -137,6 +135,7 @@ export default function GoodsReceiptDetailPanel({
             <h3>General Information</h3>
             <div className="detail-grid">
               <Kv label="PO Number" value={<span className="mono">{record.po_number}</span>} />
+              <Kv label="Category" value={record.category ? INWARD_CATEGORY_LABELS[record.category] : "—"} />
               <Kv label="Vendor" value={record.vendor_name} />
               <Kv label="Containers Inwarded" value={`${inwarded.length} of ${record.entries.length}`} />
               <Kv label="Pallets Received" value={palletTotal} />
@@ -156,19 +155,18 @@ export default function GoodsReceiptDetailPanel({
               <table className="qc-obs-table">
                 <thead>
                   <tr>
-                    <th>Container</th><th>Container No.</th><th>SKU</th><th>Version</th>
+                    <th>Shipment No.</th><th>SKU</th><th>Version</th>
                     <th>PO Qty</th><th>Qty Received</th><th>Unit</th><th>Pallets</th><th>Status</th><th />
                   </tr>
                 </thead>
                 <tbody>
                   {record.entries.length === 0 && (
-                    <tr className="empty-row"><td colSpan={10}>No containers on this receipt yet.</td></tr>
+                    <tr className="empty-row"><td colSpan={9}>No containers on this receipt yet.</td></tr>
                   )}
                   {record.entries.map((e) => (
                     <Fragment key={e.id}>
                       <tr>
-                        <td className="mono">{e.container_name}</td>
-                        <td className="mono">{e.container_number || "—"}</td>
+                        <td className="mono">{e.shipment_number}</td>
                         <td className="mono">{e.sku_code || "—"}</td>
                         <td className="mono">{e.sku_version || "—"}</td>
                         <td>{fmt(e.po_quantity)}</td>
@@ -204,13 +202,8 @@ export default function GoodsReceiptDetailPanel({
                       </tr>
                       {inwardingId === e.id && form && (
                         <tr>
-                          <td colSpan={10} style={{ background: "var(--ink-04, #f6f5f0)" }}>
+                          <td colSpan={9} style={{ background: "var(--ink-04, #f6f5f0)" }}>
                             <div className="form-grid" style={{ margin: "8px 0" }}>
-                              <div className="field">
-                                <label>Container Number</label>
-                                <input type="text" value={form.container_number} placeholder="e.g. MSKU1234565"
-                                  onChange={(ev) => setForm({ ...form, container_number: ev.target.value.toUpperCase() })} />
-                              </div>
                               <div className="field">
                                 <label>Quantity Received</label>
                                 <input type="number" min={0} value={form.received_quantity}
@@ -229,11 +222,11 @@ export default function GoodsReceiptDetailPanel({
                               </div>
                             </div>
                             <div className="hint-text" style={{ marginBottom: 8 }}>
-                              One RM pallet QR per pallet becomes available to generate once inwarded. Only {e.container_name} is marked Inwarded — other containers are unchanged.
+                              One RM pallet QR per pallet becomes available to generate once inwarded. Only {e.shipment_number} is marked Inwarded — other containers are unchanged.
                             </div>
                             <div style={{ display: "flex", gap: 10, marginBottom: 8 }}>
                               <button className="btn btn-primary" disabled={busy === e.id} onClick={() => confirmInward(e)}>
-                                {busy === e.id ? "Inwarding…" : `Confirm Inward · ${e.container_name}`}
+                                {busy === e.id ? "Inwarding…" : `Confirm Inward · ${e.shipment_number}`}
                               </button>
                               <button className="btn btn-ghost" disabled={busy === e.id} onClick={() => { setInwardingId(null); setForm(null); }}>Cancel</button>
                             </div>
@@ -259,7 +252,7 @@ export default function GoodsReceiptDetailPanel({
 
       {qr && (
         <QrGenerationPanel
-          title={`RM QR · ${record.po_number} / ${qr.entry.container_name}`}
+          title={`RM QR · ${record.po_number} / ${qr.entry.shipment_number}`}
           detail={qr.detail}
           canGenerate={canReceive}
           onGenerate={async () => { await openOrGenerateQr(qr.entry); }}

@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { Session } from "@supabase/supabase-js";
@@ -296,6 +296,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [chosenProduct, setChosenProduct] = useState<"factory" | "us_factory" | null>(null);
   const pathname = usePathname();
   const router = useRouter();
+  // Who the current product choice belongs to -- see onAuthStateChange below.
+  const signedInUserId = useRef<string | null>(null);
   const me = useMe();
   const setupNavItems = me?.is_admin ? [...SETUP_NAV_ITEMS, USERS_NAV_ITEM, PORTFOLIO_ACCESS_NAV_ITEM] : SETUP_NAV_ITEMS;
 
@@ -324,19 +326,25 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
+      signedInUserId.current = data.session?.user?.id ?? null;
       setSession(data.session);
       setCheckedSession(true);
     });
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, newSession) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event, newSession) => {
       setSession(newSession);
-      // A sign-out/sign-in swap should show the picker fresh for whoever
-      // just signed in, not silently keep the previous person's choice.
-      setChosenProduct(null);
-      setCheckedPortfolio(false);
-      setPortfolioAccess(null);
-      // Same signal useMe() already listens for, so switching users (or
-      // signing in/out) still forces a fresh /me + permissions fetch.
-      window.dispatchEvent(new Event("factory_os_user_changed"));
+      // Supabase also fires SIGNED_IN / TOKEN_REFRESHED for the SAME person
+      // whenever a tab regains focus or the token refreshes -- that must not
+      // send them back to the product picker (it used to, on every tab
+      // switch). Only a genuine sign-out or a different person signing in
+      // resets the choice and forces a fresh /me + permissions fetch.
+      const newUserId = newSession?.user?.id ?? null;
+      if (event === "SIGNED_OUT" || newUserId !== signedInUserId.current) {
+        signedInUserId.current = newUserId;
+        setChosenProduct(null);
+        setCheckedPortfolio(false);
+        setPortfolioAccess(null);
+        window.dispatchEvent(new Event("factory_os_user_changed"));
+      }
     });
     return () => sub.subscription.unsubscribe();
   }, []);

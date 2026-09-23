@@ -19,6 +19,13 @@ export type InspectionStatus = "draft" | "hold" | "approved";
 // inconsistent way (the old "FG Non-Padded Tray" / "FG NonPadded Tray" /
 // "FNPG" wording is retired).
 export const TRAY_FAMILY_QC_CATEGORIES: string[] = ["tray", "fnp_tray", "fgtray"];
+// Inward material categories, in US Factory's Inward Vehicle Inspection
+// order and wording (its Wizard.tsx CATEGORY_LABELS) -- used by Factory's
+// Goods Receipt Category picker.
+export const INWARD_CATEGORY_LABELS: Record<Category, string> = {
+  tray: "Base Tray", fnp_tray: "FNP Tray", film: "Film",
+  pad: "Soaker Pad", polybag: "Polybag", cfb: "CFB", glue: "Glue",
+};
 export const QC_CATEGORY_LABELS: Record<string, string> = {
   tray: "Base Tray", fnp_tray: "FNP Tray", fgtray: "FNP Tray",
   pad: "Soaker Pad", polybag: "Polybag", cfb: "CFB", glue: "Glue",
@@ -398,6 +405,9 @@ export interface Pallet {
   shipment_number: string | null;
   lifecycle_status: PalletLifecycleStatus;
   qr_url: string | null;
+  // The JSON the pallet's QR encodes. Factory pallets (Goods Receipt) have
+  // no stored image -- PalletTile draws the QR from this in the browser.
+  qr_payload?: string | null;
   location_display_id: string | null;
   storage_id: string | null;
 }
@@ -445,7 +455,6 @@ export interface StorageRecordDetail {
   batch_code: string | null;
   // Factory Module 1 -- RM pallets received through Goods Receipt.
   goods_receipt_po_number?: string | null;
-  goods_receipt_container_name?: string | null;
   goods_receipt_vendor_name?: string | null;
 }
 
@@ -1445,8 +1454,8 @@ export type GoodsReceiptEntryStatus = "pending" | "inwarded";
 
 export interface GoodsReceiptEntry {
   id: string;
-  container_name: string;
-  container_number: string | null;
+  // The PO line's own identifier (HA1, V6, ...) -- this IS the shipment number.
+  shipment_number: string;
   sku_code_id: string;
   sku_version_id: string | null;
   sku_code: string | null;
@@ -1463,6 +1472,7 @@ export interface GoodsReceiptEntry {
 export interface GoodsReceiptDetail {
   id: string;
   po_number: string;
+  category: Category | null;
   vendor_id: string | null;
   vendor_name: string;
   status: GoodsReceiptStatus;
@@ -1474,6 +1484,7 @@ export interface GoodsReceiptDetail {
 export interface GoodsReceiptListItem {
   id: string;
   po_number: string;
+  category: Category | null;
   vendor_name: string;
   status: GoodsReceiptStatus;
   created_at: string;
@@ -1489,8 +1500,7 @@ export interface GoodsReceiptEntryDraft {
   key: string;
   id: string | null;
   locked: boolean;
-  container_name: string;
-  container_number: string;
+  shipment_number: string;
   sku_code_id: string | null;
   sku_version_id: string | null;
   po_quantity: string;
@@ -1499,10 +1509,11 @@ export interface GoodsReceiptEntryDraft {
 
 export interface GoodsReceiptSavePayload {
   po_number: string;
+  category: Category;
   vendor_id: string;
   as_draft: boolean;
   entries: {
-    id?: string | null; container_name: string; container_number?: string | null;
+    id?: string | null; shipment_number: string;
     sku_code_id: string; sku_version_id: string | null; po_quantity: number; unit: QuantityUnit;
   }[];
 }
@@ -1511,5 +1522,4 @@ export interface GoodsReceiptInwardPayload {
   received_quantity: number;
   unit: QuantityUnit;
   pallet_count: number;
-  container_number?: string | null;
 }

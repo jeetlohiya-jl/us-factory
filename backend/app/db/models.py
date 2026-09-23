@@ -1438,12 +1438,14 @@ class HoldReleaseRecord(Base):
 
 
 class GoodsReceipt(Base):
-    """Factory OS Module 1 -- one Goods Receipt per PO (migration 0045).
-    `status` is maintained by app/api/goods_receipt.py from the entries'
-    own statuses: draft | pending | partial | received."""
+    """Factory OS Module 1 -- one Goods Receipt per PO (migrations 0045/0046).
+    Every write is a Supabase RPC (goods_receipt_save / _inward / _delete /
+    _generate_pallets); `status` is maintained there: draft | pending |
+    partial | received."""
     __tablename__ = "goods_receipts"
     id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
     po_number = Column(Text, nullable=False)
+    category = Column(Text, nullable=True)  # migration 0046
     vendor_id = Column(UUID(as_uuid=True), ForeignKey("vendors.id", ondelete="SET NULL"), nullable=True)
     vendor_name = Column(Text, nullable=False)
     status = Column(Text, nullable=False, default="draft")
@@ -1465,8 +1467,9 @@ class GoodsReceiptEntry(Base):
     __tablename__ = "goods_receipt_entries"
     id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
     goods_receipt_id = Column(UUID(as_uuid=True), ForeignKey("goods_receipts.id", ondelete="CASCADE"), nullable=False)
-    container_name = Column(Text, nullable=False)
-    container_number = Column(Text, nullable=True)
+    # The PO line's own identifier (HA1, V6, ...) -- this IS the shipment
+    # number used downstream (migration 0046 renamed it from container_name).
+    shipment_number = Column(Text, nullable=False)
     sku_code_id = Column(UUID(as_uuid=True), ForeignKey("sku_codes.id"), nullable=False)
     sku_version_id = Column(UUID(as_uuid=True), ForeignKey("sku_versions.id"), nullable=True)
     sku_code_snapshot = Column(Text, nullable=True)

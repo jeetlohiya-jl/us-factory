@@ -1,14 +1,15 @@
 "use client";
 import { useMemo, useState } from "react";
 import { api } from "@/lib/api";
-import type { GoodsReceiptDetail, GoodsReceiptEntryDraft, GoodsReceiptSavePayload, SkuCode, Vendor } from "@/lib/types";
+import type { Category, GoodsReceiptDetail, GoodsReceiptEntryDraft, GoodsReceiptSavePayload, SkuCode, Vendor } from "@/lib/types";
+import { INWARD_CATEGORY_LABELS } from "@/lib/types";
 import GrEntriesEditor, { blankEntry } from "./GrEntriesEditor";
 
 function draftsFrom(detail: GoodsReceiptDetail | null): GoodsReceiptEntryDraft[] {
   if (!detail) return [blankEntry()];
   return detail.entries.map((e) => ({
     key: e.id, id: e.id, locked: e.status === "inwarded",
-    container_name: e.container_name, container_number: e.container_number || "",
+    shipment_number: e.shipment_number,
     sku_code_id: e.sku_code_id, sku_version_id: e.sku_version_id,
     po_quantity: String(e.po_quantity), unit: e.unit,
   }));
@@ -32,6 +33,7 @@ export default function GoodsReceiptFormPanel({
   onSaved: (saved: GoodsReceiptDetail) => void;
 }) {
   const [poNumber, setPoNumber] = useState(existing?.po_number || "");
+  const [category, setCategory] = useState<Category | "">(existing?.category || "");
   const [vendorId, setVendorId] = useState<string>(existing?.vendor_id || "");
   const [entries, setEntries] = useState<GoodsReceiptEntryDraft[]>(() => draftsFrom(existing));
   const [saving, setSaving] = useState<"draft" | "save" | null>(null);
@@ -40,24 +42,33 @@ export default function GoodsReceiptFormPanel({
   const anyInwarded = !!existing?.entries.some((e) => e.status === "inwarded");
   const canSaveDraft = !existing || existing.status === "draft";
 
-  // Vendors are scoped per category in the master data, so one supplier can
-  // appear more than once -- label duplicates with their category.
-  const vendorOptions = useMemo(() => {
-    const counts = new Map<string, number>();
-    vendors.forEach((v) => counts.set(v.name, (counts.get(v.name) || 0) + 1));
-    return vendors.map((v) => ({ id: v.id, label: (counts.get(v.name) || 0) > 1 ? `${v.name} (${v.category})` : v.name }));
-  }, [vendors]);
+  // Same as US Factory's Inward Vehicle Inspection: pick the Category
+  // first; Vendor and SKU lists then only show that category's entries,
+  // so a vendor set up under several categories appears once, by name.
+  const categoryVendors = useMemo(() => vendors.filter((v) => v.category === category), [vendors, category]);
+  const categorySkus = useMemo(() => skuCodes.filter((s) => s.category === category), [skuCodes, category]);
+
+  function changeCategory(next: Category | "") {
+    setCategory(next);
+    if (vendorId && !vendors.some((v) => v.id === vendorId && v.category === next)) setVendorId("");
+    // SKUs from the previous category no longer apply.
+    setEntries((rows) => rows.map((r) =>
+      r.locked || !r.sku_code_id || skuCodes.find((s) => s.id === r.sku_code_id)?.category === next
+        ? r : { ...r, sku_code_id: null, sku_version_id: null }
+    ));
+  }
 
   function buildPayload(asDraft: boolean): GoodsReceiptSavePayload | string {
     if (!poNumber.trim()) return "PO Number is required.";
+    if (!category) return "Category is required.";
     if (!vendorId) return "Vendor is required.";
     // Drop fully blank rows (e.g. the starter row) silently; anything
     // partially filled must be completed so nothing typed is lost unseen.
-    const rows = entries.filter((e) => e.locked || e.container_name.trim() || e.sku_code_id || e.po_quantity);
+    const rows = entries.filter((e) => e.locked || e.shipment_number.trim() || e.sku_code_id || e.po_quantity);
     for (const [i, e] of rows.entries()) {
       if (e.locked) continue;
-      const label = e.container_name.trim() || `Row ${i + 1}`;
-      if (!e.container_name.trim()) return `${label}: Container Name is required.`;
+      const label = e.shipment_number.trim() || `Row ${i + 1}`;
+      if (!e.shipment_number.trim()) return `${label}: Shipment Number is required.`;
       if (!e.sku_code_id) return `${label}: select a SKU.`;
       if (!(Number(e.po_quantity) > 0)) return `${label}: PO Quantity must be greater than 0.`;
       const hasVersions = (skuCodes.find((s) => s.id === e.sku_code_id)?.versions || []).some((v) => v.is_active);
@@ -65,9 +76,9 @@ export default function GoodsReceiptFormPanel({
     }
     if (!asDraft && rows.length === 0) return "Add at least one container before saving.";
     return {
-      po_number: poNumber.trim(), vendor_id: vendorId, as_draft: asDraft,
+      po_number: poNumber.trim(), category, vendor_id: vendorId, as_draft: asDraft,
       entries: rows.map((e) => ({
-        id: e.id, container_name: e.container_name.trim(), container_number: e.container_number.trim() || null,
+        id: e.id, shipment_number: e.shipment_number.trim(),
         sku_code_id: e.sku_code_id as string, sku_version_id: e.sku_version_id, po_quantity: Number(e.po_quantity), unit: e.unit,
       })),
     };
@@ -88,7 +99,7 @@ export default function GoodsReceiptFormPanel({
     }
   }
 
-  const containerCount = entries.filter((e) => e.locked || e.container_name.trim()).length;
+  const containerCount = entries.filter((e) => e.locked || e.shipment_number.trim()).length;
 
   return (
     <>
@@ -111,20 +122,27 @@ export default function GoodsReceiptFormPanel({
                 onChange={(e) => setPoNumber(e.target.value.toUpperCase())} />
             </div>
             <div className="field">
+              <label>Category</label>
+              <select value={category} disabled={anyInwarded} onChange={(e) => changeCategory(e.target.value as Category | "")}>
+                <option value="">Select category</option>
+                {(Object.keys(INWARD_CATEGORY_LABELS) as Category[]).map((c) => <option key={c} value={c}>{INWARD_CATEGORY_LABELS[c]}</option>)}
+              </select>
+            </div>
+            <div className="field">
               <label>Vendor</label>
-              <select value={vendorId} disabled={anyInwarded} onChange={(e) => setVendorId(e.target.value)}>
-                <option value="">Select</option>
-                {vendorOptions.map((v) => <option key={v.id} value={v.id}>{v.label}</option>)}
+              <select value={vendorId} disabled={anyInwarded || !category} onChange={(e) => setVendorId(e.target.value)}>
+                <option value="">{category ? "Select vendor" : "Select a category first"}</option>
+                {categoryVendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
               </select>
             </div>
           </div>
           {anyInwarded && (
             <div className="hint-text" style={{ marginBottom: 12 }}>
-              PO Number, Vendor and inwarded containers are locked — their RM pallet QRs already reference them.
+              PO Number, Category, Vendor and inwarded containers are locked — their RM pallet QRs already reference them.
             </div>
           )}
           <div className="section-label" style={{ marginTop: 0 }}>Containers</div>
-          <GrEntriesEditor items={entries} skuCodes={skuCodes} onChange={setEntries} />
+          <GrEntriesEditor items={entries} skuCodes={categorySkus} onChange={setEntries} />
         </div>
         <div className="sp-foot">
           <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
