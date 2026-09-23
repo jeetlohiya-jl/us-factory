@@ -1191,6 +1191,88 @@ export interface ShipmentPickingDetail {
 }
 
 // ---------------------------------------------------------------------------
+// Factory OS Module 6 -- Goods Outward: Customer Shipment + Shipment
+// Picking combined into ONE module/page for the Factory product. Reuses
+// the exact same customer_shipments / customer_shipment_line_items /
+// shipment_picking_requests / shipment_picking_picks tables and the exact
+// same FastAPI routes (create, delete, pick, undo-pick) as US Factory's own
+// separate Customer Shipment / Shipment Picking pages -- no new tables, no
+// new backend routes. Only the read shape is new (a combined Supabase
+// select joining a shipment's line items straight to each one's own
+// picking request and its individual picks), and a client-side aggregate
+// "status" (pending/partial/complete) computed the same way
+// shipment_picking_service._recompute_status computes each line item's own
+// status, just rolled up: complete only when every line item's own request
+// is complete, pending only when none has been picked at all, else partial.
+// ---------------------------------------------------------------------------
+
+export interface GoodsOutwardPick {
+  id: string;
+  pallet_id: string;
+  pallet_display_id: string | null;
+  batch_code: string | null;
+  picked_at: string;
+}
+
+export interface GoodsOutwardLineItem {
+  id: string; // CustomerShipmentLineItem id
+  sku_code_id: string | null;
+  sku_version_id: string | null;
+  sku_code: string | null;
+  sku_version: string | null;
+  pallets_required: number;
+  pcs: number | null;
+  pcs_per_sleeve: string | null;
+  // The 1:1 ShipmentPickingRequest fanned out for this line item at create
+  // time (always present -- see customer_shipment_service.create_
+  // customer_shipment). Null only in the impossible case of a line item
+  // predating that fan-out guarantee.
+  picking_request_id: string | null;
+  status: "pending" | "partial" | "complete";
+  picks: GoodsOutwardPick[];
+}
+
+export interface GoodsOutwardListItem {
+  id: string;
+  shipment_number: string;
+  container_number: string;
+  customer: string;
+  sku_summary: string;
+  pallets_required_total: number;
+  pallets_picked_total: number;
+  status: "pending" | "partial" | "complete";
+  created_at: string;
+}
+
+// Minimal shape for a scanned pallet's read-only preview (api.
+// previewScannedFgPallet), used only to route a Goods Outward scan to the
+// right line item's picking request before the real pick call. Deliberately
+// not the shared `Pallet` type -- that type carries only SKU snapshot text
+// (for display), while this needs the real sku_code_id/sku_version_id FKs
+// to match against GoodsOutwardLineItem's own ids, the same identity
+// comparison shipment_picking_service.pick_pallet_for_request performs
+// server-side (never a text/snapshot comparison).
+export interface GoodsOutwardScannedPallet {
+  id: string;
+  display_id: string;
+  sku_code_id: string | null;
+  sku_version_id: string | null;
+  sku_code: string | null;
+  sku_version: string | null;
+  lifecycle_status: PalletLifecycleStatus;
+}
+
+export interface GoodsOutwardDetail {
+  id: string;
+  shipment_number: string;
+  container_number: string;
+  customer: string;
+  created_at: string;
+  line_items: GoodsOutwardLineItem[];
+  status: "pending" | "partial" | "complete";
+}
+
+// ---------------------------------------------------------------------------
 // Outward Vehicle Inspection -- auto-created (never manually) the instant a
 // Customer Shipment is recorded. NOT linked to RQC. List/detail reads are
 // direct-Supabase; the one editable-fields save (Truck/Invoice/Transporter/
