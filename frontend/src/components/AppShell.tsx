@@ -8,6 +8,7 @@ import { signInWithGoogle, signOut } from "@/lib/session";
 import { useMe } from "@/lib/useMe";
 import { api, ApiError } from "@/lib/api";
 import type { PortfolioAccessMe } from "@/lib/types";
+import { ProductProvider } from "@/lib/productContext";
 
 /**
  * Shell matching the approved prototype's sidebar visual language (brand
@@ -132,6 +133,28 @@ const NAV_ITEMS = [
 // module_permissions scope) rather than a second copy -- Module 2 IS that
 // feature, just also reachable from here, per the no-duplication mandate.
 const FACTORY_NAV_ITEMS = [
+  // Module 1 -- Goods Receipt: PO -> per-container receiving -> RM QR.
+  // A genuinely new Factory-only page (app/goods-receipt/page.tsx) over new
+  // goods_receipts/goods_receipt_entries tables (migration 0045); RM QR
+  // Generation underneath is the existing qr_generation_service, unchanged.
+  {
+    href: "/goods-receipt",
+    label: "Goods Receipt",
+    icon: (
+      <path d="M3 7l9-4 9 4v10l-9 4-9-4V7zM3 7l9 4 9-4M12 11v10M7.5 5.2l9 4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    ),
+  },
+  // Module 1 (cont.) -- RM Storage. The exact same /rm-storage page and
+  // scan -> location -> confirm flow US Factory uses; inside Factory it
+  // lists and accepts only Goods-Receipt pallets (useProduct() in that page,
+  // enforced server-side too -- storage_service.resolve_pallet_for_storage).
+  {
+    href: "/rm-storage",
+    label: "RM Storage",
+    icon: (
+      <path d="M4 20V9l8-5 8 5v11M4 20h16M9 20v-6h6v6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    ),
+  },
   {
     href: "/material-consumption",
     label: "Raw Material Consumption",
@@ -204,6 +227,9 @@ const FACTORY_NAV_ITEMS = [
     ),
   },
 ];
+
+// Routes that exist only inside the Factory product.
+const FACTORY_ONLY_HREFS = ["/goods-receipt"];
 
 const SETUP_NAV_ITEMS = [
   {
@@ -282,7 +308,17 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     if (chosenProduct !== "factory") return;
     const allowedHrefs = [...FACTORY_NAV_ITEMS, ...SETUP_NAV_ITEMS, USERS_NAV_ITEM, PORTFOLIO_ACCESS_NAV_ITEM].map((i) => i.href);
     if (pathname && !allowedHrefs.some((href) => pathname.startsWith(href))) {
-      router.replace("/material-consumption");
+      router.replace("/goods-receipt");
+    }
+  }, [chosenProduct, pathname, router]);
+
+  // Mirror of the guard above: Factory-only pages (Goods Receipt, Factory
+  // Module 1) are not part of US Factory -- bounce a US Factory session that
+  // lands there by URL back to US Factory's own landing page.
+  useEffect(() => {
+    if (chosenProduct !== "us_factory") return;
+    if (pathname && FACTORY_ONLY_HREFS.some((href) => pathname.startsWith(href))) {
+      router.replace("/inward-vehicle-inspection");
     }
   }, [chosenProduct, pathname, router]);
 
@@ -443,11 +479,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               <span className="label-text">{item.label}</span>
             </Link>
           ))}
-          {isFactory && (
-            <div className="desc" style={{ padding: "6px 14px 2px", fontSize: 12.5 }}>
-              More modules coming soon
-            </div>
-          )}
           <div className="sb-group">Setup</div>
           {setupNavItems.map((item) => (
             <Link key={item.href} href={item.href} className={`sb-item ${pathname?.startsWith(item.href) ? "active" : ""}`}>
@@ -467,7 +498,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </div>
       <div className="main">
-        <div className="content">{children}</div>
+        <div className="content"><ProductProvider value={isFactory ? "factory" : "us_factory"}>{children}</ProductProvider></div>
       </div>
     </div>
   );

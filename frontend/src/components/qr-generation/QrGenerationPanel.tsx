@@ -89,7 +89,7 @@ export default function QrGenerationPanel({
           </div>
           <div className="hint-text" style={{ marginBottom: 6 }}>
             {detail.source_locked
-              ? `Auto-created from ${detail.source_inward_qc_id ? "Inward QC" : "Production Run"} ${detail.source_display_id || ""}. These fields are locked.`
+              ? `Auto-created from ${detail.source_inward_qc_id ? "Inward QC" : detail.source_goods_receipt_entry_id ? "Goods Receipt" : "Production Run"} ${detail.source_display_id || ""}. These fields are locked.`
               : ""}
           </div>
           {!isGenerated && (

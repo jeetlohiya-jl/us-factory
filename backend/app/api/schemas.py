@@ -345,6 +345,7 @@ class QrGenerationDetailOut(BaseModel):
     source_locked: bool
     source_inward_qc_id: Optional[uuid.UUID] = None
     source_production_run_id: Optional[uuid.UUID] = None
+    source_goods_receipt_entry_id: Optional[uuid.UUID] = None
     source_display_id: Optional[str] = None
     pallets: list[PalletOut] = []
 
@@ -936,6 +937,7 @@ USER_MODULES = [
     "inward_vehicle_inspection", "inward_qc",
     "rm_qr_generation", "rm_storage", "material_consumption", "production", "ipqc", "rqc", "fg_qr_generation", "fg_storage",
     "customer_shipment", "shipment_picking", "outward_vehicle_inspection", "machine_downtime",
+    "goods_receipt",
 ]
 
 
