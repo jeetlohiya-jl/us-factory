@@ -170,6 +170,39 @@ const FACTORY_NAV_ITEMS = [
       <path d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
     ),
   },
+  // Module 5 -- Finished Goods Storage. Points at the exact same
+  // /fg-storage route/page US Factory's own sidebar uses -- no second copy,
+  // no code changes at all: FG Storage's own pending-pallet query already
+  // filters purely on pallet_type='fg' + lifecycle_status='pending_storage'
+  // (backend/app/domain/storage_service.py), with no dependency on which
+  // flow generated the QrGenerationRecord behind a pallet. Every pallet
+  // Module 4's FG QR Generation produces already flows through the same
+  // qr_generation_service.generate_pallets() every other FG QR path uses,
+  // which is what actually drives a pallet to pending_storage -- so FG
+  // pallets from the new RQC/FG QR workflow already appear here correctly,
+  // with no adjustment needed.
+  {
+    href: "/fg-storage",
+    label: "Finished Goods Storage",
+    icon: (
+      <path d="M3 9l9-5 9 5v9l-9 5-9-5V9zM3 9l9 5 9-5M12 14v9" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    ),
+  },
+  // Module 6 -- Goods Outward: Customer Shipment + Shipment Picking combined
+  // into one module/page (per the explicit "no longer separate modules"
+  // requirement). Like Module 4, this is a genuinely new Factory-only page
+  // (frontend/src/app/goods-outward/page.tsx) that reuses the exact same
+  // customer_shipments/customer_shipment_line_items/shipment_picking_requests/
+  // shipment_picking_picks tables and FastAPI routes as US Factory's own two
+  // separate pages -- zero backend changes, only a combined read + a
+  // combined detail view with an embedded pick-scanning section.
+  {
+    href: "/goods-outward",
+    label: "Goods Outward",
+    icon: (
+      <path d="M3 3h18v18H3zM3 9h18M9 3v18M15 15l3 3M18 15l-3 3" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    ),
+  },
 ];
 
 const SETUP_NAV_ITEMS = [

@@ -10,7 +10,8 @@ import type {
   IpqcListItem, IpqcDetail, IpqcSavePayload,
   RqcListItem, RqcDetail, RqcSavePayload, RqcApprovalEntryPayload, RqcCoaEntry, RqcCoaObservation,
   CustomerShipmentListItem, CustomerShipmentDetail, CustomerShipmentCreatePayload, CustomerShipmentCreateResult,
-  ShipmentPickingListItem, ShipmentPickingDetail,
+  ShipmentPickingListItem, ShipmentPickingDetail, PalletLifecycleStatus,
+  GoodsOutwardListItem, GoodsOutwardDetail, GoodsOutwardLineItem, GoodsOutwardScannedPallet,
   OviListItem, OviDetail, OviSavePayload, OviImageType, OviImage,
   MachineDowntimeRecord, MachineDowntimeSavePayload,
   HoldReleaseModule, HoldReleaseRecord, HoldReleaseSavePayload,
@@ -1431,6 +1432,172 @@ async function getShipmentPickingSb(id: string): Promise<ShipmentPickingDetail> 
   return flattenSpDetail(data as unknown as RawSpDetail);
 }
 
+// -- Factory OS Module 6 -- Goods Outward (Customer Shipment + Shipment
+// Picking combined) -- reads only; every write reuses the exact same
+// FastAPI routes as the two separate US Factory pages (createCustomerShipment,
+// deleteCustomerShipment, pickPallet, removePick below). Each line item is
+// joined straight to its own 1:1 ShipmentPickingRequest (customer_shipment_
+// line_items -> shipment_picking_requests is a reverse embed via that
+// table's own unique customer_shipment_line_item_id FK) and that request's
+// individual picks, so one query gets everything a combined detail view
+// needs -- no separate round trip per line item.
+
+type RawGoLineItemPick = {
+  id: string; pallet_id: string; picked_at: string;
+  pallet: { display_id: string; batch_code: string | null } | { display_id: string; batch_code: string | null }[] | null;
+};
+type RawGoPickingRequest = {
+  id: string; status: string; picks: RawGoLineItemPick[];
+} | {
+  id: string; status: string; picks: RawGoLineItemPick[];
+}[] | null;
+type RawGoLineItem = {
+  id: string; sku_code_id: string | null; sku_version_id: string | null;
+  sku_code_snapshot: string | null; sku_version_snapshot: string | null;
+  pallets_required: number; pcs: number | null; pcs_per_sleeve: string | null;
+  picking_request: RawGoPickingRequest;
+};
+type RawGoShipment = {
+  id: string; shipment_number: string; container_number: string; customer: string; created_at: string;
+  line_items: RawGoLineItem[];
+};
+
+const GO_LINE_ITEM_SELECT =
+  "id,sku_code_id,sku_version_id,sku_code_snapshot,sku_version_snapshot,pallets_required,pcs,pcs_per_sleeve," +
+  "picking_request:shipment_picking_requests(id,status,picks:shipment_picking_picks(id,pallet_id,picked_at,pallet:pallets(display_id,batch_code)))";
+
+/** A shipment's aggregate status: complete only once every line item's own
+ * request is complete, pending only when nothing at all has been picked
+ * yet, partial otherwise -- the same three states shipment_picking_
+ * service._recompute_status already uses per line item, just rolled up
+ * client-side (Customer Shipment itself has no status column of its own). */
+function aggregateGoStatus(lineItems: { status: string }[]): "pending" | "partial" | "complete" {
+  if (lineItems.length === 0) return "pending";
+  if (lineItems.every((li) => li.status === "complete")) return "complete";
+  if (lineItems.every((li) => li.status === "pending")) return "pending";
+  return "partial";
+}
+
+function flattenGoLineItem(raw: RawGoLineItem): GoodsOutwardLineItem {
+  const req = Array.isArray(raw.picking_request) ? raw.picking_request[0] ?? null : raw.picking_request;
+  const picks = (req?.picks || []).map((p) => {
+    const pallet = Array.isArray(p.pallet) ? p.pallet[0] ?? null : p.pallet;
+    return { id: p.id, pallet_id: p.pallet_id, pallet_display_id: pallet?.display_id ?? null, batch_code: pallet?.batch_code ?? null, picked_at: p.picked_at };
+  });
+  return {
+    id: raw.id, sku_code_id: raw.sku_code_id, sku_version_id: raw.sku_version_id,
+    sku_code: raw.sku_code_snapshot, sku_version: raw.sku_version_snapshot,
+    pallets_required: raw.pallets_required, pcs: raw.pcs, pcs_per_sleeve: raw.pcs_per_sleeve,
+    picking_request_id: req?.id ?? null,
+    status: (req?.status as GoodsOutwardLineItem["status"]) || "pending",
+    picks,
+  };
+}
+
+const GO_LIST_SELECT =
+  `id,shipment_number,container_number,customer,created_at,line_items:customer_shipment_line_items(${GO_LINE_ITEM_SELECT})`;
+
+function flattenGoListItem(raw: RawGoShipment): GoodsOutwardListItem {
+  const lineItems = (raw.line_items || []).map(flattenGoLineItem);
+  const sku_summary = lineItems.map((li) => [li.sku_code, li.sku_version].filter(Boolean).join(" / ")).filter(Boolean).join(", ");
+  return {
+    id: raw.id, shipment_number: raw.shipment_number, container_number: raw.container_number, customer: raw.customer,
+    sku_summary,
+    pallets_required_total: lineItems.reduce((sum, li) => sum + (li.pallets_required || 0), 0),
+    pallets_picked_total: lineItems.reduce((sum, li) => sum + li.picks.length, 0),
+    status: aggregateGoStatus(lineItems),
+    created_at: raw.created_at,
+  };
+}
+
+async function listGoodsOutwardSb(
+  params: { search?: string; date?: string; page?: number } = {}
+): Promise<{ items: GoodsOutwardListItem[]; matched_count: number }> {
+  const page = params.page && params.page > 0 ? params.page : 1;
+  let q = supabase.from("customer_shipments").select(GO_LIST_SELECT, { count: "exact" }).order("created_at", { ascending: false });
+  if (params.search) {
+    const like = ilikeTerm(params.search);
+    q = q.or(`customer.ilike.${like},container_number.ilike.${like},shipment_number.ilike.${like}`);
+  }
+  if (params.date) {
+    q = q.gte("created_at", `${params.date}T00:00:00`).lte("created_at", `${params.date}T23:59:59`);
+  }
+  const { data, error, count } = await q.range((page - 1) * LIST_PAGE_SIZE, page * LIST_PAGE_SIZE - 1);
+  if (error) throw new ApiError(500, error.message);
+  const rows = ((data || []) as unknown as RawGoShipment[]).map(flattenGoListItem);
+  return { items: rows, matched_count: count ?? rows.length };
+}
+
+async function getGoodsOutwardSb(id: string): Promise<GoodsOutwardDetail> {
+  const { data, error } = await supabase
+    .from("customer_shipments")
+    .select(`id,shipment_number,container_number,customer,created_at,line_items:customer_shipment_line_items(${GO_LINE_ITEM_SELECT})`)
+    .eq("id", id)
+    .single();
+  if (error || !data) throw new ApiError(404, "Goods Outward record not found");
+  const raw = data as unknown as RawGoShipment;
+  const lineItems = (raw.line_items || []).map(flattenGoLineItem);
+  return {
+    id: raw.id, shipment_number: raw.shipment_number, container_number: raw.container_number, customer: raw.customer,
+    created_at: raw.created_at, line_items: lineItems, status: aggregateGoStatus(lineItems),
+  };
+}
+
+type RawGoPalletPreview = {
+  id: string; display_id: string; pallet_type: "rm" | "fg";
+  sku_code_id: string | null; sku_version_id: string | null;
+  sku_code_snapshot: string | null; sku_version_snapshot: string | null;
+  lifecycle_status: PalletLifecycleStatus;
+};
+
+/** Parses a scanned QR payload the same way pallet_service._parse_scan_
+ * payload does server-side (a JSON {"id": "..."} object, or a bare
+ * display_id string typed/scanned by a HID barcode gun) -- duplicated
+ * narrowly here (just the id extraction, nothing else) so the frontend can
+ * look up which line item a scan belongs to BEFORE calling the real,
+ * authoritative pick route. This lookup is read-only and only ever used to
+ * choose which ShipmentPickingRequest to POST the pick to; it never
+ * substitutes for server-side validation -- api.pickPallet below re-runs
+ * the full check (lifecycle, SKU/version match, duplicate, quantity cap)
+ * inside its own DB transaction regardless of what this returns. */
+function parseScannedPalletId(raw: string): string {
+  const trimmed = raw.trim();
+  if (trimmed.startsWith("{")) {
+    try {
+      const obj = JSON.parse(trimmed);
+      if (obj && typeof obj.id === "string") return obj.id;
+    } catch {
+      // fall through to treating the raw text as a bare display_id
+    }
+  }
+  return trimmed;
+}
+
+/** Read-only preview of a scanned pallet, for Goods Outward's combined scan
+ * box to route the pick to the correct line item's request. Returns null
+ * if nothing matches an FG pallet -- the caller shows its own error rather
+ * than this function throwing, since "not found" is an expected outcome of
+ * a scan, not a system failure. */
+async function previewScannedFgPallet(raw: string): Promise<GoodsOutwardScannedPallet | null> {
+  const id = parseScannedPalletId(raw);
+  if (!id) return null;
+  const { data, error } = await supabase
+    .from("pallets")
+    .select("id,display_id,pallet_type,sku_code_id,sku_version_id,sku_code_snapshot,sku_version_snapshot,lifecycle_status")
+    .eq("pallet_type", "fg")
+    .ilike("display_id", id)
+    .maybeSingle();
+  if (error) throw new ApiError(500, error.message);
+  if (!data) return null;
+  const raw2 = data as unknown as RawGoPalletPreview;
+  return {
+    id: raw2.id, display_id: raw2.display_id,
+    sku_code_id: raw2.sku_code_id, sku_version_id: raw2.sku_version_id,
+    sku_code: raw2.sku_code_snapshot, sku_version: raw2.sku_version_snapshot,
+    lifecycle_status: raw2.lifecycle_status,
+  };
+}
+
 // -- Outward Vehicle Inspection: list/detail via Supabase -------------------
 // Auto-created (never manually) the instant a Customer Shipment is
 // recorded -- NOT linked to RQC. List/detail reads are direct-Supabase; the
@@ -2403,13 +2570,17 @@ export const api = {
     invalidateListCache("customer-shipment");
     // Every Customer Shipment save fans out new Shipment Picking requests
     // (see customer_shipment_service.create_customer_shipment) -- invalidate
-    // its list cache too so they show up without a hard refresh.
+    // its list cache too so they show up without a hard refresh. Also
+    // invalidate the combined Factory "goods-outward" list/detail cache
+    // (Module 6), which reads the exact same tables through its own key.
     invalidateListCache("shipment-picking");
+    invalidateListCache("goods-outward");
     return res;
   },
   deleteCustomerShipment: async (id: string) => {
     await request<void>(`/api/v1/customer-shipments/${id}`, { method: "DELETE" });
     invalidateListCache("customer-shipment");
+    invalidateListCache("goods-outward");
   },
 
   listShipmentPicking: (params: { search?: string; status?: string; page?: number } = {}) =>
@@ -2421,12 +2592,25 @@ export const api = {
       { method: "POST", body: JSON.stringify({ payload }) }
     );
     invalidateListCache("shipment-picking");
+    invalidateListCache("goods-outward");
     return res;
   },
   removePick: async (requestId: string, pickId: string) => {
     await request<void>(`/api/v1/shipment-picking/${requestId}/picks/${pickId}`, { method: "DELETE" });
     invalidateListCache("shipment-picking");
+    invalidateListCache("goods-outward");
   },
+
+  // -- Factory OS Module 6 -- Goods Outward (Customer Shipment + Shipment
+  // Picking combined) -- reads only; every write above (createCustomerShipment,
+  // deleteCustomerShipment, pickPallet, removePick) is reused unchanged.
+  listGoodsOutward: (params: { search?: string; date?: string; page?: number } = {}) =>
+    cachedList(listCacheKey("goods-outward", params), () => listGoodsOutwardSb(params)),
+  getGoodsOutward: (id: string) => getGoodsOutwardSb(id),
+  // Read-only convenience lookup so the combined scan box can route a scan
+  // to the correct line item's picking request before calling pickPallet
+  // (the real, authoritative validation). Never a substitute for it.
+  previewScannedFgPallet: (raw: string) => previewScannedFgPallet(raw),
 
   // -- Outward Vehicle Inspection ------------------------------------------
   // Auto-created from Customer Shipment -- no create call here. List/detail
