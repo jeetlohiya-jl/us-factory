@@ -38,6 +38,9 @@ def serialize_qr_detail(rec: models.QrGenerationRecord) -> schemas.QrGenerationD
         source_display_id = rec.source_inward_qc.shipment_number
     elif rec.source_production_run:
         source_display_id = rec.source_production_run.run_number
+    elif rec.source_goods_receipt_entry_id and rec.source_goods_receipt_entry:
+        e = rec.source_goods_receipt_entry
+        source_display_id = f"{e.goods_receipt.po_number} / {e.container_name}" if e.goods_receipt else e.container_name
     return schemas.QrGenerationDetailOut(
         id=rec.id, batch_display_id=rec.batch_display_id, qr_type=rec.qr_type, category=rec.category,
         shipment_number=rec.shipment_number, sku_code_snapshot=rec.sku_code_snapshot,
@@ -45,8 +48,9 @@ def serialize_qr_detail(rec: models.QrGenerationRecord) -> schemas.QrGenerationD
         quantity=rec.quantity, status=rec.status,
         created_at=rec.created_at.isoformat(),
         generated_at=rec.generated_at.isoformat() if rec.generated_at else None,
-        source_locked=bool(rec.source_inward_qc_id or rec.source_production_run_id),
+        source_locked=bool(rec.source_inward_qc_id or rec.source_production_run_id or rec.source_goods_receipt_entry_id),
         source_inward_qc_id=rec.source_inward_qc_id, source_production_run_id=rec.source_production_run_id,
+        source_goods_receipt_entry_id=rec.source_goods_receipt_entry_id,
         source_display_id=source_display_id,
         pallets=[serialize_pallet(p) for p in rec.pallets],
     )

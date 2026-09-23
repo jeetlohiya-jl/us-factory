@@ -94,12 +94,18 @@ def get_storage_record(record_id: uuid.UUID, db: Session = Depends(get_db), _per
 
 class ScanIn(BaseModel):
     payload: str
+    # "goods_receipt" when scanned from the Factory product's RM Storage --
+    # restricts to pallets received through Goods Receipt (see
+    # storage_service.resolve_pallet_for_storage). Empty = US Factory, unchanged.
+    source: str = ""
 
 
 @router.post("/scan-pallet", response_model=schemas.PalletOut)
 def scan_pallet(body: ScanIn, db: Session = Depends(get_db), _perm=Depends(require("create"))):
     try:
-        pallet = storage_service.resolve_pallet_for_storage(db, body.payload, PALLET_TYPE)
+        pallet = storage_service.resolve_pallet_for_storage(
+            db, body.payload, PALLET_TYPE, require_goods_receipt=(body.source == "goods_receipt"),
+        )
     except storage_service.StorageValidationError as e:
         raise HTTPException(status_code=422, detail=e.message)
     return serialize_pallet(pallet)
@@ -117,6 +123,7 @@ def scan_location(body: ScanIn, db: Session = Depends(get_db), _perm=Depends(req
 class ConfirmIn(BaseModel):
     pallet_payload: str
     location_payload: str
+    source: str = ""
 
 
 @router.post("/confirm", response_model=schemas.StorageRecordOut)
@@ -132,7 +139,9 @@ def confirm(
     if not body.pallet_payload or not body.location_payload:
         raise HTTPException(status_code=422, detail="Both a pallet scan and a location scan are required before storage can be confirmed.")
     try:
-        pallet = storage_service.resolve_pallet_for_storage(db, body.pallet_payload, PALLET_TYPE)
+        pallet = storage_service.resolve_pallet_for_storage(
+            db, body.pallet_payload, PALLET_TYPE, require_goods_receipt=(body.source == "goods_receipt"),
+        )
         location = storage_service.resolve_location_for_storage(db, body.location_payload)
         rec = storage_service.confirm_storage(db, pallet, location, STORAGE_TYPE, current_user.user_id)
         db.commit()

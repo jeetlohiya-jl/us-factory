@@ -905,6 +905,11 @@ class QrGenerationRecord(Base):
     # unique index on this column (migration 0042) blocks more than one
     # batch per RqcRecord.
     source_rqc_record_id = Column(UUID(as_uuid=True), ForeignKey("rqc_records.id", ondelete="SET NULL"), nullable=True)
+    # Factory Module 1 (migration 0045) -- set only for an RM batch created
+    # from ONE inwarded Goods Receipt entry (container x SKU). Partial
+    # unique index uq_qr_source_goods_receipt_entry: at most one batch per
+    # entry, the same idempotency shape as source_inward_qc_id.
+    source_goods_receipt_entry_id = Column(UUID(as_uuid=True), ForeignKey("goods_receipt_entries.id"), nullable=True)
     shipment_number = Column(Text, nullable=True)
     sku_code_id = Column(UUID(as_uuid=True), ForeignKey("sku_codes.id"), nullable=True)
     sku_version_id = Column(UUID(as_uuid=True), ForeignKey("sku_versions.id"), nullable=True)
@@ -929,6 +934,7 @@ class QrGenerationRecord(Base):
     source_production_run = relationship("ProductionRun")
     source_rqc_approval_entry = relationship("RqcApprovalEntry", back_populates="fg_qr_batch")
     source_rqc_record = relationship("RqcRecord")
+    source_goods_receipt_entry = relationship("GoodsReceiptEntry", back_populates="qr_batch")
     sku_code = relationship("SkuCode")
     sku_version = relationship("SkuVersion")
     pallets = relationship("Pallet", back_populates="source_qr_generation", order_by="Pallet.created_at")
@@ -948,6 +954,10 @@ class Pallet(Base):
     source_qr_generation_id = Column(UUID(as_uuid=True), ForeignKey("qr_generation_records.id"), nullable=False)
     source_inward_qc_id = Column(UUID(as_uuid=True), ForeignKey("inward_qc_records.id"), nullable=True)
     source_production_run_id = Column(UUID(as_uuid=True), ForeignKey("production_runs.id"), nullable=True)
+    # Factory Module 1 (migration 0045) -- the Goods Receipt entry (PO ->
+    # container -> SKU) an RM pallet was received on. Null for every pallet
+    # not generated through Goods Receipt.
+    source_goods_receipt_entry_id = Column(UUID(as_uuid=True), ForeignKey("goods_receipt_entries.id"), nullable=True)
     # Section 11 -- FG pallets only. Which specific machine (within a
     # possibly multi-machine Production Run) produced this pallet, and the
     # frozen Batch Code string computed from it at generation time. Both
@@ -967,6 +977,7 @@ class Pallet(Base):
     source_qr_generation = relationship("QrGenerationRecord", back_populates="pallets")
     source_inward_qc = relationship("InwardQcRecord")
     source_production_run = relationship("ProductionRun")
+    source_goods_receipt_entry = relationship("GoodsReceiptEntry")
     source_machine = relationship("Machine")
     current_location = relationship("Location")
     lifecycle_events = relationship(
@@ -997,6 +1008,7 @@ class StorageRecord(Base):
     source_qr_generation_id = Column(UUID(as_uuid=True), ForeignKey("qr_generation_records.id"), nullable=False)
     source_inward_qc_id = Column(UUID(as_uuid=True), ForeignKey("inward_qc_records.id"), nullable=True)
     source_production_run_id = Column(UUID(as_uuid=True), ForeignKey("production_runs.id"), nullable=True)
+    source_goods_receipt_entry_id = Column(UUID(as_uuid=True), ForeignKey("goods_receipt_entries.id"), nullable=True)
     stored_by = Column(UUID(as_uuid=True), ForeignKey("app_users.id"), nullable=True)
     stored_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
@@ -1423,3 +1435,53 @@ class HoldReleaseRecord(Base):
     status = Column(Text, nullable=False, default="draft")  # 'draft' | 'completed'
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class GoodsReceipt(Base):
+    """Factory OS Module 1 -- one Goods Receipt per PO (migration 0045).
+    `status` is maintained by app/api/goods_receipt.py from the entries'
+    own statuses: draft | pending | partial | received."""
+    __tablename__ = "goods_receipts"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    po_number = Column(Text, nullable=False)
+    vendor_id = Column(UUID(as_uuid=True), ForeignKey("vendors.id", ondelete="SET NULL"), nullable=True)
+    vendor_name = Column(Text, nullable=False)
+    status = Column(Text, nullable=False, default="draft")
+    created_by = Column(UUID(as_uuid=True), ForeignKey("app_users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    vendor = relationship("Vendor")
+    entries = relationship(
+        "GoodsReceiptEntry", back_populates="goods_receipt",
+        cascade="all, delete-orphan", order_by="GoodsReceiptEntry.sort_order",
+    )
+
+
+class GoodsReceiptEntry(Base):
+    """One independently-receivable container x SKU line on a PO. Its own
+    status, received quantity/unit and pallet count; once inwarded it gets
+    exactly one RM QR batch (QrGenerationRecord.source_goods_receipt_entry_id)."""
+    __tablename__ = "goods_receipt_entries"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    goods_receipt_id = Column(UUID(as_uuid=True), ForeignKey("goods_receipts.id", ondelete="CASCADE"), nullable=False)
+    container_name = Column(Text, nullable=False)
+    container_number = Column(Text, nullable=True)
+    sku_code_id = Column(UUID(as_uuid=True), ForeignKey("sku_codes.id"), nullable=False)
+    sku_version_id = Column(UUID(as_uuid=True), ForeignKey("sku_versions.id"), nullable=True)
+    sku_code_snapshot = Column(Text, nullable=True)
+    sku_version_snapshot = Column(Text, nullable=True)
+    po_quantity = Column(Numeric, nullable=False)
+    received_quantity = Column(Numeric, nullable=True)
+    unit = Column(Text, nullable=False, default="Units")
+    pallet_count = Column(Integer, nullable=True)
+    status = Column(Text, nullable=False, default="pending")
+    inwarded_at = Column(DateTime(timezone=True), nullable=True)
+    inwarded_by = Column(UUID(as_uuid=True), ForeignKey("app_users.id"), nullable=True)
+    sort_order = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+    goods_receipt = relationship("GoodsReceipt", back_populates="entries")
+    sku_code = relationship("SkuCode")
+    sku_version = relationship("SkuVersion")
+    qr_batch = relationship("QrGenerationRecord", back_populates="source_goods_receipt_entry", uselist=False)

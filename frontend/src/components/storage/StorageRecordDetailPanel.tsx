@@ -56,6 +56,9 @@ export default function StorageRecordDetailPanel({ record, onClose }: { record: 
                   }
                 />
               )}
+              {record.goods_receipt_po_number && <Kv label="Goods Receipt PO" value={<span className="mono">{record.goods_receipt_po_number}</span>} />}
+              {record.goods_receipt_container_name && <Kv label="Container" value={<span className="mono">{record.goods_receipt_container_name}</span>} />}
+              {record.goods_receipt_vendor_name && <Kv label="Vendor" value={record.goods_receipt_vendor_name} />}
               {record.source_production_run_id && <Kv label="Source Production Run" value={<span className="mono">{record.source_production_run_id}</span>} />}
             </div>
           </div>

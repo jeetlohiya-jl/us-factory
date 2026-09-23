@@ -8,11 +8,17 @@ import type { Pallet, StorageRecordDetail } from "@/lib/types";
 import StorageScanPanel from "@/components/storage/StorageScanPanel";
 import StorageRecordDetailPanel from "@/components/storage/StorageRecordDetailPanel";
 import Pagination from "@/components/Pagination";
+import { useProduct } from "@/lib/productContext";
 
 const MODULE = "rm-storage";
 
 export default function RmStoragePage() {
   const me = useMe();
+  // Factory product: only pallets generated through Goods Receipt -> RM QR
+  // are listed or accepted here (the backend enforces the same rule on
+  // scan/confirm via source="goods_receipt"). US Factory is unchanged.
+  const goodsReceiptOnly = useProduct() === "factory";
+  const scanSource = goodsReceiptOnly ? "goods_receipt" : "";
   const [pending, setPending] = useState<Pallet[]>([]);
   const [pendingMatchedCount, setPendingMatchedCount] = useState(0);
   const [records, setRecords] = useState<StorageRecordDetail[]>([]);
@@ -35,9 +41,12 @@ export default function RmStoragePage() {
     setLoading(true);
     setLoadError(null);
     try {
-      const key = listCacheKey(MODULE, { search, recordsSearch, pendingPage, recordsPage });
+      const key = listCacheKey(MODULE, { search, recordsSearch, pendingPage, recordsPage, goodsReceiptOnly });
       const [pendingRes, recordsRes] = await cachedList(key, () =>
-        Promise.all([api.listRmPending({ search, page: pendingPage }), api.listRmStorageRecords(recordsSearch, recordsPage)])
+        Promise.all([
+          api.listRmPending({ search, page: pendingPage, goodsReceiptOnly }),
+          api.listRmStorageRecords(recordsSearch, recordsPage, goodsReceiptOnly),
+        ])
       );
       setPending(pendingRes.items);
       setPendingMatchedCount(pendingRes.matched_count);
@@ -48,7 +57,7 @@ export default function RmStoragePage() {
     } finally {
       setLoading(false);
     }
-  }, [search, recordsSearch, pendingPage, recordsPage]);
+  }, [search, recordsSearch, pendingPage, recordsPage, goodsReceiptOnly]);
 
   useImmediateThenDebounced(refresh, [refresh]);
 
@@ -151,9 +160,9 @@ export default function RmStoragePage() {
         <StorageScanPanel
           title="New RM Storage Record"
           hintSub="Scan the Pallet, then scan the Location."
-          onScanPallet={api.scanRmPallet}
+          onScanPallet={(payload) => api.scanRmPallet(payload, scanSource)}
           onScanLocation={api.scanRmLocation}
-          onConfirm={async (p, l) => { await api.confirmRmStorage(p, l); refreshAfterMutation(); }}
+          onConfirm={async (p, l) => { await api.confirmRmStorage(p, l, scanSource); refreshAfterMutation(); }}
           onClose={() => { setShowScan(false); refresh(); }}
         />
       )}

@@ -177,6 +177,7 @@ export interface ModulePermissionsMap {
   shipment_picking: Permissions;
   outward_vehicle_inspection: Permissions;
   machine_downtime: Permissions;
+  goods_receipt: Permissions;
 }
 
 export interface MeResponse {
@@ -197,6 +198,7 @@ export const USER_MODULES: ModuleKey[] = [
   "inward_vehicle_inspection", "inward_qc",
   "rm_qr_generation", "rm_storage", "material_consumption", "production", "ipqc", "rqc", "fg_qr_generation", "fg_storage",
   "customer_shipment", "shipment_picking", "outward_vehicle_inspection", "machine_downtime",
+  "goods_receipt",
 ];
 
 export interface AppUser {
@@ -419,6 +421,8 @@ export interface QrGenerationDetail extends QrGenerationListItem {
   source_locked: boolean;
   source_inward_qc_id: string | null;
   source_production_run_id: string | null;
+  // Factory Module 1 -- set when the batch came from one Goods Receipt entry.
+  source_goods_receipt_entry_id?: string | null;
   source_display_id: string | null;
   pallets: Pallet[];
 }
@@ -439,6 +443,10 @@ export interface StorageRecordDetail {
   pallet_status: PalletLifecycleStatus;
   // FG pallets only, Section 11.
   batch_code: string | null;
+  // Factory Module 1 -- RM pallets received through Goods Receipt.
+  goods_receipt_po_number?: string | null;
+  goods_receipt_container_name?: string | null;
+  goods_receipt_vendor_name?: string | null;
 }
 
 export interface LocationRef {
@@ -1426,3 +1434,82 @@ export interface HoldReleaseRecord {
 }
 
 export type HoldReleaseSavePayload = Omit<HoldReleaseRecord, "id" | "module" | "record_id">;
+
+
+// ---------------------------------------------------------------------------
+// Factory OS Module 1 -- Goods Receipt (migration 0045)
+// ---------------------------------------------------------------------------
+
+export type GoodsReceiptStatus = "draft" | "pending" | "partial" | "received";
+export type GoodsReceiptEntryStatus = "pending" | "inwarded";
+
+export interface GoodsReceiptEntry {
+  id: string;
+  container_name: string;
+  container_number: string | null;
+  sku_code_id: string;
+  sku_version_id: string | null;
+  sku_code: string | null;
+  sku_version: string | null;
+  po_quantity: number;
+  received_quantity: number | null;
+  unit: QuantityUnit;
+  pallet_count: number | null;
+  status: GoodsReceiptEntryStatus;
+  inwarded_at: string | null;
+  qr_batch: { id: string; batch_display_id: string; status: "pending" | "generated"; quantity: number } | null;
+}
+
+export interface GoodsReceiptDetail {
+  id: string;
+  po_number: string;
+  vendor_id: string | null;
+  vendor_name: string;
+  status: GoodsReceiptStatus;
+  created_at: string;
+  updated_at: string | null;
+  entries: GoodsReceiptEntry[];
+}
+
+export interface GoodsReceiptListItem {
+  id: string;
+  po_number: string;
+  vendor_name: string;
+  status: GoodsReceiptStatus;
+  created_at: string;
+  container_count: number;
+  inwarded_count: number;
+  pallet_total: number;
+  sku_summary: string;
+}
+
+/** Local-only editing row in the New/Edit panel. `id` is set for a row
+ * that already exists server-side; `locked` for one already inwarded. */
+export interface GoodsReceiptEntryDraft {
+  key: string;
+  id: string | null;
+  locked: boolean;
+  container_name: string;
+  container_number: string;
+  sku_code_id: string | null;
+  sku_version_id: string | null;
+  po_quantity: string;
+  unit: QuantityUnit;
+}
+
+export interface GoodsReceiptSavePayload {
+  po_number: string;
+  vendor_id: string;
+  as_draft: boolean;
+  entries: {
+    id?: string | null; container_name: string; container_number?: string | null;
+    sku_code_id: string; sku_version_id: string | null; po_quantity: number; unit: QuantityUnit;
+  }[];
+}
+
+export interface GoodsReceiptInwardPayload {
+  received_quantity: number;
+  unit: QuantityUnit;
+  pallet_count: number;
+  container_number?: string | null;
+}

@@ -18,10 +18,19 @@ class StorageValidationError(Exception):
         self.message = message
 
 
-def resolve_pallet_for_storage(db: Session, raw_scan: str, pallet_type: str) -> models.Pallet:
+def resolve_pallet_for_storage(
+    db: Session, raw_scan: str, pallet_type: str, require_goods_receipt: bool = False,
+) -> models.Pallet:
+    """require_goods_receipt -- Factory OS: only pallets generated through
+    Goods Receipt -> RM QR may be stored from the Factory product's RM
+    Storage screen. Enforced here, server-side, not just by hiding rows."""
     pallet = pallet_service.resolve_pallet_from_scan(db, raw_scan, pallet_type)
     if not pallet:
         raise StorageValidationError("Unrecognized pallet QR. Check the pallet and try scanning again.")
+    if require_goods_receipt and not pallet.source_goods_receipt_entry_id:
+        raise StorageValidationError(
+            f"Pallet {pallet.display_id} was not received through Goods Receipt and can't be stored here."
+        )
     if pallet.lifecycle_status == "stored":
         raise StorageValidationError(f"Pallet {pallet.display_id} is already stored. Use a relocation workflow to move it.")
     if pallet.lifecycle_status in ("consumed", "picked", "shipped"):
@@ -64,6 +73,7 @@ def confirm_storage(
         source_qr_generation_id=pallet.source_qr_generation_id,
         source_inward_qc_id=pallet.source_inward_qc_id,
         source_production_run_id=pallet.source_production_run_id,
+        source_goods_receipt_entry_id=pallet.source_goods_receipt_entry_id,
         stored_by=actor_user_id,
     )
     db.add(storage_record)
