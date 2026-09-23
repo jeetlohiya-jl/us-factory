@@ -1,5 +1,7 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useProduct } from "./productContext";
+import { permissionsForProduct } from "./currentProduct";
 import { api } from "@/lib/api";
 import type { MeResponse } from "@/lib/types";
 
@@ -44,6 +46,9 @@ export function refreshMe() {
 
 export function useMe(): MeResponse | null {
   const [me, setMe] = useState<MeResponse | null>(cached);
+  // Inside Factory, shared screens reading e.g. permissions.rm_storage get
+  // the person's Factory permission instead (lib/currentProduct.ts).
+  const product = useProduct();
 
   useEffect(() => {
     subscribers.add(setMe);
@@ -56,5 +61,8 @@ export function useMe(): MeResponse | null {
     };
   }, []);
 
-  return me;
+  return useMemo(
+    () => (me && product === "factory" ? { ...me, permissions: permissionsForProduct(me.permissions, product) } : me),
+    [me, product]
+  );
 }

@@ -9,6 +9,7 @@ import { useMe } from "@/lib/useMe";
 import { api, ApiError } from "@/lib/api";
 import type { PortfolioAccessMe } from "@/lib/types";
 import { ProductProvider } from "@/lib/productContext";
+import { setCurrentProduct } from "@/lib/currentProduct";
 
 /**
  * Shell matching the approved prototype's sidebar visual language (brand
@@ -247,6 +248,13 @@ const SETUP_NAV_ITEMS = [
     ),
   },
   {
+    href: "/locations",
+    label: "Locations",
+    icon: (
+      <path d="M12 21s-7-6.2-7-11.5A7 7 0 0112 2.5a7 7 0 017 7C19 14.8 12 21 12 21zM12 12a2.5 2.5 0 100-5 2.5 2.5 0 000 5z" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    ),
+  },
+  {
     href: "/machines",
     label: "Machines",
     icon: (
@@ -467,6 +475,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   const isFactory = chosenProduct === "factory";
+  // Set synchronously during render (not in an effect) so it's already in
+  // place when the children's own first data fetches run.
+  setCurrentProduct(chosenProduct);
   const activeNavItems = isFactory ? FACTORY_NAV_ITEMS : NAV_ITEMS;
 
   return (

@@ -1,3 +1,4 @@
+import { getCurrentProduct } from "./currentProduct";
 /**
  * PERF_AUDIT.md finding #9: no data-fetch caching layer existed anywhere
  * (every `request()` call set `cache: "no-store"`, every Supabase list call
@@ -67,5 +68,6 @@ export function listCacheKey(module: string, params: Record<string, unknown>): s
       if (params[k] !== undefined && params[k] !== "") acc[k] = params[k];
       return acc;
     }, {} as Record<string, unknown>);
-  return `${module}:${JSON.stringify(sorted)}`;
+  // Product in the key: Factory and US Factory never share a cached page.
+  return `${module}:${getCurrentProduct() ?? "-"}:${JSON.stringify(sorted)}`;
 }

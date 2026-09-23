@@ -2,7 +2,7 @@
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import { useMe } from "@/lib/useMe";
-import { USER_MODULES } from "@/lib/types";
+import { FACTORY_MODULES, US_FACTORY_MODULES, USER_MODULES } from "@/lib/types";
 import type { AppUser, ModuleKey, Permissions, UserCreateInput } from "@/lib/types";
 
 const MODULE_LABELS: Record<ModuleKey, string> = {
@@ -20,8 +20,20 @@ const MODULE_LABELS: Record<ModuleKey, string> = {
   shipment_picking: "Shipment Picking",
   outward_vehicle_inspection: "Outward Vehicle Inspection",
   machine_downtime: "Machine Downtime",
+  // Factory (independent of US Factory -- migration 0047).
   goods_receipt: "Goods Receipt",
+  factory_rm_storage: "RM Storage",
+  factory_material_consumption: "Raw Material Consumption",
+  factory_production: "Production",
+  factory_rqc_fg_qr: "RQC & FG QR",
+  factory_fg_storage: "Finished Goods Storage",
+  factory_goods_outward: "Goods Outward",
 };
+
+const PRODUCT_GROUPS: { title: string; modules: ModuleKey[] }[] = [
+  { title: "Factory", modules: FACTORY_MODULES },
+  { title: "US Factory", modules: US_FACTORY_MODULES },
+];
 
 const ACTIONS: { key: keyof Permissions; label: string }[] = [
   { key: "can_view", label: "View" },
@@ -43,6 +55,14 @@ function blankPermissionMap(): Record<ModuleKey, Permissions> {
 /** Shared View/Create/Edit/Delete/Approve/Fill Section checkbox grid, one
  * row per module -- used both in the Add User form and inline per-user
  * editing below, so the two never drift out of sync visually. */
+/**
+ * Factory and US Factory are independent working units with separate
+ * permissions, so the matrix is split into one section per product. Each
+ * section has a "Full access" checkbox (every module, every action in that
+ * product), each module row keeps its own select-all checkbox, and every
+ * individual checkbox still works on its own afterwards -- tick Full
+ * access, then untick whatever this person shouldn't have.
+ */
 function PermissionMatrix({
   value, onChange, disabled,
 }: {
@@ -50,58 +70,82 @@ function PermissionMatrix({
   onChange: (module: ModuleKey, key: keyof Permissions, checked: boolean) => void;
   disabled?: boolean;
 }) {
-  // Module master checkbox: checked when every permission for that module
-  // is already on, indeterminate when only some are -- checking it turns
-  // every action on, unchecking clears every action, and each individual
-  // checkbox still works independently afterward (spec point 3).
   function toggleModule(module: ModuleKey, checked: boolean) {
     for (const a of ACTIONS) onChange(module, a.key, checked);
   }
+  function toggleProduct(modules: ModuleKey[], checked: boolean) {
+    for (const m of modules) toggleModule(m, checked);
+  }
 
   return (
-    <div className="card card-flush" style={{ overflowX: "auto" }}>
-      <table className="data">
-        <thead>
-          <tr>
-            <th>Module</th>
-            {ACTIONS.map((a) => <th key={a.key} style={{ textAlign: "center" }}>{a.label}</th>)}
-          </tr>
-        </thead>
-        <tbody>
-          {USER_MODULES.map((module) => {
-            const perms = value[module];
-            const allOn = ACTIONS.every((a) => perms[a.key]);
-            const someOn = ACTIONS.some((a) => perms[a.key]);
-            return (
-              <tr key={module}>
-                <td>
-                  <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: disabled ? "default" : "pointer" }}>
-                    <input
-                      type="checkbox"
-                      disabled={disabled}
-                      checked={allOn}
-                      ref={(el) => { if (el) el.indeterminate = !allOn && someOn; }}
-                      onChange={(e) => toggleModule(module, e.target.checked)}
-                      title="Select/clear all permissions for this module"
-                    />
-                    {MODULE_LABELS[module]}
-                  </label>
-                </td>
-                {ACTIONS.map((a) => (
-                  <td key={a.key} style={{ textAlign: "center" }}>
-                    <input
-                      type="checkbox"
-                      disabled={disabled}
-                      checked={perms[a.key]}
-                      onChange={(e) => onChange(module, a.key, e.target.checked)}
-                    />
-                  </td>
-                ))}
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+    <div style={{ display: "grid", gap: 16 }}>
+      {PRODUCT_GROUPS.map((group) => {
+        const cells = group.modules.flatMap((m) => ACTIONS.map((a) => value[m]?.[a.key] ?? false));
+        const allOn = cells.every(Boolean);
+        const someOn = cells.some(Boolean);
+        return (
+          <div key={group.title} className="card card-flush" style={{ overflowX: "auto" }}>
+            <table className="data">
+              <thead>
+                <tr>
+                  <th colSpan={ACTIONS.length + 1} style={{ fontSize: 13 }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: disabled ? "default" : "pointer" }}>
+                      <input
+                        type="checkbox"
+                        disabled={disabled}
+                        checked={allOn}
+                        ref={(el) => { if (el) el.indeterminate = !allOn && someOn; }}
+                        onChange={(e) => toggleProduct(group.modules, e.target.checked)}
+                        title={`Full access to every ${group.title} module`}
+                      />
+                      <span style={{ fontFamily: "var(--serif)", fontSize: 16, textTransform: "none", letterSpacing: 0 }}>{group.title}</span>
+                      <span style={{ fontWeight: 500, textTransform: "none", letterSpacing: 0, color: "var(--ink-50)" }}>— Full access</span>
+                    </label>
+                  </th>
+                </tr>
+                <tr>
+                  <th>Module</th>
+                  {ACTIONS.map((a) => <th key={a.key} style={{ textAlign: "center" }}>{a.label}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {group.modules.map((module) => {
+                  const perms = value[module] || BLANK_PERMS;
+                  const modAll = ACTIONS.every((a) => perms[a.key]);
+                  const modSome = ACTIONS.some((a) => perms[a.key]);
+                  return (
+                    <tr key={module}>
+                      <td>
+                        <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: disabled ? "default" : "pointer" }}>
+                          <input
+                            type="checkbox"
+                            disabled={disabled}
+                            checked={modAll}
+                            ref={(el) => { if (el) el.indeterminate = !modAll && modSome; }}
+                            onChange={(e) => toggleModule(module, e.target.checked)}
+                            title="Select/clear all permissions for this module"
+                          />
+                          {MODULE_LABELS[module]}
+                        </label>
+                      </td>
+                      {ACTIONS.map((a) => (
+                        <td key={a.key} style={{ textAlign: "center" }}>
+                          <input
+                            type="checkbox"
+                            disabled={disabled}
+                            checked={perms[a.key]}
+                            onChange={(e) => onChange(module, a.key, e.target.checked)}
+                          />
+                        </td>
+                      ))}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        );
+      })}
     </div>
   );
 }
