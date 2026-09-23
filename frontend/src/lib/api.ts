@@ -1380,7 +1380,10 @@ async function peekNextContainerNumber(): Promise<string> {
   const { data, error } = await supabase
     .from("display_id_counters")
     .select("counter_key, next_value")
-    .eq("counter_key", "cs_container")
+    // Each unit has its own sequence (backend id_counters.next_seq prefixes
+    // Factory's keys with "factory:"), so preview the same counter the save
+    // will actually use.
+    .eq("counter_key", getCurrentProduct() === "factory" ? "factory:cs_container" : "cs_container")
     .maybeSingle();
   if (error) throw new ApiError(500, error.message);
   const containerSeq = data?.next_value ?? 1;
