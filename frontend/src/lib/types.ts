@@ -224,6 +224,35 @@ export interface UserUpdateInput {
 }
 
 // ---------------------------------------------------------------------------
+// Portfolio Access (post-login "Factory" / "US Factory" picker,
+// admin-managed via Setup -> Portfolio Access)
+// ---------------------------------------------------------------------------
+
+export interface PortfolioAccessMe {
+  access_factory: boolean;
+  access_us_factory: boolean;
+}
+
+export interface PortfolioAccess {
+  id: string;
+  email: string;
+  access_factory: boolean;
+  access_us_factory: boolean;
+  created_at: string;
+}
+
+export interface PortfolioAccessInput {
+  email: string;
+  access_factory?: boolean;
+  access_us_factory?: boolean;
+}
+
+export interface PortfolioAccessUpdateInput {
+  access_factory?: boolean;
+  access_us_factory?: boolean;
+}
+
+// ---------------------------------------------------------------------------
 // Inward QC
 // ---------------------------------------------------------------------------
 

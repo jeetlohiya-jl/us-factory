@@ -6,6 +6,8 @@ import type { Session } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabaseClient";
 import { signInWithGoogle, signOut } from "@/lib/session";
 import { useMe } from "@/lib/useMe";
+import { api, ApiError } from "@/lib/api";
+import type { PortfolioAccessMe } from "@/lib/types";
 
 /**
  * Shell matching the approved prototype's sidebar visual language (brand
@@ -157,12 +159,36 @@ const USERS_NAV_ITEM = {
   ),
 };
 
+// Admin-only, same gating convention as USERS_NAV_ITEM above -- manages
+// the portfolio_access table (which emails can see the Factory / US
+// Factory picker below) rather than a module_permissions scope.
+const PORTFOLIO_ACCESS_NAV_ITEM = {
+  href: "/portfolio-access",
+  label: "Portfolio Access",
+  icon: (
+    <path d="M3 9l9-5 9 5-9 5-9-5zM3 9v6l9 5 9-5V9" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+  ),
+};
+
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [checkedSession, setCheckedSession] = useState(false);
+  // Portfolio-level gate (Setup -> Portfolio Access, admin-managed): which
+  // top-level product(s) this signed-in email may open. Fetched
+  // independently of useMe()/is_admin below -- a person with only Factory
+  // access may have no app_users row in this app at all, so this can't
+  // wait on or reuse that check.
+  const [portfolioAccess, setPortfolioAccess] = useState<PortfolioAccessMe | null>(null);
+  const [checkedPortfolio, setCheckedPortfolio] = useState(false);
+  const [portfolioError, setPortfolioError] = useState<string | null>(null);
+  // Deliberately plain component state, never persisted -- "if the user
+  // has both accesses they can always be asked" means every sign-in (in
+  // practice, every fresh load of this shell) shows the picker again
+  // rather than remembering a past choice.
+  const [chosenProduct, setChosenProduct] = useState<"factory" | "us_factory" | null>(null);
   const pathname = usePathname();
   const me = useMe();
-  const setupNavItems = me?.is_admin ? [...SETUP_NAV_ITEMS, USERS_NAV_ITEM] : SETUP_NAV_ITEMS;
+  const setupNavItems = me?.is_admin ? [...SETUP_NAV_ITEMS, USERS_NAV_ITEM, PORTFOLIO_ACCESS_NAV_ITEM] : SETUP_NAV_ITEMS;
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -171,12 +197,43 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     });
     const { data: sub } = supabase.auth.onAuthStateChange((_event, newSession) => {
       setSession(newSession);
+      // A sign-out/sign-in swap should show the picker fresh for whoever
+      // just signed in, not silently keep the previous person's choice.
+      setChosenProduct(null);
+      setCheckedPortfolio(false);
+      setPortfolioAccess(null);
       // Same signal useMe() already listens for, so switching users (or
       // signing in/out) still forces a fresh /me + permissions fetch.
       window.dispatchEvent(new Event("factory_os_user_changed"));
     });
     return () => sub.subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (!session) return;
+    let cancelled = false;
+    setCheckedPortfolio(false);
+    setPortfolioError(null);
+    api
+      .myPortfolioAccess()
+      .then((res) => {
+        if (cancelled) return;
+        setPortfolioAccess(res);
+        // Only one access -- go straight there, no picker shown.
+        if (res.access_us_factory && !res.access_factory) setChosenProduct("us_factory");
+        else if (res.access_factory && !res.access_us_factory) setChosenProduct("factory");
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setPortfolioError(e instanceof ApiError ? e.message : "Could not check your access.");
+      })
+      .finally(() => {
+        if (!cancelled) setCheckedPortfolio(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session]);
 
   if (!checkedSession) {
     return <div className="auth-loading">Loading…</div>;
@@ -192,6 +249,98 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <button className="btn btn-primary" style={{ marginTop: 20 }} onClick={() => signInWithGoogle()}>
             Sign in with Google
           </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!checkedPortfolio) {
+    return <div className="auth-loading">Loading…</div>;
+  }
+
+  if (portfolioError) {
+    return (
+      <div className="auth-gate">
+        <div className="auth-gate-card">
+          <div className="sb-mark" style={{ margin: "0 auto 16px" }}>C</div>
+          <h1>Couldn’t check your access</h1>
+          <div className="desc">{portfolioError}</div>
+          <button className="btn btn-primary" style={{ marginTop: 20 }} onClick={() => signOut()}>
+            Sign out
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const hasFactory = !!portfolioAccess?.access_factory;
+  const hasUsFactory = !!portfolioAccess?.access_us_factory;
+
+  if (!hasFactory && !hasUsFactory) {
+    return (
+      <div className="auth-gate">
+        <div className="auth-gate-card">
+          <div className="sb-mark" style={{ margin: "0 auto 16px" }}>C</div>
+          <h1>No access yet</h1>
+          <div className="desc">
+            {session.user.email} isn’t set up with access to Factory or US Factory yet. Ask an admin to add you in
+            Portfolio Access.
+          </div>
+          <button className="btn btn-tertiary" style={{ marginTop: 20 }} onClick={() => signOut()}>
+            Sign out
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Both accesses and nothing chosen yet this session -- show the picker.
+  if (hasFactory && hasUsFactory && !chosenProduct) {
+    return (
+      <div className="auth-gate">
+        <div className="auth-gate-card" style={{ maxWidth: 480 }}>
+          <div className="sb-mark" style={{ margin: "0 auto 16px" }}>C</div>
+          <h1>Choose where to go</h1>
+          <div className="desc">Signed in as {session.user.email}</div>
+          <div style={{ display: "flex", gap: 12, marginTop: 24, flexWrap: "wrap", justifyContent: "center" }}>
+            <button
+              className="btn btn-tertiary"
+              style={{ flex: "1 1 180px", padding: "18px 14px", fontSize: 15 }}
+              onClick={() => setChosenProduct("factory")}
+            >
+              Factory
+            </button>
+            <button
+              className="btn btn-primary"
+              style={{ flex: "1 1 180px", padding: "18px 14px", fontSize: 15 }}
+              onClick={() => setChosenProduct("us_factory")}
+            >
+              US Factory
+            </button>
+          </div>
+          <div className="desc" style={{ marginTop: 20 }}>
+            <button className="btn-tertiary" onClick={() => signOut()}>Sign out</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (chosenProduct === "factory") {
+    return (
+      <div className="auth-gate">
+        <div className="auth-gate-card">
+          <div className="sb-mark" style={{ margin: "0 auto 16px" }}>C</div>
+          <h1>Factory</h1>
+          <div className="desc">This product isn’t built yet — coming soon.</div>
+          <div style={{ display: "flex", gap: 10, justifyContent: "center", marginTop: 20 }}>
+            {hasUsFactory && (
+              <button className="btn btn-primary" onClick={() => setChosenProduct("us_factory")}>
+                Go to US Factory instead
+              </button>
+            )}
+            <button className="btn btn-tertiary" onClick={() => signOut()}>Sign out</button>
+          </div>
         </div>
       </div>
     );
@@ -225,7 +374,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </div>
         <div className="sb-foot">
           <div>Signed in as {session.user.email}</div>
-          <div className="sb-role">
+          <div className="sb-role" style={{ display: "flex", gap: 10 }}>
+            {hasFactory && (
+              <button className="btn-tertiary" onClick={() => setChosenProduct(null)}>Switch</button>
+            )}
             <button className="btn-tertiary" onClick={() => signOut()}>Sign out</button>
           </div>
         </div>

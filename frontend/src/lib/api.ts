@@ -15,6 +15,7 @@ import type {
   MachineDowntimeRecord, MachineDowntimeSavePayload,
   HoldReleaseModule, HoldReleaseRecord, HoldReleaseSavePayload,
   AppUser, UserCreateInput, UserUpdateInput,
+  PortfolioAccessMe, PortfolioAccess, PortfolioAccessInput, PortfolioAccessUpdateInput,
 } from "./types";
 
 // Static, never-changing business constants -- mirrored 1:1 from
@@ -1615,6 +1616,20 @@ export const api = {
     request<AppUser>("/api/v1/users", { method: "POST", body: JSON.stringify(payload) }),
   updateUser: (id: string, patch: UserUpdateInput) =>
     request<AppUser>(`/api/v1/users/${id}`, { method: "PUT", body: JSON.stringify(patch) }),
+
+  // -- Portfolio Access (post-login "Factory" / "US Factory" picker) ------
+  // `myPortfolioAccess` deliberately does NOT require an app_users row on
+  // the backend (see get_verified_email) -- it's called before we know
+  // whether this signed-in email has one, since the picker itself is what
+  // decides whether the person even gets into this app.
+  myPortfolioAccess: () => request<PortfolioAccessMe>("/api/v1/portfolio-access/me"),
+  portfolioAccessList: () => request<PortfolioAccess[]>("/api/v1/portfolio-access"),
+  createPortfolioAccess: (payload: PortfolioAccessInput) =>
+    request<PortfolioAccess>("/api/v1/portfolio-access", { method: "POST", body: JSON.stringify(payload) }),
+  updatePortfolioAccess: (id: string, patch: PortfolioAccessUpdateInput) =>
+    request<PortfolioAccess>(`/api/v1/portfolio-access/${id}`, { method: "PUT", body: JSON.stringify(patch) }),
+  deletePortfolioAccess: (id: string) =>
+    request<void>(`/api/v1/portfolio-access/${id}`, { method: "DELETE" }),
 
   // -- Phase 1: reference/master data, direct Supabase (RLS-enforced) -----
   skuCodes: (category?: string) =>

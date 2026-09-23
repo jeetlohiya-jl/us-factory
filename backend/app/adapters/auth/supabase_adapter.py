@@ -72,7 +72,11 @@ class SupabaseAuthAdapter(AuthPort):
         self.db = db
         self.settings = get_settings()
 
-    def resolve_user(self, authorization_header: str | None) -> AuthenticatedUser | None:
+    def _verify(self, authorization_header: str | None) -> dict | None:
+        """Shared JWT verification, factored out of resolve_user so
+        resolve_email (which must NOT require an app_users row -- see
+        AuthPort.resolve_email's docstring) can reuse the exact same
+        signature/audience checks instead of duplicating them."""
         if not authorization_header or not authorization_header.startswith("Bearer "):
             return None
         token = authorization_header[len("Bearer "):].strip()
@@ -87,9 +91,21 @@ class SupabaseAuthAdapter(AuthPort):
             if jwk is None:
                 logger.warning("Supabase auth: no matching JWKS key for kid=%s", header.get("kid"))
                 return None
-            payload = jwt.decode(token, jwk, algorithms=[alg], audience="authenticated")
+            return jwt.decode(token, jwk, algorithms=[alg], audience="authenticated")
         except (JWTError, urllib.error.URLError, ValueError) as e:
             logger.warning("Supabase auth: token rejected (%s)", e)
+            return None
+
+    def resolve_email(self, authorization_header: str | None) -> str | None:
+        payload = self._verify(authorization_header)
+        if not payload:
+            return None
+        email = payload.get("email")
+        return email if payload.get("sub") and email else None
+
+    def resolve_user(self, authorization_header: str | None) -> AuthenticatedUser | None:
+        payload = self._verify(authorization_header)
+        if not payload:
             return None
 
         auth_user_id = payload.get("sub")

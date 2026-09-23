@@ -26,6 +26,23 @@ def get_current_user(
     return user
 
 
+def get_verified_email(
+    authorization: str | None = Header(default=None),
+    auth_adapter=Depends(get_auth_adapter),
+) -> str:
+    """Same "is this a validly signed-in person" check as get_current_user,
+    but does NOT require an app_users row -- see AuthPort.resolve_email's
+    docstring. Only used by the portfolio-access self-check
+    (GET /api/v1/portfolio-access/me): a person with portfolio access to a
+    product other than this one may never have an app_users row here at
+    all, so that route can't gate on get_current_user the way every other
+    route in this app correctly does."""
+    email = auth_adapter.resolve_email(authorization)
+    if not email:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+    return email
+
+
 MODULE = "inward_vehicle_inspection"
 
 
