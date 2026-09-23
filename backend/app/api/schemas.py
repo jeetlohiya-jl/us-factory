@@ -745,6 +745,7 @@ class MaterialConsumptionSecondaryScanIn(BaseModel):
 
 class MaterialConsumptionBasicUpdate(BaseModel):
     shift: Optional[str] = None
+    shipment_number: Optional[str] = None
 
 
 class MaterialConsumptionMachineEntryIn(BaseModel):
@@ -805,6 +806,7 @@ class MaterialConsumptionListItemOut(BaseModel):
     pallet_numbers: str  # comma-joined display of primary pallets across every machine
     machine: Optional[str]  # comma-joined machine codes, e.g. "MACH-001, MACH-002"
     shift: Optional[str]
+    shipment_number: Optional[str] = None
     entries: list[MaterialConsumptionEntrySummaryOut] = []
     status: str
 
@@ -813,6 +815,8 @@ class MaterialConsumptionDetailOut(BaseModel):
     id: uuid.UUID
     consumption_date: str
     shift: Optional[str]
+    shipment_number: Optional[str] = None
+    operator: Optional[str] = None
     status: str
     production_run_id: Optional[uuid.UUID]
     production_run_number: Optional[str] = None

@@ -481,10 +481,15 @@ IPQC_MANUFACTURER_PLACEHOLDER = "Cirkla Manufacturing (placeholder)"
 
 
 def _derive_shipment_number(mc: models.MaterialConsumption) -> str | None:
-    """Mirrors the frontend's deriveShipmentNumber (api.ts): the first
-    primary pallet's own shipment_number snapshot, walked in machine/pallet
-    sort order -- an MC record never stores its own shipment number, but
-    every primary pallet it consumed carries one."""
+    """As of migration 0044, the operator enters Shipment Number themselves
+    on Page 1 (alongside Shift), before any pallet is even scanned -- that
+    value (mc.shipment_number) always wins when present. Falls back to the
+    older behaviour (mirrors the frontend's deriveShipmentNumber in api.ts:
+    the first primary pallet's own shipment_number snapshot, walked in
+    machine/pallet sort order) for any record left blank, so older/incoming
+    records without an explicit entry don't regress."""
+    if mc.shipment_number:
+        return mc.shipment_number
     for row in sorted(_all_pallets(mc), key=lambda r: (r.machine_entry.sort_order, r.sort_order)):
         if row.role == "primary" and row.pallet and row.pallet.shipment_number:
             return row.pallet.shipment_number

@@ -45,6 +45,7 @@ def _q(db: Session):
             joinedload(models.MaterialConsumption.machine_entries)
             .joinedload(models.MaterialConsumptionMachineEntry.machine),
             joinedload(models.MaterialConsumption.production_run).joinedload(models.ProductionRun.ipqc_record),
+            joinedload(models.MaterialConsumption.created_by_user),
         )
     )
 
@@ -182,6 +183,8 @@ def update_basic(
         raise HTTPException(status_code=422, detail="This Material Consumption record has already been saved and cannot be changed.")
     if payload.shift is not None:
         mc.shift = payload.shift or None
+    if payload.shipment_number is not None:
+        mc.shipment_number = payload.shipment_number.strip() or None
     mc.updated_by = current_user.user_id
     db.commit()
     return serialize_mc_detail(_get_or_404(db, mc_id))

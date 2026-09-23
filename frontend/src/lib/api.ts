@@ -400,15 +400,21 @@ const MC_MACHINE_ENTRY_SELECT =
   `pallets:material_consumption_pallets(${MC_PALLET_SELECT})`;
 
 type RawMc = {
-  id: string; consumption_date: string; shift: string | null; status: "draft" | "saved";
+  id: string; consumption_date: string; shift: string | null; shipment_number: string | null; status: "draft" | "saved";
   production_run_id: string | null;
   production_run: { run_number: string; ipqc_record: { id: string } | { id: string }[] | null } | null;
+  created_by_user: { full_name: string } | { full_name: string }[] | null;
   machine_entries: RawMcMachineEntry[];
 };
 
 const MC_DETAIL_SELECT =
-  "id,consumption_date,shift,status,production_run_id," +
+  "id,consumption_date,shift,shipment_number,status,production_run_id," +
   "production_run:production_runs(run_number,ipqc_record:ipqc_records(id))," +
+  // Postgrest needs disambiguation here since material_consumptions has two
+  // FKs to app_users (created_by, updated_by) -- the column-name hint
+  // (rather than guessing the auto-generated constraint name) is what
+  // Postgrest documents for exactly this case.
+  "created_by_user:app_users!created_by(full_name)," +
   `machine_entries:material_consumption_machine_entries(${MC_MACHINE_ENTRY_SELECT})`;
 
 /** Row -> MaterialConsumptionPalletOut, matches serialize_mc_pallet() exactly. */
@@ -448,8 +454,11 @@ function mcFlattenEntry(entry: RawMcMachineEntry) {
 function flattenMcDetail(raw: RawMc): MaterialConsumptionDetail {
   const ipqc = raw.production_run?.ipqc_record ?? null;
   const ipqcId = Array.isArray(ipqc) ? ipqc[0]?.id ?? null : ipqc?.id ?? null;
+  const creator = Array.isArray(raw.created_by_user) ? raw.created_by_user[0] ?? null : raw.created_by_user;
   return {
-    id: raw.id, consumption_date: raw.consumption_date, shift: raw.shift, status: raw.status,
+    id: raw.id, consumption_date: raw.consumption_date, shift: raw.shift,
+    shipment_number: raw.shipment_number, operator: creator?.full_name ?? null,
+    status: raw.status,
     production_run_id: raw.production_run_id,
     production_run_number: raw.production_run?.run_number ?? null,
     ipqc_id: ipqcId,
@@ -470,7 +479,7 @@ function flattenMcListItem(raw: RawMc): MaterialConsumptionListItem {
     id: raw.id, consumption_date: raw.consumption_date,
     category: firstWithSku?.category ?? null, sku_code: firstWithSku?.sku_code ?? null, sku_version: firstWithSku?.sku_version ?? null,
     pallet_numbers: allPrimary.map((p) => p.pallet?.display_id ?? "").join(", ") || "(none scanned)",
-    machine: machines.join(", ") || null, shift: raw.shift,
+    machine: machines.join(", ") || null, shift: raw.shift, shipment_number: raw.shipment_number,
     entries: entries.map((e) => ({ machine: e.machine?.code ?? null, start_time: e.start_time, end_time: e.end_time })),
     status: raw.status,
   };
@@ -503,7 +512,7 @@ const MC_LIST_ENTRY_SELECT =
   "machine:machines(code),category,sku_code:sku_code_snapshot,sku_version:sku_version_snapshot,start_time,end_time,sort_order," +
   `pallets:material_consumption_pallets(${MC_LIST_PALLET_SELECT})`;
 const MC_LIST_SELECT =
-  "id,consumption_date,shift,status," +
+  "id,consumption_date,shift,shipment_number,status," +
   `machine_entries:material_consumption_machine_entries(${MC_LIST_ENTRY_SELECT})`;
 const MC_LIST_SELECT_INNER = MC_LIST_SELECT.replace(
   "machine_entries:material_consumption_machine_entries(",
@@ -2076,7 +2085,7 @@ export const api = {
     return res;
   },
   getMaterialConsumption: (id: string) => getMaterialConsumptionSb(id),
-  updateMaterialConsumptionBasic: (id: string, patch: { shift?: string }) =>
+  updateMaterialConsumptionBasic: (id: string, patch: { shift?: string; shipment_number?: string }) =>
     request<MaterialConsumptionDetail>(`/api/v1/material-consumption/${id}/basic`, { method: "PUT", body: JSON.stringify(patch) }),
   addMaterialConsumptionMachineEntry: (id: string, machineId?: string | null) =>
     request<MaterialConsumptionDetail>(`/api/v1/material-consumption/${id}/machine-entries`, { method: "POST", body: JSON.stringify({ machine_id: machineId ?? null }) }),

@@ -505,6 +505,7 @@ export interface MaterialConsumptionListItem {
   pallet_numbers: string;
   machine: string | null;
   shift: string | null;
+  shipment_number: string | null;
   entries: MaterialConsumptionEntrySummary[];
   status: "draft" | "saved";
 }
@@ -533,6 +534,8 @@ export interface MaterialConsumptionDetail {
   id: string;
   consumption_date: string;
   shift: string | null;
+  shipment_number: string | null;
+  operator: string | null;
   status: "draft" | "saved";
   production_run_id: string | null;
   production_run_number: string | null;
