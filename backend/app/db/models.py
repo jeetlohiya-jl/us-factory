@@ -1033,6 +1033,11 @@ class MaterialConsumption(Base):
     end_time = Column(Text, nullable=True)
     # --- Still-active columns ---
     shift = Column(Text, nullable=True)
+    # Migration 0044 -- operator-entered up front on Page 1, alongside Shift,
+    # rather than only ever derived from a scanned primary pallet's own
+    # shipment_number (the old _derive_shipment_number behavior, kept below
+    # as a fallback for older/blank records so IPQC/Production never regress).
+    shipment_number = Column(Text, nullable=True)
     status = Column(Text, nullable=False, default="draft")  # 'draft' | 'saved'
     production_run_id = Column(UUID(as_uuid=True), ForeignKey("production_runs.id"), nullable=True)
     created_by = Column(UUID(as_uuid=True), ForeignKey("app_users.id"), nullable=True)
@@ -1045,6 +1050,11 @@ class MaterialConsumption(Base):
         "MaterialConsumptionMachineEntry", back_populates="material_consumption",
         cascade="all, delete-orphan", order_by="MaterialConsumptionMachineEntry.sort_order",
     )
+    # Operator (Section: "recorded on its own based on the user logged in")
+    # -- read-only, surfaced from whoever's session created this record.
+    # Never settable by the client; create_draft() stamps it from the
+    # authenticated user, same as created_by itself.
+    created_by_user = relationship("AppUser", foreign_keys=[created_by])
 
 
 class MaterialConsumptionMachineEntry(Base):

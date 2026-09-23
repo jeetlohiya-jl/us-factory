@@ -181,12 +181,12 @@ function MaterialConsumptionPageContent() {
           <thead>
             <tr>
               <th>Category</th><th>SKU Code</th><th>SKU Version</th><th>Pallet Numbers</th>
-              <th>Shift</th><th>Date</th><th>Machines · Start – End Time</th><th>Status</th><th></th>
+              <th>Shift</th><th>Shipment Number</th><th>Date</th><th>Machines · Start – End Time</th><th>Status</th><th></th>
             </tr>
           </thead>
           <tbody>
             {records.length === 0 ? (
-              <tr className="empty-row"><td colSpan={9}>{loading ? "Loading…" : "No Material Consumption records yet."}</td></tr>
+              <tr className="empty-row"><td colSpan={10}>{loading ? "Loading…" : "No Material Consumption records yet."}</td></tr>
             ) : (
               records.map((r) => (
                 <tr key={r.id} style={{ cursor: "pointer" }} onClick={() => openRecord(r.id)}>
@@ -195,6 +195,7 @@ function MaterialConsumptionPageContent() {
                   <td>{r.sku_version || "—"}</td>
                   <td className="mono">{r.pallet_numbers}</td>
                   <td>{r.shift || "—"}</td>
+                  <td className="mono">{r.shipment_number || "—"}</td>
                   <td>{r.consumption_date}</td>
                   <td className="mono">
                     {r.entries.length === 0 ? "—" : (

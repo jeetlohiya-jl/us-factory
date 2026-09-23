@@ -88,6 +88,7 @@ def serialize_mc_list_item(mc: models.MaterialConsumption) -> schemas.MaterialCo
         sku_version=first_with_sku.sku_version_snapshot if first_with_sku else None,
         pallet_numbers=", ".join(p.pallet.display_id for p in all_primary) or "(none scanned)",
         machine=", ".join(machines) or None, shift=mc.shift,
+        shipment_number=mc.shipment_number,
         entries=[
             schemas.MaterialConsumptionEntrySummaryOut(
                 machine=e.machine.code if e.machine else None, start_time=e.start_time, end_time=e.end_time,
@@ -100,7 +101,10 @@ def serialize_mc_list_item(mc: models.MaterialConsumption) -> schemas.MaterialCo
 
 def serialize_mc_detail(mc: models.MaterialConsumption) -> schemas.MaterialConsumptionDetailOut:
     return schemas.MaterialConsumptionDetailOut(
-        id=mc.id, consumption_date=mc.consumption_date, shift=mc.shift, status=mc.status,
+        id=mc.id, consumption_date=mc.consumption_date, shift=mc.shift,
+        shipment_number=mc.shipment_number,
+        operator=mc.created_by_user.full_name if mc.created_by_user else None,
+        status=mc.status,
         production_run_id=mc.production_run_id,
         production_run_number=mc.production_run.run_number if mc.production_run else None,
         ipqc_id=mc.production_run.ipqc_record.id if mc.production_run and mc.production_run.ipqc_record else None,
