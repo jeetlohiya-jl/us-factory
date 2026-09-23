@@ -429,10 +429,20 @@ def generate_pallets(db: Session, rec: models.QrGenerationRecord, actor_user_id=
     # commits (see the route's db.commit() right after this call returns),
     # so by the time it re-reads status it correctly sees "generated" and
     # returns early instead of generating a second time.
+    #
+    # populate_existing() is required for that lock to actually help: every
+    # caller has already loaded this row into the Session (the route's own
+    # _get_or_404), so without it SQLAlchemy's identity map hands back the
+    # SAME cached object after the lock is granted -- still showing the
+    # stale status="pending" read before the first request committed --
+    # and the second request generates a full duplicate set anyway.
+    # Reproduced before this fix: three concurrent Generate clicks on a
+    # 44-pallet batch created 132 pallets.
     rec = (
         db.query(models.QrGenerationRecord)
         .filter(models.QrGenerationRecord.id == rec.id)
         .with_for_update()
+        .populate_existing()
         .one()
     )
     if rec.status == "generated":
