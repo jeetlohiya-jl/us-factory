@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabaseClient";
 import { signInWithGoogle, signOut } from "@/lib/session";
@@ -123,6 +123,24 @@ const NAV_ITEMS = [
   },
 ];
 
+// Factory product's sidebar (see PORTFOLIO_ACCESS_NAV_ITEM above for how a
+// signed-in email ends up here). Factory OS is planned as six modules;
+// only Module 2 (Raw Material Consumption / RM -> WIP) is built so far, so
+// only it gets a real nav item. It intentionally points at the exact same
+// route/page/table as US Factory's own "Material Consumption" screen below
+// (same Supabase project, same material_consumptions rows, same
+// module_permissions scope) rather than a second copy -- Module 2 IS that
+// feature, just also reachable from here, per the no-duplication mandate.
+const FACTORY_NAV_ITEMS = [
+  {
+    href: "/material-consumption",
+    label: "Raw Material Consumption",
+    icon: (
+      <path d="M3 7h18M3 12h18M3 17h18" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    ),
+  },
+];
+
 const SETUP_NAV_ITEMS = [
   {
     href: "/vendors",
@@ -187,8 +205,22 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   // rather than remembering a past choice.
   const [chosenProduct, setChosenProduct] = useState<"factory" | "us_factory" | null>(null);
   const pathname = usePathname();
+  const router = useRouter();
   const me = useMe();
   const setupNavItems = me?.is_admin ? [...SETUP_NAV_ITEMS, USERS_NAV_ITEM, PORTFOLIO_ACCESS_NAV_ITEM] : SETUP_NAV_ITEMS;
+
+  // The root "/" route always server-redirects to "/inward-vehicle-inspection"
+  // (see app/page.tsx) since that predates the Factory/US Factory split --
+  // once someone has landed in the Factory product, bounce them off that
+  // (and any other non-Factory) route to Factory's own landing page instead,
+  // rather than showing a US-Factory screen inside the Factory sidebar.
+  useEffect(() => {
+    if (chosenProduct !== "factory") return;
+    const allowedHrefs = [...FACTORY_NAV_ITEMS, ...SETUP_NAV_ITEMS, USERS_NAV_ITEM, PORTFOLIO_ACCESS_NAV_ITEM].map((i) => i.href);
+    if (pathname && !allowedHrefs.some((href) => pathname.startsWith(href))) {
+      router.replace("/material-consumption");
+    }
+  }, [chosenProduct, pathname, router]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -326,25 +358,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (chosenProduct === "factory") {
-    return (
-      <div className="auth-gate">
-        <div className="auth-gate-card">
-          <div className="sb-mark" style={{ margin: "0 auto 16px" }}>C</div>
-          <h1>Factory</h1>
-          <div className="desc">This product isn’t built yet — coming soon.</div>
-          <div style={{ display: "flex", gap: 10, justifyContent: "center", marginTop: 20 }}>
-            {hasUsFactory && (
-              <button className="btn btn-primary" onClick={() => setChosenProduct("us_factory")}>
-                Go to US Factory instead
-              </button>
-            )}
-            <button className="btn btn-tertiary" onClick={() => signOut()}>Sign out</button>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const isFactory = chosenProduct === "factory";
+  const activeNavItems = isFactory ? FACTORY_NAV_ITEMS : NAV_ITEMS;
 
   return (
     <div className="app">
@@ -352,18 +367,23 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         <div className="sb-brand">
           <div className="sb-mark">C</div>
           <div className="sb-brand-text">
-            <div className="name">US Factory</div>
+            <div className="name">{isFactory ? "Factory" : "US Factory"}</div>
             <div className="sub">Cirkla Manufacturing</div>
           </div>
         </div>
         <div className="sb-nav">
           <div className="sb-group">Records</div>
-          {NAV_ITEMS.map((item) => (
+          {activeNavItems.map((item) => (
             <Link key={item.href} href={item.href} className={`sb-item ${pathname?.startsWith(item.href) ? "active" : ""}`}>
               <svg viewBox="0 0 24 24" fill="none">{item.icon}</svg>
               <span className="label-text">{item.label}</span>
             </Link>
           ))}
+          {isFactory && (
+            <div className="desc" style={{ padding: "6px 14px 2px", fontSize: 12.5 }}>
+              More modules coming soon
+            </div>
+          )}
           <div className="sb-group">Setup</div>
           {setupNavItems.map((item) => (
             <Link key={item.href} href={item.href} className={`sb-item ${pathname?.startsWith(item.href) ? "active" : ""}`}>
@@ -375,7 +395,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         <div className="sb-foot">
           <div>Signed in as {session.user.email}</div>
           <div className="sb-role" style={{ display: "flex", gap: 10 }}>
-            {hasFactory && (
+            {hasFactory && hasUsFactory && (
               <button className="btn-tertiary" onClick={() => setChosenProduct(null)}>Switch</button>
             )}
             <button className="btn-tertiary" onClick={() => signOut()}>Sign out</button>
