@@ -1,7 +1,7 @@
 "use client";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import { useMe } from "@/lib/useMe";
 import { cachedList, invalidateListCache, listCacheKey } from "@/lib/listCache";
 import { useImmediateThenDebounced } from "@/lib/useImmediateThenDebounced";
@@ -11,6 +11,8 @@ import FactoryRqcDetailPanel from "@/components/rqc/FactoryRqcDetailPanel";
 import FactoryCoaEntryPanel from "@/components/rqc/FactoryCoaEntryPanel";
 import QrGenerationPanel from "@/components/qr-generation/QrGenerationPanel";
 import Pagination from "@/components/Pagination";
+import MoreMenu from "@/components/inward-vehicle-inspection/MoreMenu";
+import ConfirmDialog from "@/components/inward-vehicle-inspection/ConfirmDialog";
 
 const MODULE = "rqc";
 
@@ -51,9 +53,12 @@ function FactoryRqcFgQrPageContent() {
   const [showWizard, setShowWizard] = useState(false);
   const [detailRecord, setDetailRecord] = useState<RqcDetail | null>(null);
   const [detailMachine, setDetailMachine] = useState<string | null>(null);
+  const [detailMode, setDetailMode] = useState<"view" | "edit">("view");
   const [fgQr, setFgQr] = useState<QrGenerationDetail | null>(null);
   const [showFgQrPanel, setShowFgQrPanel] = useState(false);
   const [coaShipment, setCoaShipment] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<RqcListItem | null>(null);
+  const [deleteBlockedMsg, setDeleteBlockedMsg] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -78,7 +83,7 @@ function FactoryRqcFgQrPageContent() {
     refresh();
   }, [refresh]);
 
-  async function openRecord(row: RqcListItem) {
+  async function openRecord(row: RqcListItem, mode: "view" | "edit" = "view") {
     setError(null);
     try {
       const [rec, batch] = await Promise.all([
@@ -87,9 +92,31 @@ function FactoryRqcFgQrPageContent() {
       ]);
       setDetailRecord(rec);
       setDetailMachine(row.machine);
+      setDetailMode(mode);
       setFgQr(batch);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load record");
+    }
+  }
+
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    try {
+      await api.deleteRqc(deleteTarget.id);
+      setDeleteTarget(null);
+      if (detailRecord?.id === deleteTarget.id) {
+        setDetailRecord(null);
+        setFgQr(null);
+        setDetailMachine(null);
+        setDetailMode("view");
+      }
+      refreshAfterMutation();
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) {
+        setDeleteBlockedMsg(e.message);
+      } else {
+        setDeleteBlockedMsg(e instanceof Error ? e.message : "Failed to delete record");
+      }
     }
   }
 
@@ -190,10 +217,16 @@ function FactoryRqcFgQrPageContent() {
                   <td>{r.fg_pallets_generated ?? "—"}</td>
                   <td>{r.table_person_number || "—"}</td>
                   <td><span className={`badge ${r.status === "approved" ? "approved" : r.status === "hold" ? "hold" : r.status === "pending" ? "pending" : "draft"}`}>{r.status}</span></td>
-                  <td onClick={(e) => e.stopPropagation()}>
+                  <td onClick={(e) => e.stopPropagation()} style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "flex-end" }}>
                     {r.shipment_number && (
                       <a className="btn-tertiary" style={{ cursor: "pointer" }} onClick={() => setCoaShipment(r.shipment_number)}>COA</a>
                     )}
+                    <MoreMenu
+                      canEdit={!!perms?.can_fill_section}
+                      canDelete={!!perms?.can_delete}
+                      onEdit={() => openRecord(r, "edit")}
+                      onDelete={() => setDeleteTarget(r)}
+                    />
                   </td>
                 </tr>
               ))
@@ -212,7 +245,16 @@ function FactoryRqcFgQrPageContent() {
           record={detailRecord}
           machineCode={detailMachine}
           hasFgQr={!!fgQr}
-          onClose={() => { setDetailRecord(null); setFgQr(null); setDetailMachine(null); }}
+          mode={detailMode}
+          canEdit={!!perms?.can_fill_section}
+          canDelete={!!perms?.can_delete}
+          onEdit={() => setDetailMode("edit")}
+          onDelete={() => {
+            const item = items.find((i) => i.id === detailRecord.id);
+            setDeleteTarget(item ?? { id: detailRecord.id, shipment_number: detailRecord.shipment_number } as RqcListItem);
+          }}
+          onSaved={refreshAfterMutation}
+          onClose={() => { setDetailRecord(null); setFgQr(null); setDetailMachine(null); setDetailMode("view"); }}
           onViewFgQr={() => setShowFgQrPanel(true)}
           onOpenCoa={() => detailRecord.shipment_number && setCoaShipment(detailRecord.shipment_number)}
         />
@@ -234,6 +276,25 @@ function FactoryRqcFgQrPageContent() {
           canEdit={!!perms?.can_fill_section}
           onClose={() => setCoaShipment(null)}
           onSaved={() => {}}
+        />
+      )}
+
+      {deleteTarget && !deleteBlockedMsg && (
+        <ConfirmDialog
+          title="Delete this record?"
+          message={`This will permanently delete the RQC record "${deleteTarget.shipment_number || deleteTarget.id.slice(0, 8)}". This cannot be undone.`}
+          confirmLabel="Delete"
+          danger
+          onConfirm={confirmDelete}
+          onCancel={() => setDeleteTarget(null)}
+        />
+      )}
+      {deleteBlockedMsg && (
+        <ConfirmDialog
+          title="Can't delete this record"
+          message=""
+          blockedNote={deleteBlockedMsg}
+          onCancel={() => { setDeleteBlockedMsg(null); setDeleteTarget(null); }}
         />
       )}
     </>

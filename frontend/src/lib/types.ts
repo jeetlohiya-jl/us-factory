@@ -1195,6 +1195,12 @@ export interface CustomerShipmentDetail {
 // Draft-form line item shape, before save (no id yet -- keyed locally).
 export interface CustomerShipmentLineItemDraft {
   key: string;
+  // 2026-09-24 -- Goods Outward Edit. Set to the real CustomerShipmentLineItem
+  // id when this row is an existing, already-saved line item being edited;
+  // null/undefined for a brand-new row (create flow, or a row freshly added
+  // while editing) -- same "id present = update, id absent = insert"
+  // convention the PUT payload itself uses (CustomerShipmentLineItemUpdateIn).
+  id?: string | null;
   sku_code_id: string | null;
   sku_version_id: string | null;
   pallets_required: string | number;
@@ -1207,6 +1213,23 @@ export interface CustomerShipmentCreatePayload {
   customer: string;
   shipment_number: string; // user-entered, not system-generated
   line_items: { sku_code_id: string; sku_version_id: string; pallets_required: number; pcs?: number | null; pcs_per_sleeve?: string | null }[];
+}
+
+// 2026-09-24 -- Goods Outward Edit payload (api.updateCustomerShipment,
+// backend PUT /api/v1/customer-shipments/{id}). Same shape as
+// CustomerShipmentCreatePayload's line_items, plus each item's own
+// optional `id` (see CustomerShipmentLineItemDraft's docstring).
+export interface CustomerShipmentUpdatePayload {
+  customer: string;
+  shipment_number: string;
+  line_items: {
+    id?: string | null;
+    sku_code_id: string;
+    sku_version_id: string;
+    pallets_required: number;
+    pcs?: number | null;
+    pcs_per_sleeve?: string | null;
+  }[];
 }
 
 export interface CustomerShipmentCreateResult {

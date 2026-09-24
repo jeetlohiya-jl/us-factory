@@ -87,6 +87,71 @@ def create(
     )
 
 
+@router.put("/{shipment_id}", response_model=schemas.CustomerShipmentCreateOut)
+def update(
+    shipment_id: uuid.UUID,
+    body: schemas.CustomerShipmentUpdateIn,
+    db: Session = Depends(get_db),
+    _perm=Depends(require("edit")),
+):
+    """
+    2026-09-24 -- Goods Outward Edit. Same atomic-transaction shape as
+    create above, via customer_shipment_service.update_customer_shipment:
+    diffs line_items by id (see that function's docstring), blocking
+    (409) the instant any change would touch a line item that already has
+    real FG pallets picked against it (customer_shipment_service.
+    blocked_line_item_edit_reason) -- checked before anything is written,
+    so a blocked request never leaves a partial edit applied.
+    """
+    shipment = db.query(models.CustomerShipment).filter(models.CustomerShipment.id == shipment_id).first()
+    if not shipment:
+        raise HTTPException(status_code=404, detail="Customer Shipment not found")
+
+    if not body.customer or not body.customer.strip():
+        raise HTTPException(status_code=422, detail="Customer / Recipient is required.")
+    if not body.shipment_number or not body.shipment_number.strip():
+        raise HTTPException(status_code=422, detail="Shipment Number is required.")
+    valid_items = [li for li in body.line_items if li.pallets_required > 0]
+    if not valid_items:
+        raise HTTPException(status_code=422, detail="At least one line item with a SKU, Version and pallet quantity is required.")
+
+    try:
+        customer_shipment_service.update_customer_shipment(
+            db,
+            shipment,
+            customer=body.customer.strip(),
+            shipment_number=body.shipment_number.strip(),
+            line_items=[li.model_dump() for li in valid_items],
+        )
+        db.commit()
+    except customer_shipment_service.CustomerShipmentEditBlocked as e:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=str(e))
+    except IntegrityError as e:
+        db.rollback()
+        if "customer_shipments_shipment_number_key" in str(e.orig):
+            raise HTTPException(status_code=409, detail=f'Shipment Number "{body.shipment_number.strip()}" already exists.')
+        raise HTTPException(status_code=409, detail="Could not save this Customer Shipment (a unique value conflicted).")
+    db.refresh(shipment)
+
+    return schemas.CustomerShipmentCreateOut(
+        id=shipment.id,
+        shipment_number=shipment.shipment_number,
+        container_number=shipment.container_number,
+        customer=shipment.customer,
+        line_items=[
+            schemas.CustomerShipmentLineItemOut(
+                id=li.id,
+                sku_code=li.sku_code_snapshot,
+                sku_version=li.sku_version_snapshot,
+                pallets_required=li.pallets_required,
+                pcs=li.pcs, pcs_per_sleeve=li.pcs_per_sleeve,
+            )
+            for li in shipment.line_items
+        ],
+    )
+
+
 @router.delete("/{shipment_id}", status_code=204)
 def delete(
     shipment_id: uuid.UUID,

@@ -206,6 +206,49 @@ def blocked_delete_reason(db: Session, rqc: models.RqcRecord) -> str | None:
     return None
 
 
+BLOCKED_EDIT_MESSAGE = (
+    "This record's FG QR batch has already been generated -- edit it via a new RQC "
+    "activity instead of changing an approved record after the fact."
+)
+
+
+def blocked_edit_reason(db: Session, rqc: models.RqcRecord) -> str | None:
+    """Same spirit as blocked_delete_reason, but for editing (the RQC PUT
+    save route) rather than deleting: once real, physical FG QR
+    pallets/labels have been GENERATED off this record's approval, silently
+    letting an edit change the defect grid/Approved Pallets/Overall Result
+    underneath that already-printed batch would make the record and the
+    physical pallets disagree. A record whose batch is still 'pending' (not
+    yet generated) or has no batch at all edits freely -- re-saving before
+    generation is exactly the normal draft-then-finalize flow.
+
+    Checked via BOTH of RQC's two FG QR trigger paths, since either one may
+    be the one actually in use for a given record:
+    - source_rqc_record_id: the per-activity path (get_or_create_fg_qr_for_
+      rqc_record), used by both the RqcWizard/FactoryRqcWizard create flow
+      and this same PUT route's own "approved -> auto-generate" call.
+    - source_rqc_approval_entry_id (via RqcApprovalEntry): the older
+      incremental-ledger path (get_or_create_fg_qr_for_rqc_approval_entry),
+      still live for legacy records / the ledger UI in RqcDetailPanel.
+    """
+    direct = (
+        db.query(models.QrGenerationRecord.id)
+        .filter(models.QrGenerationRecord.source_rqc_record_id == rqc.id, models.QrGenerationRecord.status == "generated")
+        .first()
+    )
+    if direct:
+        return BLOCKED_EDIT_MESSAGE
+    via_entries = (
+        db.query(models.QrGenerationRecord.id)
+        .join(models.RqcApprovalEntry, models.QrGenerationRecord.source_rqc_approval_entry_id == models.RqcApprovalEntry.id)
+        .filter(models.RqcApprovalEntry.rqc_record_id == rqc.id, models.QrGenerationRecord.status == "generated")
+        .first()
+    )
+    if via_entries:
+        return BLOCKED_EDIT_MESSAGE
+    return None
+
+
 def find_linked_ipqc_by_shipment_number(db: Session, shipment_number: str) -> models.IpqcRecord | None:
     """The Shipment Number -> Production -> IPQC lookup used both at RQC
     creation and (read-only) whenever an RQC record is opened, so the same

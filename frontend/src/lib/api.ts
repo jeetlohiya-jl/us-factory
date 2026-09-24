@@ -10,7 +10,7 @@ import type {
   MaterialConsumptionPalletRow, ProductionListItem, ProductionDetail, ProductionMachineEntry, ProductionSavePayload,
   IpqcListItem, IpqcDetail, IpqcSavePayload,
   RqcListItem, RqcDetail, RqcSavePayload, RqcApprovalEntryPayload, RqcCoaEntry, RqcCoaObservation,
-  CustomerShipmentListItem, CustomerShipmentDetail, CustomerShipmentCreatePayload, CustomerShipmentCreateResult,
+  CustomerShipmentListItem, CustomerShipmentDetail, CustomerShipmentCreatePayload, CustomerShipmentCreateResult, CustomerShipmentUpdatePayload,
   ShipmentPickingListItem, ShipmentPickingDetail, PalletLifecycleStatus,
   GoodsOutwardListItem, GoodsOutwardDetail, GoodsOutwardLineItem, GoodsOutwardScannedPallet,
   OviListItem, OviDetail, OviSavePayload, OviImageType, OviImage,
@@ -2710,6 +2710,20 @@ export const api = {
     // its list cache too so they show up without a hard refresh. Also
     // invalidate the combined Factory "goods-outward" list/detail cache
     // (Module 6), which reads the exact same tables through its own key.
+    invalidateListCache("shipment-picking");
+    invalidateListCache("goods-outward");
+    return res;
+  },
+  // 2026-09-24 -- Goods Outward Edit. Same atomic-transaction shape as
+  // createCustomerShipment; blocked (409) if the edit would touch a line
+  // item that already has real FG pallets picked against it (see
+  // customer_shipment_service.blocked_line_item_edit_reason).
+  updateCustomerShipment: async (id: string, payload: CustomerShipmentUpdatePayload) => {
+    const res = await request<CustomerShipmentCreateResult>(`/api/v1/customer-shipments/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+    invalidateListCache("customer-shipment");
     invalidateListCache("shipment-picking");
     invalidateListCache("goods-outward");
     return res;

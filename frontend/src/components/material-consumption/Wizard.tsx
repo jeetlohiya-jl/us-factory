@@ -120,6 +120,35 @@ function MachineEntryPanel({
   // pending.
   const [pendingSecondary, setPendingSecondary] = useState<{ id: string; type: SecondaryMaterialCategory }[]>([]);
 
+  // 2026-09-24 fix -- "Fully Consumed: No" used to fire onPrimaryConsumptionChange
+  // immediately on click, with whatever stale default quantity the row
+  // already had (the fresh-scan default of "1 Pallet"), silently committing
+  // that to the server before the operator had entered anything real. This
+  // set tracks rows where "No" has been clicked locally but a real Quantity
+  // Consumed hasn't been confirmed yet -- nothing is sent to the server
+  // until the operator actually types a quantity and confirms it, so the
+  // click now genuinely "asks" for the quantity rather than defaulting it.
+  const [awaitingQuantity, setAwaitingQuantity] = useState<Set<string>>(new Set());
+  const [draftQuantity, setDraftQuantity] = useState<Record<string, string>>({});
+  const [draftUnit, setDraftUnit] = useState<Record<string, QuantityUnit>>({});
+
+  function clickNotFullyConsumed(rowId: string, currentUnit: QuantityUnit) {
+    setAwaitingQuantity((prev) => new Set(prev).add(rowId));
+    setDraftQuantity((prev) => ({ ...prev, [rowId]: "" }));
+    setDraftUnit((prev) => ({ ...prev, [rowId]: currentUnit }));
+  }
+  function clickFullyConsumed(rowId: string, quantity: string, unit: QuantityUnit) {
+    setAwaitingQuantity((prev) => { const next = new Set(prev); next.delete(rowId); return next; });
+    onPrimaryConsumptionChange(rowId, quantity, unit, true);
+  }
+  function confirmQuantityConsumed(rowId: string, fallbackUnit: QuantityUnit) {
+    const raw = (draftQuantity[rowId] ?? "").trim();
+    if (!raw || Number(raw) <= 0) return; // nothing valid entered yet -- keep waiting, don't commit
+    const unit = draftUnit[rowId] ?? fallbackUnit;
+    onPrimaryConsumptionChange(rowId, raw, unit, false);
+    setAwaitingQuantity((prev) => { const next = new Set(prev); next.delete(rowId); return next; });
+  }
+
   return (
     <div className="detail-card" style={{ marginBottom: 20 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
@@ -166,6 +195,12 @@ function MachineEntryPanel({
           ) : (
             entry.pallets.map((p) => {
               const editableRow = canEdit && !entry.end_time;
+              // Waiting on a real Quantity Consumed value: either "No" was
+              // just clicked locally (nothing committed yet), or the row was
+              // already saved as not-fully-consumed and is being re-edited.
+              const isAwaiting = awaitingQuantity.has(p.id);
+              const showQuantityAsk = isAwaiting || !p.fully_consumed;
+              const selectedUnit = isAwaiting ? (draftUnit[p.id] ?? p.unit) : p.unit;
               return (
                 <tr key={p.id}>
                   <td className="mono">{p.pallet_display_id}</td>
@@ -177,30 +212,51 @@ function MachineEntryPanel({
                         <div style={{ display: "flex", gap: 4 }}>
                           <button
                             type="button"
-                            className={`btn ${p.fully_consumed ? "btn-primary" : "btn-secondary"}`}
+                            className={`btn ${!showQuantityAsk ? "btn-primary" : "btn-secondary"}`}
                             style={{ padding: "3px 10px", fontSize: 12.5 }}
-                            onClick={() => onPrimaryConsumptionChange(p.id, String(p.quantity), p.unit, true)}
+                            onClick={() => clickFullyConsumed(p.id, String(p.quantity), p.unit)}
                           >Yes</button>
                           <button
                             type="button"
-                            className={`btn ${!p.fully_consumed ? "btn-primary" : "btn-secondary"}`}
+                            className={`btn ${showQuantityAsk ? "btn-primary" : "btn-secondary"}`}
                             style={{ padding: "3px 10px", fontSize: 12.5 }}
-                            onClick={() => onPrimaryConsumptionChange(p.id, String(p.quantity), p.unit, false)}
+                            onClick={() => clickNotFullyConsumed(p.id, p.unit)}
                           >No</button>
                         </div>
-                        {!p.fully_consumed && (
-                          <div style={{ display: "flex", gap: 6 }}>
-                            <input
-                              type="number" step="0.01" min="0" defaultValue={String(p.quantity)}
-                              style={{ width: 70 }}
-                              onBlur={(e) => onPrimaryConsumptionChange(p.id, e.target.value, p.unit, false)}
-                            />
-                            <select
-                              value={p.unit}
-                              onChange={(e) => onPrimaryConsumptionChange(p.id, String(p.quantity), e.target.value as QuantityUnit, false)}
-                            >
-                              {QUANTITY_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
-                            </select>
+                        {showQuantityAsk && (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                            <div className="hint-text" style={{ fontSize: 11.5, color: isAwaiting ? "var(--red)" : undefined }}>
+                              {isAwaiting ? "Quantity Consumed required" : "Quantity Consumed"}
+                            </div>
+                            <div style={{ display: "flex", gap: 6 }}>
+                              <input
+                                type="number" step="0.01" min="0" placeholder="Qty consumed" autoFocus={isAwaiting}
+                                style={{ width: 90 }}
+                                value={isAwaiting ? (draftQuantity[p.id] ?? "") : String(p.quantity)}
+                                onChange={(e) => setDraftQuantity((prev) => ({ ...prev, [p.id]: e.target.value }))}
+                                onBlur={() => (isAwaiting ? confirmQuantityConsumed(p.id, selectedUnit) : onPrimaryConsumptionChange(p.id, draftQuantity[p.id] ?? String(p.quantity), p.unit, false))}
+                                onKeyDown={(e) => e.key === "Enter" && isAwaiting && confirmQuantityConsumed(p.id, selectedUnit)}
+                              />
+                              <select
+                                value={selectedUnit}
+                                onChange={(e) => {
+                                  const unit = e.target.value as QuantityUnit;
+                                  if (isAwaiting) {
+                                    setDraftUnit((prev) => ({ ...prev, [p.id]: unit }));
+                                  } else {
+                                    onPrimaryConsumptionChange(p.id, String(p.quantity), unit, false);
+                                  }
+                                }}
+                              >
+                                {QUANTITY_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+                              </select>
+                              {isAwaiting && (
+                                <button
+                                  type="button" className="btn btn-primary" style={{ padding: "3px 10px", fontSize: 12.5 }}
+                                  onClick={() => confirmQuantityConsumed(p.id, selectedUnit)}
+                                >Confirm</button>
+                              )}
+                            </div>
                           </div>
                         )}
                       </div>
@@ -540,14 +596,15 @@ export default function MaterialConsumptionWizard({
                     {shifts.map((s) => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>
-                {/* Shipment Number is never typed in: it's filled automatically
-                    from the first scanned RM pallet (the Goods Receipt
-                    container / inward shipment it was received on) --
-                    material_consumption_service.add_primary_pallet. */}
-                <div className="field">
-                  <label>Shipment Number</label>
-                  <div className="readonly-val mono">{detail.shipment_number || "Auto-filled from the first scanned RM pallet"}</div>
-                </div>
+                {/* Shipment Number used to be shown here too, but it's never
+                    typed in on this page -- it's only filled automatically
+                    once the first RM pallet is scanned on Page 2 (material_
+                    consumption_service.add_primary_pallet), so showing it
+                    here just displayed a confusing permanently-empty
+                    placeholder. It's still surfaced, read-only, in the
+                    header sub-line above (both pages) the moment it's
+                    actually known -- nothing is lost by dropping it from
+                    this page's own field grid. */}
               </div>
 
               <div className="section-label">Machines</div>
