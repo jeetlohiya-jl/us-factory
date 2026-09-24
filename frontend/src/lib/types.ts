@@ -19,6 +19,16 @@ export type InspectionStatus = "draft" | "hold" | "approved";
 // inconsistent way (the old "FG Non-Padded Tray" / "FG NonPadded Tray" /
 // "FNPG" wording is retired).
 export const TRAY_FAMILY_QC_CATEGORIES: string[] = ["tray", "fnp_tray", "fgtray"];
+
+/** SKUs belong to a material FAMILY, not a stage: the same tray (3P) is a
+ * Base Tray when raw, an FNP Tray with film attached and FG once padded --
+ * one SKU. Every SKU picker matches on family (migration 0049). */
+export function skuFamily(category: string | null | undefined): string {
+  return category && TRAY_FAMILY_QC_CATEGORIES.includes(category) ? "tray" : (category || "");
+}
+export function skuMatchesCategory(skuCategory: string | null | undefined, recordCategory: string | null | undefined): boolean {
+  return !!recordCategory && skuFamily(skuCategory) === skuFamily(recordCategory);
+}
 // Inward material categories, in US Factory's Inward Vehicle Inspection
 // order and wording (its Wizard.tsx CATEGORY_LABELS) -- used by Factory's
 // Goods Receipt Category picker.
@@ -58,6 +68,7 @@ export interface SkuVersion {
 export interface SkuCode {
   id: string;
   code: string;
+  description?: string | null;
   category: Category;
   is_active: boolean;
   // Section 11 -- admin-supplied 5-digit SKU number, the first segment of

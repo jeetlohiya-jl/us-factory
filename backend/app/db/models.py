@@ -85,6 +85,7 @@ class SkuCode(ProductScoped, Base):
     __tablename__ = "sku_codes"
     id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
     code = Column(Text, nullable=False, unique=True)
+    description = Column(Text, nullable=True)  # full name, e.g. "Cirkla Fiber Overwrap 3P Tray - Processor" (0049)
     category = Column(Text, nullable=False)
     description = Column(Text, nullable=True)
     is_active = Column(Boolean, nullable=False, default=True)

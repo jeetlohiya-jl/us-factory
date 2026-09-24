@@ -1,4 +1,5 @@
 "use client";
+import { skuMatchesCategory } from "@/lib/types";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import type { QcDetail, QcMeta, Permissions, SkuCode, QcManualCategory, QuantityUnit } from "@/lib/types";
@@ -52,7 +53,7 @@ export default function Wizard({
   const isFinalized = detail.status === "accepted" || detail.status === "onhold";
   const readOnlyBasic = isFinalized && !permissions.can_edit;
 
-  const categorySkus = skuCodes.filter((s) => s.category === detail.category);
+  const categorySkus = skuCodes.filter((s) => skuMatchesCategory(s.category, detail.category));
   const versionsForSku = categorySkus.find((s) => s.id === skuCodeId)?.versions || [];
 
   async function persistBasic(): Promise<QcDetail | null> {

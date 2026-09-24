@@ -1,6 +1,6 @@
 import { getAuthHeader } from "./session";
 import { supabase } from "./supabaseClient";
-import { cachedList, invalidateListCache, listCacheKey } from "./listCache";
+import { cachedList, invalidateListCache, invalidateListCacheEndingWith, listCacheKey } from "./listCache";
 import { getCurrentProduct } from "./currentProduct";
 import type {
   InspectionDetail, InspectionListItem, SkuCode, SkuVersion, ChecklistItemRef, MeResponse, Category, ImageType, LineItem,
@@ -1794,7 +1794,7 @@ async function saveHoldReleaseSb(id: string, payload: HoldReleaseSavePayload): P
 // exact same "all versions, not just active ones" shape (see LineItemsEditor,
 // which itself does no active-filtering on the versions it's handed).
 const SKU_SELECT =
-  "id, code, category, is_active, batch_number, sku_code, " +
+  "id, code, category, is_active, batch_number, sku_code, description, " +
   "versions:sku_versions(id, version, is_active, prod_weight, prod_pcs_per_sleeve, prod_sleeve_per_case, " +
   "prod_total_pcs_per_pallet, prod_total_pallets, prod_target_shots, prod_pad_type, prod_pad_color, prod_case_type, " +
   "prod_dimensions, prod_absorption_rate)";
@@ -1933,6 +1933,14 @@ async function goodsReceiptRpc(fn: "goods_receipt_save" | "goods_receipt_inward"
   return flattenGoodsReceipt({ ...raw, entries: raw.entries.map((e, i) => ({ ...e, sort_order: i })) });
 }
 
+/** A SKU change must reach every screen's copy of the SKU list, not just
+ * the Setup screen's: Goods Receipt, Inward QC, Inward Vehicle Inspection
+ * and Goods Outward each cache it as "<page>-meta:skuCodes". */
+function invalidateSkuCaches() {
+  invalidateListCache("ref:skus");
+  invalidateListCacheEndingWith(":skuCodes");
+}
+
 export const api = {
   me: () => request<MeResponse>("/api/v1/me"),
 
@@ -2009,17 +2017,17 @@ export const api = {
     sbRequest<{ id: string }>(
       () => supabase.from("sku_codes").insert({ category, code, is_active: true }).select("id").single() as unknown as Promise<{ data: { id: string } | null; error: { message: string; code?: string } | null }>,
       { conflict: `"${code}" already exists.` }
-    ).then((created) => { invalidateListCache("ref:skus"); return created; }),
-  updateSku: (id: string, patch: { code?: string; is_active?: boolean; batch_number?: string | null; sku_code?: string | null }) =>
+    ).then((created) => { invalidateSkuCaches(); return created; }),
+  updateSku: (id: string, patch: { code?: string; is_active?: boolean; batch_number?: string | null; sku_code?: string | null; description?: string | null }) =>
     sbVoid(
       () => supabase.from("sku_codes").update(patch).eq("id", id),
       { conflict: `"${patch.code}" already exists.` }
-    ).then(() => invalidateListCache("ref:skus")),
+    ).then(() => invalidateSkuCaches()),
   deleteSku: (id: string) =>
     sbVoid(
       () => supabase.from("sku_codes").delete().eq("id", id),
       { fk: "This SKU is referenced by existing records and can't be deleted — deactivate it instead." }
-    ).then(() => invalidateListCache("ref:skus")),
+    ).then(() => invalidateSkuCaches()),
   addSkuVersion: (
     skuId: string,
     version: string,
@@ -2028,7 +2036,7 @@ export const api = {
     sbVoid(
       () => supabase.from("sku_versions").insert({ sku_code_id: skuId, version, is_active: true, ...productionDetails }),
       { conflict: `Version "${version}" already exists for this SKU.` }
-    ).then(() => invalidateListCache("ref:skus")),
+    ).then(() => invalidateSkuCaches()),
   updateSkuVersion: (
     versionId: string,
     patch: Partial<Omit<SkuVersion, "id">> & { version?: string; is_active?: boolean }
@@ -2036,12 +2044,12 @@ export const api = {
     sbVoid(
       () => supabase.from("sku_versions").update(patch).eq("id", versionId),
       { conflict: `Version "${patch.version}" already exists for this SKU.` }
-    ).then(() => invalidateListCache("ref:skus")),
+    ).then(() => invalidateSkuCaches()),
   deleteSkuVersion: (versionId: string) =>
     sbVoid(
       () => supabase.from("sku_versions").delete().eq("id", versionId),
       { fk: "This version is referenced by existing records and can't be deleted — deactivate it instead." }
-    ).then(() => invalidateListCache("ref:skus")),
+    ).then(() => invalidateSkuCaches()),
   // Unlike every other Phase 1 mutation, this one's return value is used
   // directly (Wizard.tsx's inline "add a new vendor" flow appends it to
   // the dropdown and selects it without a full refetch) -- so this is the

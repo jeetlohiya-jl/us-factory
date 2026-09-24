@@ -26,7 +26,10 @@ def list_sku_codes(
         .filter(models.SkuCode.is_active.is_(True))
     )
     if category:
-        q = q.filter(models.SkuCode.category == category)
+        # An SKU belongs to a material family, not a stage: one Tray SKU (3P)
+        # serves Base Tray, FNP Tray and FG (migration 0049).
+        tray = {"tray", "fnp_tray", "fgtray"}
+        q = q.filter(models.SkuCode.category.in_(tray) if category in tray else models.SkuCode.category == category)
     return q.order_by(models.SkuCode.code).all()
 
 
