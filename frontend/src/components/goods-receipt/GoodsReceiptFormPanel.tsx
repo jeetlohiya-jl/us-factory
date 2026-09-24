@@ -1,15 +1,15 @@
 "use client";
 import { useMemo, useState } from "react";
 import { api } from "@/lib/api";
-import type { Category, GoodsReceiptDetail, GoodsReceiptEntryDraft, GoodsReceiptSavePayload, SkuCode, Vendor } from "@/lib/types";
-import { INWARD_CATEGORY_LABELS, skuMatchesCategory } from "@/lib/types";
+import type { GoodsReceiptDetail, GoodsReceiptEntryDraft, GoodsReceiptSavePayload, SkuCode, Vendor } from "@/lib/types";
+import { skuFamily } from "@/lib/types";
 import GrEntriesEditor, { blankEntry } from "./GrEntriesEditor";
 
 function draftsFrom(detail: GoodsReceiptDetail | null): GoodsReceiptEntryDraft[] {
   if (!detail) return [blankEntry()];
   return detail.entries.map((e) => ({
     key: e.id, id: e.id, locked: e.status === "inwarded",
-    shipment_number: e.shipment_number,
+    shipment_number: e.shipment_number, category: e.category || "",
     sku_code_id: e.sku_code_id, sku_version_id: e.sku_version_id,
     po_quantity: String(e.po_quantity), unit: e.unit,
   }));
@@ -33,7 +33,6 @@ export default function GoodsReceiptFormPanel({
   onSaved: (saved: GoodsReceiptDetail) => void;
 }) {
   const [poNumber, setPoNumber] = useState(existing?.po_number || "");
-  const [category, setCategory] = useState<Category | "">(existing?.category || "");
   const [vendorId, setVendorId] = useState<string>(existing?.vendor_id || "");
   const [entries, setEntries] = useState<GoodsReceiptEntryDraft[]>(() => draftsFrom(existing));
   const [saving, setSaving] = useState<"draft" | "save" | null>(null);
@@ -42,26 +41,17 @@ export default function GoodsReceiptFormPanel({
   const anyInwarded = !!existing?.entries.some((e) => e.status === "inwarded");
   const canSaveDraft = !existing || existing.status === "draft";
 
-  // Same as US Factory's Inward Vehicle Inspection: pick the Category
-  // first; Vendor and SKU lists then only show that category's entries,
-  // so a vendor set up under several categories appears once, by name.
-  const categoryVendors = useMemo(() => vendors.filter((v) => v.category === category), [vendors, category]);
-  // SKUs match on material family: one Tray SKU serves Base Tray, FNP Tray and FG.
-  const categorySkus = useMemo(() => skuCodes.filter((s) => skuMatchesCategory(s.category, category)), [skuCodes, category]);
-
-  function changeCategory(next: Category | "") {
-    setCategory(next);
-    if (vendorId && !vendors.some((v) => v.id === vendorId && v.category === next)) setVendorId("");
-    // SKUs from the previous category no longer apply.
-    setEntries((rows) => rows.map((r) =>
-      r.locked || !r.sku_code_id || skuMatchesCategory(skuCodes.find((s) => s.id === r.sku_code_id)?.category, next)
-        ? r : { ...r, sku_code_id: null, sku_version_id: null }
-    ));
-  }
+  // One Vendor per PO, listed once by name. (Vendors are set up per
+  // material in Setup; a PO can mix materials, so any of them counts.)
+  const vendorOptions = useMemo(() => {
+    const seen = new Map<string, Vendor>();
+    vendors.forEach((v) => { if (!seen.has(v.name)) seen.set(v.name, v); });
+    return Array.from(seen.values()).sort((x, y) => x.name.localeCompare(y.name));
+  }, [vendors]);
+  const selectedVendorName = vendors.find((v) => v.id === vendorId)?.name || "";
 
   function buildPayload(asDraft: boolean): GoodsReceiptSavePayload | string {
     if (!poNumber.trim()) return "PO Number is required.";
-    if (!category) return "Category is required.";
     if (!vendorId) return "Vendor is required.";
     // Drop fully blank rows (e.g. the starter row) silently; anything
     // partially filled must be completed so nothing typed is lost unseen.
@@ -72,14 +62,17 @@ export default function GoodsReceiptFormPanel({
       if (!e.shipment_number.trim()) return `${label}: Shipment Number is required.`;
       if (!e.sku_code_id) return `${label}: select a SKU.`;
       if (!(Number(e.po_quantity) > 0)) return `${label}: PO Quantity must be greater than 0.`;
+      if (skuFamily(skuCodes.find((s) => s.id === e.sku_code_id)?.category) === "tray" && !e.category) {
+        return `${label}: choose Base Tray or FNP Tray.`;
+      }
       const hasVersions = (skuCodes.find((s) => s.id === e.sku_code_id)?.versions || []).some((v) => v.is_active);
       if (!asDraft && hasVersions && !e.sku_version_id) return `${label}: select a SKU Version.`;
     }
     if (!asDraft && rows.length === 0) return "Add at least one container before saving.";
     return {
-      po_number: poNumber.trim(), category, vendor_id: vendorId, as_draft: asDraft,
+      po_number: poNumber.trim(), vendor_id: vendorId, as_draft: asDraft,
       entries: rows.map((e) => ({
-        id: e.id, shipment_number: e.shipment_number.trim(),
+        id: e.id, shipment_number: e.shipment_number.trim(), category: e.category || null,
         sku_code_id: e.sku_code_id as string, sku_version_id: e.sku_version_id, po_quantity: Number(e.po_quantity), unit: e.unit,
       })),
     };
@@ -123,27 +116,23 @@ export default function GoodsReceiptFormPanel({
                 onChange={(e) => setPoNumber(e.target.value.toUpperCase())} />
             </div>
             <div className="field">
-              <label>Category</label>
-              <select value={category} disabled={anyInwarded} onChange={(e) => changeCategory(e.target.value as Category | "")}>
-                <option value="">Select category</option>
-                {(Object.keys(INWARD_CATEGORY_LABELS) as Category[]).map((c) => <option key={c} value={c}>{INWARD_CATEGORY_LABELS[c]}</option>)}
-              </select>
-            </div>
-            <div className="field">
               <label>Vendor</label>
-              <select value={vendorId} disabled={anyInwarded || !category} onChange={(e) => setVendorId(e.target.value)}>
-                <option value="">{category ? "Select vendor" : "Select a category first"}</option>
-                {categoryVendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+              <select
+                value={selectedVendorName} disabled={anyInwarded}
+                onChange={(e) => setVendorId(vendorOptions.find((v) => v.name === e.target.value)?.id || "")}
+              >
+                <option value="">Select vendor</option>
+                {vendorOptions.map((v) => <option key={v.id} value={v.name}>{v.name}</option>)}
               </select>
             </div>
           </div>
           {anyInwarded && (
             <div className="hint-text" style={{ marginBottom: 12 }}>
-              PO Number, Category, Vendor and inwarded containers are locked — their RM pallet QRs already reference them.
+              PO Number, Vendor and inwarded containers are locked — their RM pallet QRs already reference them.
             </div>
           )}
           <div className="section-label" style={{ marginTop: 0 }}>Containers</div>
-          <GrEntriesEditor items={entries} skuCodes={categorySkus} onChange={setEntries} />
+          <GrEntriesEditor items={entries} skuCodes={skuCodes} onChange={setEntries} />
         </div>
         <div className="sp-foot">
           <button className="btn btn-ghost" onClick={onClose}>Cancel</button>

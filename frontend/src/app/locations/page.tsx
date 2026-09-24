@@ -5,9 +5,19 @@ import { api, ApiError } from "@/lib/api";
 import { useMe } from "@/lib/useMe";
 import type { LocationAdmin } from "@/lib/types";
 
-// Zones already in use (migration 0003's seeded convention): one per FNPG
-// material type, and FPG for finished goods.
-const ZONES = ["FNPGTRAY", "FNPGPAD", "FNPGPOLYBAG", "FNPGCFB", "FNPGGLUE", "FPG"];
+// One zone per material. "FNPG" belongs only to FNP Trays -- secondary
+// materials are not FNP, so their zones are just the material. FG stays FPG.
+// (Existing locations keep their names; this is the list for new ones.)
+const ZONES: { code: string; label: string }[] = [
+  { code: "TRAY", label: "Base Tray" },
+  { code: "FNPGTRAY", label: "FNP Tray" },
+  { code: "FILM", label: "Film" },
+  { code: "PAD", label: "Soaker Pad" },
+  { code: "POLYBAG", label: "Polybag" },
+  { code: "CFB", label: "CFB" },
+  { code: "GLUE", label: "Glue" },
+  { code: "FPG", label: "FG (Finished Goods)" },
+];
 
 const two = (v: string) => (v.trim() ? v.trim().padStart(2, "0").slice(-2) : "");
 
@@ -118,7 +128,7 @@ export default function LocationsPage() {
               <div className="field"><label>Zone</label>
                 <select value={zone} onChange={(e) => setZone(e.target.value)}>
                   <option value="">Select zone</option>
-                  {ZONES.map((z) => <option key={z} value={z}>{z}</option>)}
+                  {ZONES.map((z) => <option key={z.code} value={z.code}>{z.code} — {z.label}</option>)}
                 </select></div>
               <div className="field"><label>Aisle</label><input type="number" min={1} max={99} value={aisle} onChange={(e) => setAisle(e.target.value)} /></div>
               <div className="field"><label>Rack</label><input type="number" min={1} max={99} value={rack} onChange={(e) => setRack(e.target.value)} /></div>

@@ -175,7 +175,7 @@ export default function GoodsReceiptPage() {
         <table className="data">
           <thead>
             <tr>
-              <th>PO Number</th><th>Category</th><th>Vendor</th><th>SKU(s)</th><th>Containers Inwarded</th>
+              <th>PO Number</th><th>Categories</th><th>Vendor</th><th>SKU(s)</th><th>Containers Inwarded</th>
               <th>Pallets Received</th><th>Status</th><th>Date</th><th></th>
             </tr>
           </thead>
@@ -186,7 +186,7 @@ export default function GoodsReceiptPage() {
               items.map((r) => (
                 <tr key={r.id} className={r.status === "draft" || r.status === "pending" ? "row-pending" : ""} style={{ cursor: "pointer" }} onClick={() => openRecord(r.id)}>
                   <td className="mono">{r.po_number}</td>
-                  <td>{r.category ? INWARD_CATEGORY_LABELS[r.category] : "—"}</td>
+                  <td>{r.categories.map((c) => INWARD_CATEGORY_LABELS[c]).join(", ") || "—"}</td>
                   <td>{r.vendor_name}</td>
                   <td className="mono">{r.sku_summary || "—"}</td>
                   <td>{r.inwarded_count} / {r.container_count}</td>

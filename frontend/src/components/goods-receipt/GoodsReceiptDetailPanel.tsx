@@ -135,7 +135,7 @@ export default function GoodsReceiptDetailPanel({
             <h3>General Information</h3>
             <div className="detail-grid">
               <Kv label="PO Number" value={<span className="mono">{record.po_number}</span>} />
-              <Kv label="Category" value={record.category ? INWARD_CATEGORY_LABELS[record.category] : "—"} />
+              <Kv label="Categories" value={Array.from(new Set(record.entries.map((e) => e.category).filter(Boolean))).map((c) => INWARD_CATEGORY_LABELS[c!]).join(", ") || "—"} />
               <Kv label="Vendor" value={record.vendor_name} />
               <Kv label="Containers Inwarded" value={`${inwarded.length} of ${record.entries.length}`} />
               <Kv label="Pallets Received" value={palletTotal} />
@@ -155,19 +155,20 @@ export default function GoodsReceiptDetailPanel({
               <table className="qc-obs-table">
                 <thead>
                   <tr>
-                    <th>Shipment No.</th><th>SKU</th><th>Version</th>
+                    <th>Shipment No.</th><th>SKU</th><th>Category</th><th>Version</th>
                     <th>PO Qty</th><th>Qty Received</th><th>Unit</th><th>Pallets</th><th>Status</th><th />
                   </tr>
                 </thead>
                 <tbody>
                   {record.entries.length === 0 && (
-                    <tr className="empty-row"><td colSpan={9}>No containers on this receipt yet.</td></tr>
+                    <tr className="empty-row"><td colSpan={10}>No containers on this receipt yet.</td></tr>
                   )}
                   {record.entries.map((e) => (
                     <Fragment key={e.id}>
                       <tr>
                         <td className="mono">{e.shipment_number}</td>
                         <td className="mono">{e.sku_code || "—"}</td>
+                        <td>{e.category ? INWARD_CATEGORY_LABELS[e.category] : "—"}</td>
                         <td className="mono">{e.sku_version || "—"}</td>
                         <td>{fmt(e.po_quantity)}</td>
                         <td>
@@ -202,7 +203,7 @@ export default function GoodsReceiptDetailPanel({
                       </tr>
                       {inwardingId === e.id && form && (
                         <tr>
-                          <td colSpan={9} style={{ background: "var(--ink-04, #f6f5f0)" }}>
+                          <td colSpan={10} style={{ background: "var(--ink-04, #f6f5f0)" }}>
                             <div className="form-grid" style={{ margin: "8px 0" }}>
                               <div className="field">
                                 <label>Quantity Received</label>

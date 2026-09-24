@@ -1,14 +1,24 @@
 "use client";
 import { useState } from "react";
-import type { GoodsReceiptEntryDraft, QuantityUnit, SkuCode } from "@/lib/types";
-import { QUANTITY_UNITS } from "@/lib/types";
+import type { Category, GoodsReceiptEntryDraft, QuantityUnit, SkuCode } from "@/lib/types";
+import { INWARD_CATEGORY_LABELS, QUANTITY_UNITS, skuFamily } from "@/lib/types";
+
+/** Category follows the SKU: a Tray SKU is chosen as Base Tray or FNP Tray
+ * (the same tray, two stages); any other SKU's material is its category. */
+function categoryForSku(sku: SkuCode | undefined): Category | "" {
+  if (!sku) return "";
+  return skuFamily(sku.category) === "tray" ? "" : (sku.category as Category);
+}
+const isTraySku = (sku: SkuCode | undefined) => !!sku && skuFamily(sku.category) === "tray";
+// Stages a tray can be RECEIVED in (FG is produced here, never inwarded).
+const TRAY_STAGES: Category[] = ["tray", "fnp_tray"];
 
 function newKey() {
   return `gr-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 export function blankEntry(unit: QuantityUnit = "Units"): GoodsReceiptEntryDraft {
-  return { key: newKey(), id: null, locked: false, shipment_number: "", sku_code_id: null, sku_version_id: null, po_quantity: "", unit };
+  return { key: newKey(), id: null, locked: false, shipment_number: "", category: "", sku_code_id: null, sku_version_id: null, po_quantity: "", unit };
 }
 
 /** "HA1" + 3 -> HA1, HA2, HA3 ; "V6" + 4 -> V6..V9 ; "SHP" + 2 -> SHP1, SHP2. */
@@ -45,6 +55,8 @@ export default function GrEntriesEditor({
   const [qaVersion, setQaVersion] = useState<string | null>(null);
   const [qaQty, setQaQty] = useState("");
   const [qaUnit, setQaUnit] = useState<QuantityUnit>("Units");
+  const [qaCategory, setQaCategory] = useState<Category | "">("");
+  const skuById = (id: string | null) => skuCodes.find((s) => s.id === id);
 
   function versionsFor(skuCodeId: string | null) {
     if (!skuCodeId) return [];
@@ -53,17 +65,23 @@ export default function GrEntriesEditor({
 
   function update(idx: number, patch: Partial<GoodsReceiptEntryDraft>) {
     const next = items.map((it, i) => (i === idx ? { ...it, ...patch } : it));
-    if (patch.sku_code_id !== undefined) next[idx].sku_version_id = versionsFor(patch.sku_code_id)[0]?.id || null;
+    if (patch.sku_code_id !== undefined) {
+      next[idx].sku_version_id = versionsFor(patch.sku_code_id)[0]?.id || null;
+      const sku = skuById(patch.sku_code_id);
+      next[idx].category = isTraySku(sku) ? (TRAY_STAGES.includes(items[idx].category as Category) ? items[idx].category : "") : categoryForSku(sku);
+    }
     onChange(next);
   }
 
   const qaCountNum = parseInt(qaCount, 10) || 0;
-  const canQuickAdd = qaCountNum > 0 && qaCountNum <= 200 && !!qaFirst.trim() && !!qaSku && Number(qaQty) > 0;
+  const qaIsTray = isTraySku(skuById(qaSku));
+  const canQuickAdd = qaCountNum > 0 && qaCountNum <= 200 && !!qaFirst.trim() && !!qaSku && Number(qaQty) > 0 && (!qaIsTray || !!qaCategory);
 
   function quickAdd() {
     if (!canQuickAdd) return;
     const rows = shipmentNumbers(qaFirst, qaCountNum).map((sn) => ({
       ...blankEntry(qaUnit), shipment_number: sn, sku_code_id: qaSku, sku_version_id: qaVersion, po_quantity: qaQty,
+      category: qaIsTray ? qaCategory : categoryForSku(skuById(qaSku)),
     }));
     // Replace untouched blank rows instead of leaving them dangling.
     const kept = items.filter((it) => it.locked || it.id || it.shipment_number || it.sku_code_id || it.po_quantity);
@@ -78,7 +96,7 @@ export default function GrEntriesEditor({
       ) : (
         <table className="qc-obs-table">
           <thead>
-            <tr><th>Shipment Number</th><th>SKU</th><th>SKU Version</th><th>PO Quantity</th><th>Unit</th><th /></tr>
+            <tr><th>Shipment Number</th><th>SKU</th><th>Category</th><th>SKU Version</th><th>PO Quantity</th><th>Unit</th><th /></tr>
           </thead>
           <tbody>
             {items.map((item, i) =>
@@ -86,6 +104,7 @@ export default function GrEntriesEditor({
                 <tr key={item.key}>
                   <td className="mono">{item.shipment_number}</td>
                   <td className="mono">{skuCodes.find((s) => s.id === item.sku_code_id)?.code || "—"}</td>
+                  <td>{item.category ? INWARD_CATEGORY_LABELS[item.category as Category] : "—"}</td>
                   <td className="mono">{versionsFor(item.sku_code_id).find((v) => v.id === item.sku_version_id)?.version || "—"}</td>
                   <td>{Number(item.po_quantity).toLocaleString()}</td>
                   <td>{item.unit}</td>
@@ -99,6 +118,16 @@ export default function GrEntriesEditor({
                       <option value="">Select</option>
                       {skuCodes.map((s) => <option key={s.id} value={s.id}>{s.code}</option>)}
                     </select>
+                  </td>
+                  <td>
+                    {isTraySku(skuById(item.sku_code_id)) ? (
+                      <select value={item.category} onChange={(e) => update(i, { category: e.target.value as Category | "" })}>
+                        <option value="">Select</option>
+                        {TRAY_STAGES.map((c) => <option key={c} value={c}>{INWARD_CATEGORY_LABELS[c]}</option>)}
+                      </select>
+                    ) : (
+                      <div className="readonly-val">{item.category ? INWARD_CATEGORY_LABELS[item.category as Category] : "—"}</div>
+                    )}
                   </td>
                   <td>
                     <select value={item.sku_version_id || ""} onChange={(e) => update(i, { sku_version_id: e.target.value || null })}>
@@ -141,6 +170,13 @@ export default function GrEntriesEditor({
                 <option value="">Select</option>
                 {skuCodes.map((s) => <option key={s.id} value={s.id}>{s.code}</option>)}
               </select></div>
+            {qaIsTray && (
+              <div className="field"><label>Category</label>
+                <select value={qaCategory} onChange={(e) => setQaCategory(e.target.value as Category | "")}>
+                  <option value="">Select</option>
+                  {TRAY_STAGES.map((c) => <option key={c} value={c}>{INWARD_CATEGORY_LABELS[c]}</option>)}
+                </select></div>
+            )}
             <div className="field"><label>SKU Version</label>
               <select value={qaVersion || ""} onChange={(e) => setQaVersion(e.target.value || null)}>
                 <option value="">Select</option>
