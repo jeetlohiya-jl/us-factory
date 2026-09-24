@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import type { Category, GoodsReceiptEntryDraft, QuantityUnit, SkuCode } from "@/lib/types";
-import { INWARD_CATEGORY_LABELS, skuFamily } from "@/lib/types";
+import { INWARD_CATEGORY_LABELS, QUANTITY_UNITS, skuFamily } from "@/lib/types";
 
 /** Category follows the SKU: a Tray SKU is chosen as Base Tray or FNP Tray
  * (the same tray, two stages); any other SKU's material is its category. */
@@ -17,7 +17,8 @@ function newKey() {
   return `gr-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-// Goods Receipt quantities are always pallets (PO Quantity = pallets ordered).
+// Trays are ordered and received in pallets; every other material has its
+// own quantity + unit (and still a pallet count at inward, for its QRs).
 export function blankEntry(unit: QuantityUnit = "Pallets"): GoodsReceiptEntryDraft {
   return { key: newKey(), id: null, locked: false, shipment_number: "", category: "", sku_code_id: null, sku_version_id: null, po_quantity: "", unit };
 }
@@ -55,6 +56,7 @@ export default function GrEntriesEditor({
   const [qaSku, setQaSku] = useState<string | null>(null);
   const [qaVersion, setQaVersion] = useState<string | null>(null);
   const [qaQty, setQaQty] = useState("");
+  const [qaUnit, setQaUnit] = useState<QuantityUnit>("Units");
   const [qaCategory, setQaCategory] = useState<Category | "">("");
   const skuById = (id: string | null) => skuCodes.find((s) => s.id === id);
 
@@ -69,6 +71,8 @@ export default function GrEntriesEditor({
       next[idx].sku_version_id = versionsFor(patch.sku_code_id)[0]?.id || null;
       const sku = skuById(patch.sku_code_id);
       next[idx].category = isTraySku(sku) ? (TRAY_STAGES.includes(items[idx].category as Category) ? items[idx].category : "") : categoryForSku(sku);
+      // Trays: always pallets. Other materials: keep a unit already chosen, else Units.
+      next[idx].unit = isTraySku(sku) ? "Pallets" : (items[idx].unit && items[idx].unit !== "Pallets" ? items[idx].unit : "Units");
     }
     onChange(next);
   }
@@ -80,7 +84,7 @@ export default function GrEntriesEditor({
   function quickAdd() {
     if (!canQuickAdd) return;
     const rows = shipmentNumbers(qaFirst, qaCountNum).map((sn) => ({
-      ...blankEntry(), shipment_number: sn, sku_code_id: qaSku, sku_version_id: qaVersion, po_quantity: qaQty,
+      ...blankEntry(qaIsTray ? "Pallets" : qaUnit), shipment_number: sn, sku_code_id: qaSku, sku_version_id: qaVersion, po_quantity: qaQty,
       category: qaIsTray ? qaCategory : categoryForSku(skuById(qaSku)),
     }));
     // Replace untouched blank rows instead of leaving them dangling.
@@ -96,7 +100,7 @@ export default function GrEntriesEditor({
       ) : (
         <table className="qc-obs-table">
           <thead>
-            <tr><th>Shipment Number</th><th>SKU</th><th>Category</th><th>SKU Version</th><th>PO Quantity (Pallets)</th><th /></tr>
+            <tr><th>Shipment Number</th><th>SKU</th><th>Category</th><th>SKU Version</th><th>PO Quantity</th><th>Unit</th><th /></tr>
           </thead>
           <tbody>
             {items.map((item, i) =>
@@ -107,6 +111,7 @@ export default function GrEntriesEditor({
                   <td>{item.category ? INWARD_CATEGORY_LABELS[item.category as Category] : "—"}</td>
                   <td className="mono">{versionsFor(item.sku_code_id).find((v) => v.id === item.sku_version_id)?.version || "—"}</td>
                   <td>{Number(item.po_quantity).toLocaleString()}</td>
+                  <td>{item.unit}</td>
                   <td><span className="badge approved">Inwarded</span></td>
                 </tr>
               ) : (
@@ -134,7 +139,19 @@ export default function GrEntriesEditor({
                       {versionsFor(item.sku_code_id).map((v) => <option key={v.id} value={v.id}>{v.version}</option>)}
                     </select>
                   </td>
-                  <td><input type="number" min={1} step={1} value={item.po_quantity} onChange={(e) => update(i, { po_quantity: e.target.value })} /></td>
+                  <td>
+                    <input type="number" min={0} step={isTraySku(skuById(item.sku_code_id)) ? 1 : "any"} value={item.po_quantity}
+                      onChange={(e) => update(i, { po_quantity: e.target.value })} />
+                  </td>
+                  <td>
+                    {!item.sku_code_id ? <div className="readonly-val">—</div>
+                      : isTraySku(skuById(item.sku_code_id)) ? <div className="readonly-val">Pallets</div>
+                      : (
+                        <select value={item.unit} onChange={(e) => update(i, { unit: e.target.value as QuantityUnit })}>
+                          {QUANTITY_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+                        </select>
+                      )}
+                  </td>
                   <td><a className="btn-tertiary" style={{ cursor: "pointer" }} onClick={() => onChange(items.filter((_, j) => j !== i))}>Remove</a></td>
                 </tr>
               )
@@ -176,8 +193,14 @@ export default function GrEntriesEditor({
                 <option value="">Select</option>
                 {versionsFor(qaSku).map((v) => <option key={v.id} value={v.id}>{v.version}</option>)}
               </select></div>
-            <div className="field"><label>Pallets per Container</label>
-              <input type="number" min={1} step={1} value={qaQty} onChange={(e) => setQaQty(e.target.value)} /></div>
+            <div className="field"><label>{qaIsTray ? "Pallets per Container" : "PO Quantity per Container"}</label>
+              <input type="number" min={0} step={qaIsTray ? 1 : "any"} value={qaQty} onChange={(e) => setQaQty(e.target.value)} /></div>
+            {qaSku && !qaIsTray && (
+              <div className="field"><label>Unit</label>
+                <select value={qaUnit} onChange={(e) => setQaUnit(e.target.value as QuantityUnit)}>
+                  {QUANTITY_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+                </select></div>
+            )}
           </div>
           <div style={{ display: "flex", gap: 10 }}>
             <button className="btn btn-primary" disabled={!canQuickAdd} onClick={quickAdd}>
