@@ -5,6 +5,7 @@ import type { OviDetail, OviAnswer, OviImage, QuantityUnit } from "@/lib/types";
 import { OVI_QUESTIONS, OVI_IMAGE_TYPES, QUANTITY_UNITS } from "@/lib/types";
 import HoldReleaseSection from "@/components/HoldReleaseSection";
 import OviImageField from "./OviImageField";
+import { T } from "@/lib/terms";
 
 function Kv({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -111,7 +112,7 @@ export default function OviPanel({
             <div className="detail-card">
               <h3>Shipment Details</h3>
               <div className="detail-grid">
-                <Kv label="Shipment Number" value={record.shipment_number ? <span className="mono">{record.shipment_number}</span> : "—"} />
+                <Kv label={T.shipmentNumber} value={record.shipment_number ? <span className="mono">{record.shipment_number}</span> : "—"} />
                 <Kv label="Quantity" value={record.quantity ? `${record.quantity} ${record.quantity_unit || "Pallets"}` : null} />
                 <Kv label="Customer Name" value={record.customer_name} />
                 <Kv label="Truck / Vehicle Number" value={record.truck_number} />

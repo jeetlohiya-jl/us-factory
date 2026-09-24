@@ -6,6 +6,7 @@ import { IPQC_DEFECTS } from "@/lib/types";
 import { nowHHMM, formatTime12h } from "@/components/material-consumption/Wizard";
 import { api } from "@/lib/api";
 import HoldReleaseSection from "@/components/HoldReleaseSection";
+import { T } from "@/lib/terms";
 
 function Kv({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -150,7 +151,7 @@ export default function IpqcDetailPanel({
             <div className="detail-card">
               <h3>Product and Shipment Details</h3>
               <div className="detail-grid">
-                <Kv label="Shipment Number" value={record.shipment_number ? <span className="mono">{record.shipment_number}</span> : "—"} />
+                <Kv label={T.shipmentNumber} value={record.shipment_number ? <span className="mono">{record.shipment_number}</span> : "—"} />
                 <Kv label="Batch Code" value={record.batch_code} />
                 <Kv label="Manufacturer Name" value={record.manufacturer} />
                 <Kv label="Shift" value={record.shift} />
@@ -170,8 +171,8 @@ export default function IpqcDetailPanel({
           <div className="detail-card">
             <h3>Record Details</h3>
             <div className="detail-grid">
-              <Kv label="SKU Code" value={record.sku_code ? <span className="mono">{record.sku_code}</span> : "—"} />
-              <Kv label="SKU Version" value={record.sku_version} />
+              <Kv label={T.sku} value={record.sku_code ? <span className="mono">{record.sku_code}</span> : "—"} />
+              <Kv label={T.skuVersion} value={record.sku_version} />
               <Kv label="Shift Incharge" value={
                 editable ? (
                   <input type="text" value={shiftIncharge} placeholder="e.g. R. Fernandez" onChange={(e) => setShiftIncharge(e.target.value)} />
@@ -254,7 +255,7 @@ export default function IpqcDetailPanel({
 
           {showContextCards && (
             <div className="detail-card">
-              <h3>Production &amp; Material Consumption Source</h3>
+              <h3>Production &amp; Raw Material Consumption Source</h3>
               <div className="detail-grid">
                 <Kv
                   label="Production Run"
@@ -265,7 +266,7 @@ export default function IpqcDetailPanel({
                   ) : "—"}
                 />
                 <Kv
-                  label="Material Consumption"
+                  label="Raw Material Consumption"
                   value={record.material_consumptions.length === 0 ? "—" : (
                     <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                       {record.material_consumptions.map((mc) => (

@@ -4,19 +4,21 @@ import QRCode from "qrcode";
 import { api, ApiError } from "@/lib/api";
 import { useMe } from "@/lib/useMe";
 import type { LocationAdmin } from "@/lib/types";
+import { MODULE_NAMES } from "@/lib/terms";
+import { T } from "@/lib/terms";
 
 // One zone per material. "FNPG" belongs only to FNP Trays -- secondary
 // materials are not FNP, so their zones are just the material. FG stays FPG.
 // (Existing locations keep their names; this is the list for new ones.)
 const ZONES: { code: string; label: string }[] = [
-  { code: "TRAY", label: "Base Tray" },
-  { code: "FNPGTRAY", label: "FNP Tray" },
+  { code: "TRAY", label: T.baseTray },
+  { code: "FNPGTRAY", label: T.fnpTray },
   { code: "FILM", label: "Film" },
   { code: "PAD", label: "Soaker Pad" },
   { code: "POLYBAG", label: "Polybag" },
   { code: "CFB", label: "CFB" },
   { code: "GLUE", label: "Glue" },
-  { code: "FPG", label: "FG (Finished Goods)" },
+  { code: "FPG", label: T.finishedGoods },
 ];
 
 const two = (v: string) => (v.trim() ? v.trim().padStart(2, "0").slice(-2) : "");
@@ -111,8 +113,8 @@ export default function LocationsPage() {
       <div className="no-print">
         <div className="page-head2">
           <div>
-            <h1>Locations</h1>
-            <div className="desc">Storage locations scanned in RM Storage and Finished Goods Storage, with their QR labels.</div>
+            <h1>{MODULE_NAMES.locations}</h1>
+            <div className="desc">Storage locations scanned in Raw Material Storage and Finished Goods Storage, with their QR labels.</div>
           </div>
           <button className="btn btn-secondary" disabled={toPrint.length === 0} onClick={() => window.print()}>
             Print {toPrint.length || ""} QR Label{toPrint.length === 1 ? "" : "s"}

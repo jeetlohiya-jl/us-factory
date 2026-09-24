@@ -3,11 +3,11 @@ import { useCallback, useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import { useMe } from "@/lib/useMe";
 import type { Category, Vendor } from "@/lib/types";
+import { MODULE_NAMES } from "@/lib/terms";
+import { INWARD_CATEGORY_LABELS } from "@/lib/types";
 
-const CATEGORY_LABELS: Record<Category, string> = {
-  tray: "Base Tray", fnp_tray: "FNP Tray", film: "Film",
-  pad: "Soaker Pad", polybag: "Polybag", cfb: "CFB", glue: "Glue",
-};
+// Central category names (lib/terms.ts via lib/types.ts).
+const CATEGORY_LABELS: Record<Category, string> = INWARD_CATEGORY_LABELS;
 // Every Inward Vehicle Inspection category carries a Vendor Name field on
 // the inspection itself (Tray QC being auto-created from an approved
 // inspection doesn't change that -- the inspection's own Vendor Name is
@@ -103,10 +103,10 @@ export default function VendorsPage() {
     <>
       <div className="page-head2">
         <div>
-          <h1>Vendors</h1>
+          <h1>{MODULE_NAMES.vendors}</h1>
           <div className="desc">
             Manages the per-category vendor list used by the Vendor Name dropdown on Inward Vehicle Inspection.
-            A vendor&apos;s Country sets the country prefix on every RM pallet number generated from its shipments
+            A vendor&apos;s Country sets the country prefix on every Raw Material pallet number generated from its shipments
             (e.g. a China vendor produces CN-PLT-... pallet numbers).
           </div>
         </div>

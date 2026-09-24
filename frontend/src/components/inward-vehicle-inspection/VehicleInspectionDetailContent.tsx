@@ -3,6 +3,7 @@ import { useState } from "react";
 import { api } from "@/lib/api";
 import type { InspectionDetail } from "@/lib/types";
 import Lightbox from "./Lightbox";
+import { T, statusLabel } from "@/lib/terms";
 
 const IMAGE_TYPE_LABELS: Record<string, string> = {
   container: "Container Photo", truck: "Truck Number Photo", seal: "Seal Photo",
@@ -33,9 +34,9 @@ export default function VehicleInspectionDetailContent({ detail }: { detail: Ins
       <div className="detail-card">
         <h3>Basic Information</h3>
         <div className="detail-grid">
-          <Kv label="Shipment Number" value={detail.shipment_number} />
+          <Kv label={T.shipmentNumber} value={detail.shipment_number} />
           <Kv label="Material Category" value={detail.category} />
-          <Kv label="Status" value={<span className={`badge ${detail.status}`}>{detail.status}</span>} />
+          <Kv label="Status" value={<span className={`badge ${detail.status}`}>{statusLabel(detail.status)}</span>} />
           <Kv label="Total Quantity" value={detail.total_quantity} />
           <Kv label="Vendor Name" value={detail.vendor_name} />
           <Kv label="Invoice No." value={detail.invoice_number} />
@@ -51,7 +52,7 @@ export default function VehicleInspectionDetailContent({ detail }: { detail: Ins
           <div className="hint-text">No SKU entries recorded.</div>
         ) : (
           <table className="qc-obs-table">
-            <thead><tr><th>SKU Name</th><th>SKU Version</th><th>Quantity</th></tr></thead>
+            <thead><tr><th>{T.sku}</th><th>{T.skuVersion}</th><th>Quantity</th></tr></thead>
             <tbody>
               {detail.line_items.map((li) => (
                 <tr key={li.id}><td>{li.sku_code || "—"}</td><td>{li.sku_version || "—"}</td><td>{li.quantity}</td></tr>

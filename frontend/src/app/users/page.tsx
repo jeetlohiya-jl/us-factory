@@ -4,30 +4,31 @@ import { api, ApiError } from "@/lib/api";
 import { useMe } from "@/lib/useMe";
 import { FACTORY_MODULES, US_FACTORY_MODULES, USER_MODULES } from "@/lib/types";
 import type { AppUser, ModuleKey, Permissions, UserCreateInput } from "@/lib/types";
+import { MODULE_NAMES } from "@/lib/terms";
 
 const MODULE_LABELS: Record<ModuleKey, string> = {
-  inward_vehicle_inspection: "Inward Vehicle Inspection",
-  inward_qc: "Inward QC",
-  rm_qr_generation: "RM QR Generation",
-  rm_storage: "RM Storage",
-  material_consumption: "Material Consumption",
-  production: "Production",
-  ipqc: "IPQC",
-  rqc: "RQC",
-  fg_qr_generation: "FG QR Generation",
-  fg_storage: "FG Storage",
-  customer_shipment: "Customer Shipment",
-  shipment_picking: "Shipment Picking",
-  outward_vehicle_inspection: "Outward Vehicle Inspection",
-  machine_downtime: "Machine Downtime",
+  inward_vehicle_inspection: MODULE_NAMES.inward_vehicle_inspection,
+  inward_qc: MODULE_NAMES.inward_qc,
+  rm_qr_generation: MODULE_NAMES.rm_qr_generation,
+  rm_storage: MODULE_NAMES.rm_storage,
+  material_consumption: MODULE_NAMES.material_consumption,
+  production: MODULE_NAMES.production,
+  ipqc: MODULE_NAMES.ipqc,
+  rqc: MODULE_NAMES.rqc,
+  fg_qr_generation: MODULE_NAMES.fg_qr_generation,
+  fg_storage: MODULE_NAMES.fg_storage,
+  customer_shipment: MODULE_NAMES.customer_shipment,
+  shipment_picking: MODULE_NAMES.shipment_picking,
+  outward_vehicle_inspection: MODULE_NAMES.outward_vehicle_inspection,
+  machine_downtime: MODULE_NAMES.machine_downtime,
   // Factory (independent of US Factory -- migration 0047).
-  goods_receipt: "Goods Receipt",
-  factory_rm_storage: "RM Storage",
-  factory_material_consumption: "Raw Material Consumption",
-  factory_production: "Production",
-  factory_rqc_fg_qr: "RQC & FG QR",
-  factory_fg_storage: "Finished Goods Storage",
-  factory_goods_outward: "Goods Outward",
+  goods_receipt: MODULE_NAMES.goods_receipt,
+  factory_rm_storage: MODULE_NAMES.rm_storage,
+  factory_material_consumption: MODULE_NAMES.material_consumption,
+  factory_production: MODULE_NAMES.production,
+  factory_rqc_fg_qr: MODULE_NAMES.rqc_fg_qr,
+  factory_fg_storage: MODULE_NAMES.fg_storage,
+  factory_goods_outward: MODULE_NAMES.goods_outward,
 };
 
 const PRODUCT_GROUPS: { title: string; modules: ModuleKey[] }[] = [

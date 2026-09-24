@@ -1,6 +1,7 @@
 "use client";
 import type { SkuCode, QuantityUnit } from "@/lib/types";
 import { QUANTITY_UNITS } from "@/lib/types";
+import { T } from "@/lib/terms";
 
 export interface EditableLineItem {
   sku_code_id: string;
@@ -43,7 +44,7 @@ export default function LineItemsEditor({
     <div>
       <table className="qc-obs-table">
         <thead>
-          <tr><th>SKU Name</th><th>SKU Version</th><th>Quantity</th><th>Unit</th><th /></tr>
+          <tr><th>{T.sku}</th><th>{T.skuVersion}</th><th>Quantity</th><th>Unit</th><th /></tr>
         </thead>
         <tbody>
           {items.map((item, i) => (

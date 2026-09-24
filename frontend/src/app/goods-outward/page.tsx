@@ -10,6 +10,7 @@ import ConfirmDialog from "@/components/inward-vehicle-inspection/ConfirmDialog"
 import NewCustomerShipmentPanel from "@/components/customer-shipment/NewCustomerShipmentPanel";
 import GoodsOutwardDetailPanel from "@/components/goods-outward/GoodsOutwardDetailPanel";
 import Pagination from "@/components/Pagination";
+import { MODULE_NAMES, T } from "@/lib/terms";
 
 const MODULE = "goods-outward";
 const REFERENCE_STALE_MS = 5 * 60_000;
@@ -131,7 +132,7 @@ export default function GoodsOutwardPage() {
     <>
       <div className="page-head2">
         <div>
-          <h1>Goods Outward</h1>
+          <h1>{MODULE_NAMES.goods_outward}</h1>
           <div className="desc">Customer Shipment and Shipment Picking, combined — every Goods Outward record created to date.</div>
         </div>
         <button
@@ -173,7 +174,7 @@ export default function GoodsOutwardPage() {
         <table className="data">
           <thead>
             <tr>
-              <th>Shipment Number</th><th>Customer</th><th>SKU Code(s)</th>
+              <th>{T.shipmentNumber}</th><th>Customer</th><th>SKU Code(s)</th>
               <th>No. of Pallets</th><th>Picked</th><th>Status</th><th>Date</th><th></th>
             </tr>
           </thead>

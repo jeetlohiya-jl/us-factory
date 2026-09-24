@@ -470,7 +470,7 @@ def delete_qc(qc_id: uuid.UUID, db: Session = Depends(get_db), _perm=Depends(req
     if dependent:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"This Inward QC record has already generated an RM QR batch ({dependent.batch_display_id}) and cannot be deleted.",
+            detail=f"This Inward QC record has already generated a Raw Material QR batch ({dependent.batch_display_id}) and cannot be deleted.",
         )
     if qc.coa_storage_path:
         try:

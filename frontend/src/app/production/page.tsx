@@ -9,6 +9,7 @@ import type { ProductionListItem, ProductionDetail, Machine } from "@/lib/types"
 import ProductionDetailPanel from "@/components/production/ProductionDetailPanel";
 import MoreMenu from "@/components/inward-vehicle-inspection/MoreMenu";
 import Pagination from "@/components/Pagination";
+import { MODULE_NAMES, T } from "@/lib/terms";
 
 const MODULE = "production";
 
@@ -99,10 +100,10 @@ function ProductionPageContent() {
     <>
       <div className="page-head2">
         <div>
-          <h1>Production</h1>
+          <h1>{MODULE_NAMES.production}</h1>
           <div className="desc">Every production record created to date.</div>
         </div>
-        <span className="auto-note">Records are created automatically from Material Consumption.</span>
+        <span className="auto-note">Records are created automatically from Raw Material Consumption.</span>
       </div>
 
       <div className="toolbar">
@@ -151,7 +152,7 @@ function ProductionPageContent() {
         <table className="data">
           <thead>
             <tr>
-              <th>Production Run ID</th><th>Shipment Number</th><th>Machines</th><th>Shift</th>
+              <th>Production Run ID</th><th>{T.shipmentNumber}</th><th>Machines</th><th>Shift</th>
               <th>SKU</th><th>Total PCS/Pallet</th><th>Rejections</th><th>Operator</th><th>Date</th><th></th>
             </tr>
           </thead>

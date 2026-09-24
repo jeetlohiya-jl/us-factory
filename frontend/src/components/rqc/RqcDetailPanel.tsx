@@ -6,6 +6,7 @@ import { RQC_DEFECT_GROUPS } from "@/lib/types";
 import { api } from "@/lib/api";
 import HoldReleaseSection from "@/components/HoldReleaseSection";
 import { coaListToMap } from "@/components/rqc/CoaShared";
+import { T } from "@/lib/terms";
 
 function Kv({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -148,7 +149,7 @@ export default function RqcDetailPanel({
       setFgPalletsGeneratedTotal(fresh.fg_pallets_generated);
       onSaved();
     } catch (e) {
-      setEntryError(e instanceof Error ? e.message : "Failed to generate FG QR for this entry");
+      setEntryError(e instanceof Error ? e.message : "Failed to generate Finished Goods QR for this entry");
     } finally {
       setGeneratingEntryId(null);
     }
@@ -312,7 +313,7 @@ export default function RqcDetailPanel({
               <thead>
                 <tr>
                   <th>Date</th><th>Operator</th><th style={{ width: 120 }}>Approved Pallets</th>
-                  <th>Table/Person No.</th><th>FG QR Status</th>
+                  <th>Table/Person Number</th><th>Finished Goods QR Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -388,7 +389,7 @@ export default function RqcDetailPanel({
                       actually produced it.
                     </div>
                     <table className="qc-obs-table" style={{ marginBottom: 6 }}>
-                      <thead><tr><th>Machine</th><th style={{ width: 130 }}>FG Pallets</th></tr></thead>
+                      <thead><tr><th>Machine</th><th style={{ width: 130 }}>Finished Goods Pallets</th></tr></thead>
                       <tbody>
                         {record.production_run_machines.map((m) => (
                           <tr key={m.id}>
@@ -426,7 +427,7 @@ export default function RqcDetailPanel({
             <div className="detail-card">
               <h3>Product and Shipment Details</h3>
               <div className="detail-grid">
-                <Kv label="Shipment Number" value={record.shipment_number ? <span className="mono">{record.shipment_number}</span> : "—"} />
+                <Kv label={T.shipmentNumber} value={record.shipment_number ? <span className="mono">{record.shipment_number}</span> : "—"} />
                 <Kv label="Shift" value={record.shift} />
                 <Kv label="Date" value={record.date} />
               </div>
@@ -436,8 +437,8 @@ export default function RqcDetailPanel({
           <div className="detail-card">
             <h3>Record Details</h3>
             <div className="detail-grid">
-              <Kv label="SKU Code" value={record.sku_code ? <span className="mono">{record.sku_code}</span> : "—"} />
-              <Kv label="SKU Version" value={record.sku_version} />
+              <Kv label={T.sku} value={record.sku_code ? <span className="mono">{record.sku_code}</span> : "—"} />
+              <Kv label={T.skuVersion} value={record.sku_version} />
               {/* Manufacturer is no longer user-entered -- always "Cirkla
                   INC" (rqc_service.RQC_MANUFACTURER_PLACEHOLDER), set
                   server-side at creation. Read-only everywhere. */}

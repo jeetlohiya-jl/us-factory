@@ -41,7 +41,7 @@ def _get_or_404(db: Session, rec_id: uuid.UUID) -> models.QrGenerationRecord:
         .first()
     )
     if not rec:
-        raise HTTPException(status_code=404, detail="RM QR Generation record not found")
+        raise HTTPException(status_code=404, detail="Raw Material QR Generation record not found")
     return rec
 
 
@@ -94,7 +94,7 @@ def delete_rm_qr(rec_id: uuid.UUID, db: Session = Depends(get_db), _perm=Depends
     if rec.pallets:
         raise HTTPException(
             status_code=409,
-            detail="This RM QR record has generated pallets already in storage or consumption and cannot be deleted.",
+            detail="This Raw Material QR record has generated pallets already in storage or consumption and cannot be deleted.",
         )
     db.delete(rec)
     db.commit()

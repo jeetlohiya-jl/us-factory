@@ -1,3 +1,4 @@
+import { CATEGORY_LABELS } from "./terms";
 // "tray" displays as "Base Tray" and "fnp_tray" as "FNP Tray" -- together
 // these are Inward Vehicle Inspection's "tray options" (renamed/expanded
 // per the updated spec); "film" is a new material option alongside them.
@@ -32,14 +33,12 @@ export function skuMatchesCategory(skuCategory: string | null | undefined, recor
 // Inward material categories, in US Factory's Inward Vehicle Inspection
 // order and wording (its Wizard.tsx CATEGORY_LABELS) -- used by Factory's
 // Goods Receipt Category picker.
+// Both come from the one central list (lib/terms.ts CATEGORY_LABELS).
 export const INWARD_CATEGORY_LABELS: Record<Category, string> = {
-  tray: "Base Tray", fnp_tray: "FNP Tray", film: "Film",
-  pad: "Soaker Pad", polybag: "Polybag", cfb: "CFB", glue: "Glue",
+  tray: CATEGORY_LABELS.tray, fnp_tray: CATEGORY_LABELS.fnp_tray, film: CATEGORY_LABELS.film,
+  pad: CATEGORY_LABELS.pad, polybag: CATEGORY_LABELS.polybag, cfb: CATEGORY_LABELS.cfb, glue: CATEGORY_LABELS.glue,
 };
-export const QC_CATEGORY_LABELS: Record<string, string> = {
-  tray: "Base Tray", fnp_tray: "FNP Tray", fgtray: "FNP Tray",
-  pad: "Soaker Pad", polybag: "Polybag", cfb: "CFB", glue: "Glue",
-};
+export const QC_CATEGORY_LABELS: Record<string, string> = CATEGORY_LABELS;
 
 export interface SkuVersion {
   id: string;

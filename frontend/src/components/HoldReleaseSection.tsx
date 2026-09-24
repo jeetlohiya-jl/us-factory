@@ -178,7 +178,7 @@ export default function HoldReleaseSection({
             <div className="field"><label>Product Name</label><input type="text" value={productName} disabled={!editable} onChange={(e) => setProductName(e.target.value)} /></div>
             <div className="field"><label>Batch Code</label><input type="text" value={batchCode} disabled={!editable} onChange={(e) => setBatchCode(e.target.value)} /></div>
             <div className="field"><label>Point of Detection</label><input type="text" value={pointOfDetection} disabled={!editable} onChange={(e) => setPointOfDetection(e.target.value)} /></div>
-            <div className="field"><label>Qty of Hold</label><input type="text" value={qtyOfHold} disabled={!editable} onChange={(e) => setQtyOfHold(e.target.value)} /></div>
+            <div className="field"><label>Quantity on Hold</label><input type="text" value={qtyOfHold} disabled={!editable} onChange={(e) => setQtyOfHold(e.target.value)} /></div>
             <div className="field"><label>Record Filled By</label><input type="text" value={recordFilledBy} disabled={!editable} onChange={(e) => setRecordFilledBy(e.target.value)} /></div>
           </div>
           <div className="field" style={{ marginTop: 12 }}>
@@ -200,7 +200,7 @@ export default function HoldReleaseSection({
                 {DISPOSITIONS.map((d) => <option key={d} value={d}>{d}</option>)}
               </select>
             </div>
-            <div className="field"><label>Qty Decided</label><input type="text" value={qtyDecided} disabled={!editable} onChange={(e) => setQtyDecided(e.target.value)} /></div>
+            <div className="field"><label>Quantity Decided</label><input type="text" value={qtyDecided} disabled={!editable} onChange={(e) => setQtyDecided(e.target.value)} /></div>
             <div className="field"><label>Done By</label><input type="text" value={doneBy} disabled={!editable} onChange={(e) => setDoneBy(e.target.value)} /></div>
             <div className="field"><label>Approved By</label><input type="text" value={approvedBy} disabled={!editable} onChange={(e) => setApprovedBy(e.target.value)} /></div>
           </div>

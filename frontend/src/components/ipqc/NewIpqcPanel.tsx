@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { api, ApiError } from "@/lib/api";
+import { T } from "@/lib/terms";
 
 /**
  * "+ New Record" for IPQC (manual creation -- see ipqc_service.create_ipqc).
@@ -52,7 +53,7 @@ export default function NewIpqcPanel({
           {error && <div className="error-banner">{error}</div>}
           <div className="form-grid">
             <div className="field">
-              <label>Shipment Number</label>
+              <label>{T.shipmentNumber}</label>
               <input
                 type="text" placeholder="e.g. US-SHP-2609-0001"
                 value={shipmentNumber} onChange={(e) => setShipmentNumber(e.target.value)}

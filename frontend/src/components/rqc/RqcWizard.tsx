@@ -3,6 +3,7 @@ import { useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import type { RqcDetail, RqcDefectResult, Machine } from "@/lib/types";
 import { RQC_DEFECT_GROUPS } from "@/lib/types";
+import { T } from "@/lib/terms";
 
 // Result badge: computed from Found vs. that defect's own group reject
 // threshold, never stored -- matches rqcRecalcResult exactly, same as
@@ -200,9 +201,9 @@ export default function RqcWizard({
               <div className="detail-card">
                 <h3>Product and Shipment Details</h3>
                 <div className="detail-grid">
-                  <Kv label="Shipment Number" value={<span className="mono">{record.shipment_number}</span>} />
-                  <Kv label="SKU Code" value={record.sku_code ? <span className="mono">{record.sku_code}</span> : "—"} />
-                  <Kv label="SKU Version" value={record.sku_version} />
+                  <Kv label={T.shipmentNumber} value={<span className="mono">{record.shipment_number}</span>} />
+                  <Kv label={T.sku} value={record.sku_code ? <span className="mono">{record.sku_code}</span> : "—"} />
+                  <Kv label={T.skuVersion} value={record.sku_version} />
                 </div>
               </div>
 

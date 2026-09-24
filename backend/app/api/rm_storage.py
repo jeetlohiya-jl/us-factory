@@ -88,7 +88,7 @@ def get_storage_record(record_id: uuid.UUID, db: Session = Depends(get_db), _per
         .first()
     )
     if not rec:
-        raise HTTPException(status_code=404, detail="RM Storage record not found")
+        raise HTTPException(status_code=404, detail="Raw Material Storage record not found")
     return serialize_storage_record(rec)
 
 

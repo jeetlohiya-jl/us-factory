@@ -1,5 +1,6 @@
 "use client";
 import type { CustomerShipmentDetail } from "@/lib/types";
+import { T } from "@/lib/terms";
 
 function Kv({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -45,7 +46,7 @@ export default function CustomerShipmentDetailPanel({
           <div className="detail-card">
             <h3>Shipment Details</h3>
             <div className="detail-grid">
-              <Kv label="Shipment Number" value={<span className="mono">{detail.shipment_number}</span>} />
+              <Kv label={T.shipmentNumber} value={<span className="mono">{detail.shipment_number}</span>} />
               <Kv label="Container Number" value={<span className="mono">{detail.container_number}</span>} />
               <Kv label="Customer / Recipient" value={detail.customer} />
               <Kv label="Date" value={new Date(detail.created_at).toLocaleDateString()} />
@@ -55,7 +56,7 @@ export default function CustomerShipmentDetailPanel({
           <div className="detail-card">
             <h3>Line Items</h3>
             <table className="qc-obs-table">
-              <thead><tr><th>SKU Code</th><th>SKU Version</th><th>Quantity</th><th>Pcs</th><th>Pcs/Sleeve</th></tr></thead>
+              <thead><tr><th>{T.sku}</th><th>{T.skuVersion}</th><th>Quantity</th><th>Pcs</th><th>Pcs/Sleeve</th></tr></thead>
               <tbody>
                 {detail.line_items.map((li) => (
                   <tr key={li.id}>
@@ -73,7 +74,7 @@ export default function CustomerShipmentDetailPanel({
           <div className="detail-card">
             <h3>Shipment Picking Requests</h3>
             <table className="qc-obs-table">
-              <thead><tr><th>SKU Code</th><th>SKU Version</th><th>Qty Required</th><th>Qty Picked</th><th>Status</th></tr></thead>
+              <thead><tr><th>{T.sku}</th><th>{T.skuVersion}</th><th>Quantity Required</th><th>Quantity Picked</th><th>Status</th></tr></thead>
               <tbody>
                 {detail.picking_requests.map((r) => (
                   <tr key={r.id}>

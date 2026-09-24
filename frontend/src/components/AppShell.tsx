@@ -10,6 +10,7 @@ import type { PortfolioAccessMe } from "@/lib/types";
 import { ProductProvider } from "@/lib/productContext";
 import { clearBootstrap, loadBootstrap, primeBootstrap, readCachedBootstrap, readRememberedProduct, rememberProduct } from "@/lib/bootstrap";
 import { setCurrentProduct } from "@/lib/currentProduct";
+import { MODULE_NAMES } from "@/lib/terms";
 
 /**
  * Shell matching the approved prototype's sidebar visual language (brand
@@ -20,105 +21,105 @@ import { setCurrentProduct } from "@/lib/currentProduct";
 const NAV_ITEMS = [
   {
     href: "/inward-vehicle-inspection",
-    label: "Inward Vehicle Inspection",
+    label: MODULE_NAMES.inward_vehicle_inspection,
     icon: (
       <path d="M3 16h1M20 16h1M5 16V9a2 2 0 012-2h6l4 4h2a1 1 0 011 1v4M5 16a2 2 0 104 0M15 16a2 2 0 104 0" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
     ),
   },
   {
     href: "/inward-qc",
-    label: "Inward QC",
+    label: MODULE_NAMES.inward_qc,
     icon: (
       <path d="M9 12l2 2 4-4M5 5h14v14H5z" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
     ),
   },
   {
     href: "/rm-qr-generation",
-    label: "RM QR Generation",
+    label: MODULE_NAMES.rm_qr_generation,
     icon: (
       <path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM15 15h2v2h-2zM15 18h2v2h-2zM18 15h2v2h-2zM18 18h2v2h-2z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
     ),
   },
   {
     href: "/rm-storage",
-    label: "RM Storage",
+    label: MODULE_NAMES.rm_storage,
     icon: (
       <path d="M3 9l9-5 9 5v9a2 2 0 01-2 2H5a2 2 0 01-2-2zM3 9l9 5 9-5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
     ),
   },
   {
     href: "/material-consumption",
-    label: "Material Consumption",
+    label: MODULE_NAMES.material_consumption,
     icon: (
       <path d="M3 7h18M3 12h18M3 17h18" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
     ),
   },
   {
     href: "/production",
-    label: "Production",
+    label: MODULE_NAMES.production,
     icon: (
       <path d="M3 4h7v7H3zM14 4h7v7h-7zM3 15h7v7H3zM14 15h7v7h-7z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
     ),
   },
   {
     href: "/ipqc",
-    label: "IPQC",
+    label: MODULE_NAMES.ipqc,
     icon: (
       <path d="M9 12l2 2 4-4M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9 9 4.03 9 9z" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
     ),
   },
   {
     href: "/rqc",
-    label: "RQC",
+    label: MODULE_NAMES.rqc,
     icon: (
       <path d="M9 12l2 2 4-4M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9 9 4.03 9 9z" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
     ),
   },
   {
     href: "/fg-qr-generation",
-    label: "FG QR Generation",
+    label: MODULE_NAMES.fg_qr_generation,
     icon: (
       <path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM15 15h2v2h-2zM15 18h2v2h-2zM18 15h2v2h-2zM18 18h2v2h-2z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
     ),
   },
   {
     href: "/fg-storage",
-    label: "FG Storage",
+    label: MODULE_NAMES.fg_storage,
     icon: (
       <path d="M3 9l9-5 9 5v9a2 2 0 01-2 2H5a2 2 0 01-2-2zM3 9l9 5 9-5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
     ),
   },
   {
     href: "/customer-shipment",
-    label: "Customer Shipment",
+    label: MODULE_NAMES.customer_shipment,
     icon: (
       <path d="M3 3h13l3 5v10a1 1 0 01-1 1H4a1 1 0 01-1-1zM16 8H3M8 12v6M13 12v6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
     ),
   },
   {
     href: "/shipment-picking",
-    label: "Shipment Picking",
+    label: MODULE_NAMES.shipment_picking,
     icon: (
       <path d="M20 12V8a2 2 0 00-1-1.73l-6-3.46a2 2 0 00-2 0l-6 3.46A2 2 0 004 8v8a2 2 0 001 1.73l6 3.46a2 2 0 002 0l1.5-.87M16 17l2 2 4-4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
     ),
   },
   {
     href: "/outward-vehicle-inspection",
-    label: "Outward Vehicle Inspection",
+    label: MODULE_NAMES.outward_vehicle_inspection,
     icon: (
       <path d="M3 16V8a1 1 0 011-1h9v9M3 16h1m0 0a2 2 0 104 0m-4 0h9m0 0a2 2 0 104 0m0 0h2a1 1 0 001-1v-3l-2-3h-5v7" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
     ),
   },
   {
     href: "/machine-downtime",
-    label: "Machine Downtime",
+    label: MODULE_NAMES.machine_downtime,
     icon: (
       <path d="M12 8v4l3 2M12 21a9 9 0 100-18 9 9 0 000 18z" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
     ),
   },
   {
     href: "/traceability",
-    label: "Traceability",
+    label: MODULE_NAMES.traceability,
     icon: (
       <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
     ),
@@ -140,7 +141,7 @@ const FACTORY_NAV_ITEMS = [
   // Generation underneath is the existing qr_generation_service, unchanged.
   {
     href: "/goods-receipt",
-    label: "Goods Receipt",
+    label: MODULE_NAMES.goods_receipt,
     icon: (
       <path d="M3 7l9-4 9 4v10l-9 4-9-4V7zM3 7l9 4 9-4M12 11v10M7.5 5.2l9 4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
     ),
@@ -151,14 +152,14 @@ const FACTORY_NAV_ITEMS = [
   // enforced server-side too -- storage_service.resolve_pallet_for_storage).
   {
     href: "/rm-storage",
-    label: "RM Storage",
+    label: MODULE_NAMES.rm_storage,
     icon: (
       <path d="M4 20V9l8-5 8 5v11M4 20h16M9 20v-6h6v6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
     ),
   },
   {
     href: "/material-consumption",
-    label: "Raw Material Consumption",
+    label: MODULE_NAMES.material_consumption,
     icon: (
       <path d="M3 7h18M3 12h18M3 17h18" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
     ),
@@ -173,7 +174,7 @@ const FACTORY_NAV_ITEMS = [
   // are satisfied by this one nav entry, same reuse pattern as Module 2.
   {
     href: "/production",
-    label: "Production",
+    label: MODULE_NAMES.production,
     icon: (
       <path d="M4 4h16v4H4zM4 10h10v10H4zM16 10h4v10h-4z" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
     ),
@@ -189,7 +190,7 @@ const FACTORY_NAV_ITEMS = [
   // labels layered on top -- see FactoryRqcWizard/FactoryCoaEntryPanel.
   {
     href: "/rqc-fg-qr",
-    label: "RQC & FG QR",
+    label: MODULE_NAMES.rqc_fg_qr,
     icon: (
       <path d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
     ),
@@ -207,7 +208,7 @@ const FACTORY_NAV_ITEMS = [
   // with no adjustment needed.
   {
     href: "/fg-storage",
-    label: "Finished Goods Storage",
+    label: MODULE_NAMES.fg_storage,
     icon: (
       <path d="M3 9l9-5 9 5v9l-9 5-9-5V9zM3 9l9 5 9-5M12 14v9" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
     ),
@@ -222,7 +223,7 @@ const FACTORY_NAV_ITEMS = [
   // combined detail view with an embedded pick-scanning section.
   {
     href: "/goods-outward",
-    label: "Goods Outward",
+    label: MODULE_NAMES.goods_outward,
     icon: (
       <path d="M3 3h18v18H3zM3 9h18M9 3v18M15 15l3 3M18 15l-3 3" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
     ),
@@ -241,7 +242,7 @@ const FACTORY_NAV_ITEMS = [
   // ensures a Factory user's search only ever surfaces Factory's own rows.
   {
     href: "/traceability",
-    label: "Traceability",
+    label: MODULE_NAMES.traceability,
     icon: (
       <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
     ),
@@ -254,28 +255,28 @@ const FACTORY_ONLY_HREFS = ["/goods-receipt"];
 const SETUP_NAV_ITEMS = [
   {
     href: "/vendors",
-    label: "Vendors",
+    label: MODULE_NAMES.vendors,
     icon: (
       <path d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-6h6v6M9 9h.01M15 9h.01M9 13h.01M15 13h.01" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
     ),
   },
   {
     href: "/skus",
-    label: "SKU Names",
+    label: MODULE_NAMES.skus,
     icon: (
       <path d="M20.59 13.41L11 3.83A2 2 0 009.59 3.24L4 3a1 1 0 00-1 1l.24 5.59a2 2 0 00.58 1.41l9.59 9.59a2 2 0 002.83 0l4.35-4.35a2 2 0 000-2.83zM7 8a1 1 0 111-1 1 1 0 01-1 1z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
     ),
   },
   {
     href: "/locations",
-    label: "Locations",
+    label: MODULE_NAMES.locations,
     icon: (
       <path d="M12 21s-7-6.2-7-11.5A7 7 0 0112 2.5a7 7 0 017 7C19 14.8 12 21 12 21zM12 12a2.5 2.5 0 100-5 2.5 2.5 0 000 5z" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
     ),
   },
   {
     href: "/machines",
-    label: "Machines",
+    label: MODULE_NAMES.machines,
     icon: (
       <path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
     ),
@@ -286,7 +287,7 @@ const SETUP_NAV_ITEMS = [
   // above (see /customers/page.tsx's own header comment).
   {
     href: "/customers",
-    label: "Customers",
+    label: MODULE_NAMES.customers,
     icon: (
       <path d="M17 21v-2a4 4 0 00-4-4H7a4 4 0 00-4 4v2M11 3a4 4 0 110 8 4 4 0 010-8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
     ),
@@ -299,7 +300,7 @@ const SETUP_NAV_ITEMS = [
 // /users page itself re-checks server-side via require_admin.
 const USERS_NAV_ITEM = {
   href: "/users",
-  label: "Users",
+  label: MODULE_NAMES.users,
   icon: (
     <path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM22 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
   ),
@@ -310,7 +311,7 @@ const USERS_NAV_ITEM = {
 // Factory picker below) rather than a module_permissions scope.
 const PORTFOLIO_ACCESS_NAV_ITEM = {
   href: "/portfolio-access",
-  label: "Portfolio Access",
+  label: MODULE_NAMES.portfolio_access,
   icon: (
     <path d="M3 9l9-5 9 5-9 5-9-5zM3 9v6l9 5 9-5V9" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
   ),

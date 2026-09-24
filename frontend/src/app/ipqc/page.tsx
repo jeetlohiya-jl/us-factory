@@ -10,6 +10,7 @@ import IpqcDetailPanel from "@/components/ipqc/IpqcDetailPanel";
 import NewIpqcPanel from "@/components/ipqc/NewIpqcPanel";
 import MoreMenu from "@/components/inward-vehicle-inspection/MoreMenu";
 import Pagination from "@/components/Pagination";
+import { MODULE_NAMES, T, statusLabel } from "@/lib/terms";
 
 const MODULE = "ipqc";
 
@@ -18,7 +19,7 @@ const STATUSES = [
   { value: "draft", label: "Draft" },
   { value: "pending", label: "Pending" },
   { value: "approved", label: "Approved" },
-  { value: "hold", label: "Hold" },
+  { value: "hold", label: statusLabel("hold") },
 ];
 
 export default function IpqcPage() {
@@ -112,9 +113,9 @@ function IpqcPageContent() {
     <>
       <div className="page-head2">
         <div>
-          <h1>IPQC</h1>
+          <h1>{MODULE_NAMES.ipqc}</h1>
           <div className="desc">Every IPQC record created to date, auto-identified against the current production run.</div>
-          <span className="auto-note">Records are usually created automatically from Material Consumption -- use + New Record to start one manually.</span>
+          <span className="auto-note">Records are usually created automatically from Raw Material Consumption -- use + New Record to start one manually.</span>
         </div>
         <button
           className="btn btn-primary"
@@ -172,7 +173,7 @@ function IpqcPageContent() {
         <table className="data">
           <thead>
             <tr>
-              <th>Shipment Number</th><th>SKU Code</th><th>SKU Version</th>
+              <th>{T.shipmentNumber}</th><th>{T.sku}</th><th>{T.skuVersion}</th>
               <th>Shift Incharge</th><th>Status</th><th>Date</th><th></th>
             </tr>
           </thead>

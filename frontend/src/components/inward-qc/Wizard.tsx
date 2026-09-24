@@ -7,6 +7,7 @@ import { QUANTITY_UNITS, TRAY_FAMILY_QC_CATEGORIES, QC_CATEGORY_LABELS } from "@
 import CoaField from "./CoaField";
 import FgtrayObservations from "./FgtrayObservations";
 import AttributeObservations from "./AttributeObservations";
+import { T, statusLabel } from "@/lib/terms";
 
 const CATEGORY_LABELS = QC_CATEGORY_LABELS;
 
@@ -205,7 +206,7 @@ export default function Wizard({
         <div className="sp-head">
           <div>
             <h2>{CATEGORY_LABELS[detail.category]} Inward QC</h2>
-            <div className="sub">Shipment {detail.shipment_number || "(pending)"} · <span className={`badge ${detail.status}`}>{detail.status}</span></div>
+            <div className="sub">Shipment {detail.shipment_number || "(pending)"} · <span className={`badge ${detail.status}`}>{statusLabel(detail.status)}</span></div>
           </div>
           <button className="sp-close" onClick={handleCancel}>×</button>
         </div>
@@ -216,13 +217,13 @@ export default function Wizard({
             <div className="detail-card" style={{ marginBottom: 20 }}>
               <h3>Vehicle Inspection Information</h3>
               <div className="detail-grid">
-                <div><div className="detail-kv-label">Shipment Number</div><div className="detail-kv-value">{detail.shipment_number}</div></div>
+                <div><div className="detail-kv-label">{T.shipmentNumber}</div><div className="detail-kv-value">{detail.shipment_number}</div></div>
                 <div><div className="detail-kv-label">Vendor</div><div className="detail-kv-value">{detail.vendor_name || "—"}</div></div>
                 <div><div className="detail-kv-label">Quantity</div><div className="detail-kv-value">{detail.quantity ?? "—"}</div></div>
               </div>
               {detail.line_item_snapshots.length > 0 && (
                 <table className="qc-obs-table" style={{ marginTop: 14 }}>
-                  <thead><tr><th>SKU Name</th><th>SKU Version</th><th>Quantity</th></tr></thead>
+                  <thead><tr><th>{T.sku}</th><th>{T.skuVersion}</th><th>Quantity</th></tr></thead>
                   <tbody>
                     {detail.line_item_snapshots.map((li, i) => (
                       <tr key={i}><td>{li.sku_code || "—"}</td><td>{li.sku_version || "—"}</td><td>{li.quantity}</td></tr>
@@ -237,7 +238,7 @@ export default function Wizard({
             <div>
               <div className="form-grid" style={{ marginBottom: 18 }}>
                 <div className="field">
-                  <label>Shipment Number</label>
+                  <label>{T.shipmentNumber}</label>
                   <div className="readonly-val">{detail.shipment_number}</div>
                 </div>
                 <div className="field"><label>Vendor</label>
@@ -253,7 +254,7 @@ export default function Wizard({
                 </div>
               </div>
               <div className="form-grid" style={{ marginBottom: 18 }}>
-                <div className="field"><label>SKU Name <span style={{ color: "var(--red)" }}>*</span></label>
+                <div className="field"><label>{T.sku} <span style={{ color: "var(--red)" }}>*</span></label>
                   <select disabled={readOnlyBasic} value={skuCodeId} onChange={(e) => { markTouched(setSkuCodeId)(e.target.value); setSkuVersionId(""); }}>
                     <option value="">Select</option>
                     {categorySkus.map((s) => <option key={s.id} value={s.id}>{s.code}</option>)}

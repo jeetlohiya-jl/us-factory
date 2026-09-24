@@ -4,6 +4,7 @@ import { api, ApiError } from "@/lib/api";
 import type { MaterialConsumptionDetail, MaterialConsumptionMachineEntry, Machine, Permissions, SecondaryMaterialCategory, QuantityUnit } from "@/lib/types";
 import { QUANTITY_UNITS, QC_CATEGORY_LABELS } from "@/lib/types";
 import CameraQrScanner from "@/components/storage/CameraQrScanner";
+import { T } from "@/lib/terms";
 
 const CATEGORY_LABELS = QC_CATEGORY_LABELS;
 const SECONDARY_LABELS: Record<SecondaryMaterialCategory, string> = { cfb: "CFB", pad: "Pads", glue: "Glue", polybag: "Polybags" };
@@ -163,8 +164,8 @@ function MachineEntryPanel({
         <div className="detail-card" style={{ marginBottom: 14 }}>
           <div className="detail-grid">
             <div><div className="detail-kv-label">Category</div><div className="detail-kv-value">{CATEGORY_LABELS[entry.category || ""] || entry.category || "—"}</div></div>
-            <div><div className="detail-kv-label">SKU Name</div><div className="detail-kv-value">{entry.sku_code || "—"}</div></div>
-            <div><div className="detail-kv-label">SKU Version</div><div className="detail-kv-value">{entry.sku_version || "—"}</div></div>
+            <div><div className="detail-kv-label">{T.sku}</div><div className="detail-kv-value">{entry.sku_code || "—"}</div></div>
+            <div><div className="detail-kv-label">{T.skuVersion}</div><div className="detail-kv-value">{entry.sku_version || "—"}</div></div>
           </div>
         </div>
       )}
@@ -172,7 +173,7 @@ function MachineEntryPanel({
       {canEdit && !entry.end_time && (
         <div style={{ marginBottom: 14 }}>
           <ScanBox
-            placeholder="Scan or enter RM pallet QR / ID"
+            placeholder="Scan or enter Raw Material pallet QR / ID"
             busy={busy}
             onScan={(payload) => onScanPrimary(payload, "1", "Pallets", true)}
           />
@@ -188,7 +189,7 @@ function MachineEntryPanel({
         </div>
       )}
       <table className="qc-obs-table" style={{ marginBottom: 20 }}>
-        <thead><tr><th>Pallet</th><th>SKU Name</th><th>SKU Version</th><th style={{ width: 170 }}>Fully Consumed</th><th></th></tr></thead>
+        <thead><tr><th>Pallet</th><th>{T.sku}</th><th>{T.skuVersion}</th><th style={{ width: 170 }}>Fully Consumed</th><th></th></tr></thead>
         <tbody>
           {entry.pallets.length === 0 ? (
             <tr><td colSpan={5} className="hint-text">No pallet scanned yet.</td></tr>
@@ -230,7 +231,7 @@ function MachineEntryPanel({
                             </div>
                             <div style={{ display: "flex", gap: 6 }}>
                               <input
-                                type="number" step="0.01" min="0" placeholder="Qty consumed" autoFocus={isAwaiting}
+                                type="number" step="0.01" min="0" placeholder="Quantity consumed" autoFocus={isAwaiting}
                                 style={{ width: 90 }}
                                 value={isAwaiting ? (draftQuantity[p.id] ?? "") : String(p.quantity)}
                                 onChange={(e) => setDraftQuantity((prev) => ({ ...prev, [p.id]: e.target.value }))}
@@ -569,7 +570,7 @@ export default function MaterialConsumptionWizard({
       <div className="side-panel open">
         <div className="sp-head">
           <div>
-            <h2>{page === 1 ? "New Material Consumption — Production Details" : "New Material Consumption — Pallet & Material Scanning"}</h2>
+            <h2>{page === 1 ? "New Raw Material Consumption — Production Details" : "New Raw Material Consumption — Pallet & Material Scanning"}</h2>
             <div className="sub">
               {detail.consumption_date} · <span className={`badge ${detail.status === "saved" ? "approved" : "draft"}`}>{detail.status === "saved" ? "Saved" : "Draft"}</span>
               {detail.production_run_number && <> · Production Run {detail.production_run_number}</>}

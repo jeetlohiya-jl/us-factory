@@ -3,6 +3,9 @@ import { useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import type { Customer, CustomerShipmentLineItemDraft, GoodsOutwardDetail, SkuCode } from "@/lib/types";
 import CsLineItemsEditor from "./CsLineItemsEditor";
+import { T } from "@/lib/terms";
+import { MODULE_NAMES } from "@/lib/terms";
+import { useProduct } from "@/lib/productContext";
 
 /**
  * Single-page side panel -- matches the prototype's panel-customer-shipment
@@ -49,6 +52,9 @@ export default function NewCustomerShipmentPanel({
   editTarget?: GoodsOutwardDetail | null;
 }) {
   const isEdit = !!editTarget;
+  // One name per product for this record: Factory calls it Goods Outward;
+  // US Factory keeps its own module name, Customer Shipment.
+  const recordName = useProduct() === "factory" ? `${MODULE_NAMES.goods_outward} Record` : MODULE_NAMES.customer_shipment;
   const [customer, setCustomer] = useState(editTarget?.customer || "");
   const [shipmentNumber, setShipmentNumber] = useState(editTarget?.shipment_number || "");
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -144,7 +150,7 @@ export default function NewCustomerShipmentPanel({
       onSaved();
       onClose();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : e instanceof Error ? e.message : `Failed to save ${isEdit ? "changes" : "Customer Shipment"}`);
+      setError(e instanceof ApiError ? e.message : e instanceof Error ? e.message : `Failed to save ${isEdit ? "changes" : recordName}`);
     } finally {
       setSaving(false);
     }
@@ -153,7 +159,7 @@ export default function NewCustomerShipmentPanel({
   return (
     <div className="side-panel open" id="panel-customer-shipment">
       <div className="sp-head">
-        <div><h2>{isEdit ? "Edit Goods Outward Record" : "New Customer Shipment"}</h2></div>
+        <div><h2>{isEdit ? `Edit ${recordName}` : `New ${recordName}`}</h2></div>
         <button className="sp-close" onClick={onClose}>×</button>
       </div>
       <div className="sp-body">
@@ -190,7 +196,7 @@ export default function NewCustomerShipmentPanel({
             {customerError && <div className="hint-text" style={{ color: "var(--red)" }}>{customerError}</div>}
           </div>
           <div className="field">
-            <label>Shipment Number</label>
+            <label>{T.shipmentNumber}</label>
             <input type="text" placeholder="e.g. US-SHP-2609-0001" value={shipmentNumber} onChange={(e) => setShipmentNumber(e.target.value)} />
           </div>
         </div>

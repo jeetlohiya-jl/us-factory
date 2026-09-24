@@ -181,7 +181,7 @@ def _run_total_pallets_produced(run: models.ProductionRun) -> int:
 
 BLOCKED_DELETE_MESSAGE = (
     "This RQC record can't be deleted because at least one of its approval entries has already "
-    "generated FG QR codes/pallets. Deleting it would orphan real, already-issued pallets."
+    "generated Finished Goods QR codes/pallets. Deleting it would orphan real, already-issued pallets."
 )
 
 
@@ -207,7 +207,7 @@ def blocked_delete_reason(db: Session, rqc: models.RqcRecord) -> str | None:
 
 
 BLOCKED_EDIT_MESSAGE = (
-    "This record's FG QR batch has already been generated -- edit it via a new RQC "
+    "This record's Finished Goods QR batch has already been generated -- edit it via a new RQC "
     "activity instead of changing an approved record after the fact."
 )
 
@@ -416,7 +416,7 @@ def create_approval_entry(
             raise RqcError(
                 f"Only {remaining} pallet(s) remain unapproved for this Production Run "
                 f"({total_produced} produced, {already_approved} already approved). "
-                f"Reduce Approved Pallets for this entry, or check Production's FG Pallets Generated."
+                f"Reduce Approved Pallets for this entry, or check Production's Finished Goods Pallets Generated."
             )
 
     table_person_number = (table_person_number or rqc.table_person_number or "").strip() or None
