@@ -1,4 +1,5 @@
 "use client";
+import { skuMatchesCategory } from "@/lib/types";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import type { Category, InspectionDetail, Permissions, SkuCode, Vendor } from "@/lib/types";
@@ -331,7 +332,7 @@ export default function Wizard({
               </div>
 
               <div className="section-label">SKU Details</div>
-              <LineItemsEditor items={lineItems} skuCodes={skuCodes.filter((s) => s.category === category)} disabled={readOnlyStep1} onChange={markTouched(setLineItems)} />
+              <LineItemsEditor items={lineItems} skuCodes={skuCodes.filter((s) => skuMatchesCategory(s.category, category))} disabled={readOnlyStep1} onChange={markTouched(setLineItems)} />
 
               <div className="section-label">Photos</div>
               <div className="form-grid">

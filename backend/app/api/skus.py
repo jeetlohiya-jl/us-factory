@@ -24,7 +24,10 @@ def list_skus(
     inactive SKUs/versions when asked so they can be reactivated."""
     q = db.query(models.SkuCode).options(joinedload(models.SkuCode.versions))
     if category:
-        q = q.filter(models.SkuCode.category == category)
+        # An SKU belongs to a material family, not a stage: one Tray SKU (3P)
+        # serves Base Tray, FNP Tray and FG (migration 0049).
+        tray = {"tray", "fnp_tray", "fgtray"}
+        q = q.filter(models.SkuCode.category.in_(tray) if category in tray else models.SkuCode.category == category)
     if not include_inactive:
         q = q.filter(models.SkuCode.is_active.is_(True))
     return q.order_by(models.SkuCode.category, models.SkuCode.code).all()

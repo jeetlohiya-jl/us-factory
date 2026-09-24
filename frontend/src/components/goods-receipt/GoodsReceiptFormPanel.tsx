@@ -2,7 +2,7 @@
 import { useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import type { Category, GoodsReceiptDetail, GoodsReceiptEntryDraft, GoodsReceiptSavePayload, SkuCode, Vendor } from "@/lib/types";
-import { INWARD_CATEGORY_LABELS } from "@/lib/types";
+import { INWARD_CATEGORY_LABELS, skuMatchesCategory } from "@/lib/types";
 import GrEntriesEditor, { blankEntry } from "./GrEntriesEditor";
 
 function draftsFrom(detail: GoodsReceiptDetail | null): GoodsReceiptEntryDraft[] {
@@ -46,14 +46,15 @@ export default function GoodsReceiptFormPanel({
   // first; Vendor and SKU lists then only show that category's entries,
   // so a vendor set up under several categories appears once, by name.
   const categoryVendors = useMemo(() => vendors.filter((v) => v.category === category), [vendors, category]);
-  const categorySkus = useMemo(() => skuCodes.filter((s) => s.category === category), [skuCodes, category]);
+  // SKUs match on material family: one Tray SKU serves Base Tray, FNP Tray and FG.
+  const categorySkus = useMemo(() => skuCodes.filter((s) => skuMatchesCategory(s.category, category)), [skuCodes, category]);
 
   function changeCategory(next: Category | "") {
     setCategory(next);
     if (vendorId && !vendors.some((v) => v.id === vendorId && v.category === next)) setVendorId("");
     // SKUs from the previous category no longer apply.
     setEntries((rows) => rows.map((r) =>
-      r.locked || !r.sku_code_id || skuCodes.find((s) => s.id === r.sku_code_id)?.category === next
+      r.locked || !r.sku_code_id || skuMatchesCategory(skuCodes.find((s) => s.id === r.sku_code_id)?.category, next)
         ? r : { ...r, sku_code_id: null, sku_version_id: null }
     ));
   }

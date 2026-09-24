@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { useMe } from "@/lib/useMe";
 import type { Category, SkuCode, SkuVersion } from "@/lib/types";
+import { skuFamily } from "@/lib/types";
 
 // Production Details reference attributes (migration 0013) -- entered once
 // here per SKU Version, then autopopulated (never re-entered) on every
@@ -94,11 +95,14 @@ function SkuVersionDetailsModal({
   );
 }
 
-const CATEGORY_LABELS: Record<Category, string> = {
-  tray: "Base Tray", fnp_tray: "FNP Tray", film: "Film",
-  pad: "Soaker Pad", polybag: "Polybag", cfb: "CFB", glue: "Glue",
+// An SKU belongs to a material FAMILY, not a stage (migration 0049): one
+// Tray SKU (e.g. 3P) serves Base Tray, FNP Tray and FG -- the stage is
+// chosen on each record, never here.
+const MATERIAL_LABELS: Record<string, string> = {
+  tray: "Tray (Base / FNP / FG)", film: "Film", pad: "Soaker Pad", polybag: "Polybag", cfb: "CFB", glue: "Glue",
 };
-const MANAGED_CATEGORIES: Category[] = ["tray", "fnp_tray", "film", "pad", "polybag", "cfb", "glue"];
+const MANAGED_CATEGORIES: Category[] = ["tray", "film", "pad", "polybag", "cfb", "glue"];
+const MATERIAL_SHORT: Record<string, string> = { ...MATERIAL_LABELS, tray: "Tray" };
 
 /**
  * Admin screen for the per-category SKU Name + Version master list backing
@@ -114,7 +118,8 @@ export default function SkusPage() {
   const [skus, setSkus] = useState<SkuCode[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [category, setCategory] = useState<Category>("pad");
+  const [category, setCategory] = useState<Category>("tray");
+  const [newDescription, setNewDescription] = useState("");
   const [newCode, setNewCode] = useState("");
   const [newSkuCode, setNewSkuCode] = useState("");
   const [newInitialVersion, setNewInitialVersion] = useState("");
@@ -152,8 +157,9 @@ export default function SkusPage() {
       // trip to the table. Versions may be a comma-separated list so more
       // than one can be added in one go.
       const skuCode = newSkuCode.trim();
-      if (skuCode) {
-        await api.updateSku(created.id, { sku_code: skuCode });
+      const description = newDescription.trim();
+      if (skuCode || description) {
+        await api.updateSku(created.id, { sku_code: skuCode || null, description: description || null });
       }
       const initialVersions = newInitialVersion.split(",").map((v) => v.trim()).filter(Boolean);
       for (const v of initialVersions) {
@@ -161,10 +167,20 @@ export default function SkusPage() {
       }
       setNewCode("");
       setNewSkuCode("");
+      setNewDescription("");
       setNewInitialVersion("");
       refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to add SKU");
+    }
+  }
+
+  async function handleDescriptionChange(s: SkuCode, value: string) {
+    try {
+      await api.updateSku(s.id, { description: value.trim() || null });
+      refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to update SKU");
     }
   }
 
@@ -246,7 +262,7 @@ export default function SkusPage() {
       <div className="page-head2">
         <div>
           <h1>SKU Names</h1>
-          <div className="desc">Manages the per-category SKU Name + Version list used across Inward Vehicle Inspection, Inward QC, and QR Generation.</div>
+          <div className="desc">One SKU per product — a Tray SKU (e.g. 3P) is used for Base Tray, FNP Tray and FG alike.</div>
         </div>
       </div>
 
@@ -257,15 +273,15 @@ export default function SkusPage() {
           <div className="section-label">Add SKU Name</div>
           <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
             <div className="field" style={{ maxWidth: 200 }}>
-              <label>Category</label>
+              <label>Material</label>
               <select value={category} onChange={(e) => setCategory(e.target.value as Category)}>
-                {MANAGED_CATEGORIES.map((c) => <option key={c} value={c}>{CATEGORY_LABELS[c]}</option>)}
+                {MANAGED_CATEGORIES.map((c) => <option key={c} value={c}>{MATERIAL_LABELS[c]}</option>)}
               </select>
             </div>
             <div className="field" style={{ flex: 1, minWidth: 220 }}>
               <label>SKU Name</label>
               <input
-                value={newCode} placeholder="e.g. SKU-3P"
+                value={newCode} placeholder="e.g. 3P"
                 onChange={(e) => setNewCode(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleAddSku()}
               />
@@ -273,15 +289,23 @@ export default function SkusPage() {
             <div className="field" style={{ minWidth: 140 }}>
               <label>SKU Code (optional)</label>
               <input
-                className="mono" value={newSkuCode} placeholder="e.g. SC-4821A"
+                className="mono" value={newSkuCode} placeholder="e.g. CMP0003P"
                 onChange={(e) => setNewSkuCode(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleAddSku()}
+              />
+            </div>
+            <div className="field" style={{ flex: 2, minWidth: 260 }}>
+              <label>Name (optional)</label>
+              <input
+                value={newDescription} placeholder="e.g. Cirkla Fiber Overwrap 3P Tray - Processor"
+                onChange={(e) => setNewDescription(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleAddSku()}
               />
             </div>
             <div className="field" style={{ minWidth: 160 }}>
               <label>Version(s) (optional)</label>
               <input
-                value={newInitialVersion} placeholder="e.g. V1, V2"
+                value={newInitialVersion} placeholder="e.g. R7"
                 onChange={(e) => setNewInitialVersion(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleAddSku()}
               />
@@ -301,14 +325,14 @@ export default function SkusPage() {
 
       <div className="card card-flush">
         <table className="data">
-          <thead><tr><th>Category</th><th>SKU Name</th><th>SKU Code</th><th>Batch Number</th><th>Versions</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>Material</th><th>SKU Name</th><th>SKU Code</th><th>Name</th><th>Batch Number</th><th>Versions</th><th>Status</th><th></th></tr></thead>
           <tbody>
             {visible.length === 0 ? (
-              <tr className="empty-row"><td colSpan={7}>{loading ? "Loading…" : "No SKUs yet — add one above."}</td></tr>
+              <tr className="empty-row"><td colSpan={8}>{loading ? "Loading…" : "No SKUs yet — add one above."}</td></tr>
             ) : (
               visible.map((s) => (
                 <tr key={s.id}>
-                  <td>{CATEGORY_LABELS[s.category] || s.category}</td>
+                  <td>{MATERIAL_SHORT[skuFamily(s.category)] || s.category}</td>
                   <td className="mono">{s.code}</td>
                   <td>
                     {canEdit ? (
@@ -317,6 +341,14 @@ export default function SkusPage() {
                         onBlur={(e) => e.target.value !== (s.sku_code || "") && handleSkuCodeChange(s, e.target.value)}
                       />
                     ) : (s.sku_code || "—")}
+                  </td>
+                  <td>
+                    {canEdit ? (
+                      <input
+                        style={{ minWidth: 220 }} placeholder="Full name" defaultValue={s.description || ""}
+                        onBlur={(e) => e.target.value !== (s.description || "") && handleDescriptionChange(s, e.target.value)}
+                      />
+                    ) : (s.description || "—")}
                   </td>
                   <td>
                     {canEdit ? (

@@ -60,6 +60,14 @@ export function invalidateListCache(prefix: string) {
   }
 }
 
+/** Drop every cached entry whose key ends with `suffix` -- e.g. all the
+ * per-page "<page>-meta:skuCodes" copies of the SKU list at once. */
+export function invalidateListCacheEndingWith(suffix: string) {
+  for (const key of store.keys()) {
+    if (key.endsWith(suffix)) store.delete(key);
+  }
+}
+
 /** Stable cache key for a list call: module name + sorted params JSON. */
 export function listCacheKey(module: string, params: Record<string, unknown>): string {
   const sorted = Object.keys(params)
