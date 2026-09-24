@@ -185,7 +185,11 @@ export default function GoodsReceiptPage() {
             ) : (
               items.map((r) => (
                 <tr key={r.id} className={r.status === "draft" || r.status === "pending" ? "row-pending" : ""} style={{ cursor: "pointer" }} onClick={() => openRecord(r.id)}>
-                  <td className="mono">{r.po_number}</td>
+                  <td className="mono">
+                    {r.po_number}
+                    {r.from_zoho && <span className="badge draft" style={{ marginLeft: 6 }} title="Synced from Zoho Books">Zoho</span>}
+                    {r.zoho_cancelled && <span className="badge hold" style={{ marginLeft: 6 }}>Cancelled in Zoho</span>}
+                  </td>
                   <td>{r.categories.map((c) => INWARD_CATEGORY_LABELS[c]).join(", ") || "—"}</td>
                   <td>{r.vendor_name}</td>
                   <td className="mono">{r.sku_summary || "—"}</td>

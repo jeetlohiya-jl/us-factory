@@ -1557,6 +1557,11 @@ export interface GoodsReceiptDetail {
   created_at: string;
   updated_at: string | null;
   entries: GoodsReceiptEntry[];
+  // Synced from Zoho Books (migration 0054).
+  zoho_purchaseorder_id?: string | null;
+  zoho_cancelled?: boolean;
+  zoho_synced_at?: string | null;
+  zoho_sync_notes?: string[];
 }
 
 export interface GoodsReceiptListItem {
@@ -1570,6 +1575,8 @@ export interface GoodsReceiptListItem {
   inwarded_count: number;
   pallet_total: number;
   sku_summary: string;
+  from_zoho: boolean;
+  zoho_cancelled: boolean;
 }
 
 /** Local-only editing row in the New/Edit panel. `id` is set for a row
@@ -1602,4 +1609,6 @@ export interface GoodsReceiptInwardPayload {
   received_quantity: number;
   unit: QuantityUnit;
   pallet_count: number;
+  // Tray rows synced from Zoho have no stage yet: Base Tray / FNP Tray.
+  category?: Category;
 }

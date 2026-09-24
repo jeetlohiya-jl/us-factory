@@ -64,9 +64,7 @@ export default function GoodsReceiptFormPanel({
       const tray = skuFamily(skuCodes.find((s) => s.id === e.sku_code_id)?.category) === "tray";
       if (!(Number(e.po_quantity) > 0)) return `${label}: PO Quantity must be greater than 0.`;
       if (tray && !Number.isInteger(Number(e.po_quantity))) return `${label}: tray PO Quantity is a whole number of pallets.`;
-      if (skuFamily(skuCodes.find((s) => s.id === e.sku_code_id)?.category) === "tray" && !e.category) {
-        return `${label}: choose Base Tray or FNP Tray.`;
-      }
+      // A tray's stage may stay blank -- it is chosen when the container is inwarded.
       const hasVersions = (skuCodes.find((s) => s.id === e.sku_code_id)?.versions || []).some((v) => v.is_active);
       if (!asDraft && hasVersions && !e.sku_version_id) return `${label}: select a SKU Version.`;
     }

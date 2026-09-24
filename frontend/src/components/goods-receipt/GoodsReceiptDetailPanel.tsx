@@ -22,8 +22,12 @@ function fmt(n: number | null | undefined) {
 // Trays are counted in pallets: inwarding asks one number, pallets received.
 // Every other material is received in its PO line's unit, plus how many
 // pallets it arrived on (one RM QR per pallet).
-type InwardForm = { quantity: string; pallets: string };
-const isTray = (e: GoodsReceiptEntry) => !!e.category && TRAY_FAMILY_QC_CATEGORIES.includes(e.category);
+type InwardForm = { quantity: string; pallets: string; stage: "" | "tray" | "fnp_tray" };
+// A row with no category is a tray synced from Zoho whose stage (Base Tray /
+// FNP Tray) is chosen at inward -- synced rows of any other material always
+// carry their SKU's category.
+const needsStage = (e: GoodsReceiptEntry) => !e.category;
+const isTray = (e: GoodsReceiptEntry) => needsStage(e) || TRAY_FAMILY_QC_CATEGORIES.includes(e.category as string);
 
 /**
  * Goods Receipt detail -- the receiving screen. Every container x SKU entry
@@ -70,11 +74,13 @@ export default function GoodsReceiptDetailPanel({
       // container -- but it stays editable for a short delivery.
       quantity: isTray(e) ? "" : String(e.po_quantity),
       pallets: isTray(e) ? String(e.po_quantity) : "",
+      stage: "",
     });
   }
 
   async function confirmInward(e: GoodsReceiptEntry) {
     if (!form) return;
+    if (needsStage(e) && !form.stage) { setError(`${e.shipment_number}: choose Base Tray or FNP Tray.`); return; }
     const pallets = Number(form.pallets);
     const qty = isTray(e) ? pallets : Number(form.quantity);
     if (!isTray(e) && !(qty > 0)) { setError(`${e.shipment_number}: Quantity Received must be greater than 0.`); return; }
@@ -87,6 +93,7 @@ export default function GoodsReceiptDetailPanel({
     try {
       const next = await api.inwardGoodsReceiptEntry(record.id, e.id, {
         received_quantity: qty, unit: isTray(e) ? "Pallets" : e.unit, pallet_count: pallets,
+        ...(needsStage(e) && form.stage ? { category: form.stage } : {}),
       });
       apply(next);
       setInwardingId(null);
@@ -136,6 +143,17 @@ export default function GoodsReceiptDetailPanel({
           <button className="sp-close" onClick={onClose}>×</button>
         </div>
         <div className="sp-body">
+          {record.zoho_cancelled && (
+            <div className="error-banner">This PO was cancelled in Zoho Books. Its containers can no longer be inwarded.</div>
+          )}
+          {record.zoho_purchaseorder_id && (
+            <div className="hint-text" style={{ marginBottom: 12 }}>
+              Synced from Zoho Books{record.zoho_synced_at ? ` · last updated ${new Date(record.zoho_synced_at).toLocaleString()}` : ""}.
+              {(record.zoho_sync_notes || []).filter((n) => !n.startsWith("Skipped line")).map((n, i) => (
+                <div key={i} style={{ color: "var(--amber, #9a6b00)", marginTop: 4 }}>• {n}</div>
+              ))}
+            </div>
+          )}
           {error && <div className="error-banner">{error}</div>}
           <div className="detail-card">
             <h3>General Information</h3>
@@ -172,9 +190,9 @@ export default function GoodsReceiptDetailPanel({
                   {record.entries.map((e) => (
                     <Fragment key={e.id}>
                       <tr>
-                        <td className="mono">{e.shipment_number}</td>
+                        <td className="mono">{e.shipment_number || <span className="badge partial">Missing</span>}</td>
                         <td className="mono">{e.sku_code || "—"}</td>
-                        <td>{e.category ? INWARD_CATEGORY_LABELS[e.category] : "—"}</td>
+                        <td>{e.category ? INWARD_CATEGORY_LABELS[e.category] : <span className="hint-text" style={{ margin: 0 }}>Choose at inward</span>}</td>
                         <td className="mono">{e.sku_version || "—"}</td>
                         <td>{fmt(e.po_quantity)} {e.unit}</td>
                         <td>
@@ -193,7 +211,10 @@ export default function GoodsReceiptDetailPanel({
                             : <span className="badge pending">Pending</span>}
                         </td>
                         <td style={{ whiteSpace: "nowrap" }}>
-                          {e.status === "pending" && canReceive && !isDraft && inwardingId !== e.id && (
+                          {e.status === "pending" && canReceive && !isDraft && !record.zoho_cancelled && !e.shipment_number && (
+                            <span className="hint-text" style={{ margin: 0 }}>Add its Shipment Number (Edit) to inward</span>
+                          )}
+                          {e.status === "pending" && canReceive && !isDraft && !record.zoho_cancelled && !!e.shipment_number && inwardingId !== e.id && (
                             <button className="btn btn-secondary" onClick={() => startInward(e)}>Inward</button>
                           )}
                           {e.status === "inwarded" && (e.qr_batch?.status === "generated" || canReceive) && (
@@ -223,6 +244,16 @@ export default function GoodsReceiptDetailPanel({
                                       onChange={(ev) => setForm({ ...form, quantity: ev.target.value })} />
                                   </div>
                                 </>
+                              )}
+                              {needsStage(e) && (
+                                <div className="field">
+                                  <label>Category</label>
+                                  <select value={form.stage} autoFocus onChange={(ev) => setForm({ ...form, stage: ev.target.value as InwardForm["stage"] })}>
+                                    <option value="">Select</option>
+                                    <option value="tray">Base Tray</option>
+                                    <option value="fnp_tray">FNP Tray</option>
+                                  </select>
+                                </div>
                               )}
                               <div className="field">
                                 <label>{isTray(e) ? "Pallets Received" : "Number of Pallets"}</label>

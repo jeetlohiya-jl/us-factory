@@ -1,0 +1,5 @@
+# Supabase Edge Function settings (used by `supabase functions deploy`).
+# zoho-po-sync is called by Zoho Books, which cannot send a Supabase JWT --
+# it authenticates with its own shared secret instead (see the function).
+[functions.zoho-po-sync]
+verify_jwt = false
