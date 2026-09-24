@@ -3,6 +3,7 @@ import { useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import type { RqcDetail, RqcDefectResult, Machine } from "@/lib/types";
 import { RQC_DEFECT_GROUPS_QMP05, RQC_SAMPLING_PLAN } from "@/lib/types";
+import { T } from "@/lib/terms";
 
 // Result badge: computed from Found vs. that defect's own group reject
 // threshold, never stored -- same rqcRecalcResult logic as the US Factory
@@ -181,9 +182,9 @@ export default function FactoryRqcWizard({
               <div className="detail-card">
                 <h3>Product and Shipment Details</h3>
                 <div className="detail-grid">
-                  <Kv label="Shipment Number" value={<span className="mono">{record.shipment_number}</span>} />
-                  <Kv label="SKU Code" value={record.sku_code ? <span className="mono">{record.sku_code}</span> : "—"} />
-                  <Kv label="SKU Version" value={record.sku_version} />
+                  <Kv label={T.shipmentNumber} value={<span className="mono">{record.shipment_number}</span>} />
+                  <Kv label={T.sku} value={record.sku_code ? <span className="mono">{record.sku_code}</span> : "—"} />
+                  <Kv label={T.skuVersion} value={record.sku_version} />
                 </div>
               </div>
 
@@ -297,7 +298,7 @@ export default function FactoryRqcWizard({
                 </div>
               </div>
               <div className="hint-text" style={{ marginTop: 10 }}>
-                Saving as Approved will automatically generate FG QR codes for the Approved Pallets above.
+                Saving as Approved will automatically generate Finished Goods QR codes for the Approved Pallets above.
               </div>
             </div>
           )}

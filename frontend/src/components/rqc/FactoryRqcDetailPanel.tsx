@@ -4,6 +4,7 @@ import { api, ApiError } from "@/lib/api";
 import type { RqcDetail, RqcDefectResult, Machine } from "@/lib/types";
 import { RQC_DEFECT_GROUPS_QMP05, RQC_SAMPLING_PLAN } from "@/lib/types";
 import HoldReleaseSection from "@/components/HoldReleaseSection";
+import { T } from "@/lib/terms";
 
 function Kv({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -154,9 +155,9 @@ export default function FactoryRqcDetailPanel({
           <div className="detail-card">
             <h3>Product and Shipment Details</h3>
             <div className="detail-grid">
-              <Kv label="Shipment Number" value={record.shipment_number ? <span className="mono">{record.shipment_number}</span> : "—"} />
-              <Kv label="SKU Code" value={record.sku_code ? <span className="mono">{record.sku_code}</span> : "—"} />
-              <Kv label="SKU Version" value={record.sku_version} />
+              <Kv label={T.shipmentNumber} value={record.shipment_number ? <span className="mono">{record.shipment_number}</span> : "—"} />
+              <Kv label={T.sku} value={record.sku_code ? <span className="mono">{record.sku_code}</span> : "—"} />
+              <Kv label={T.skuVersion} value={record.sku_version} />
               <Kv label="Manufacturer" value={record.manufacturer || "—"} />
               <Kv label="Status" value={<StatusBadge status={record.status} />} />
             </div>
@@ -290,7 +291,7 @@ export default function FactoryRqcDetailPanel({
                 ) : "—"}
               />
               <Kv
-                label="FG QR"
+                label="Finished Goods QR"
                 value={
                   hasFgQr ? (
                     <a style={{ cursor: "pointer", textDecoration: "underline" }} onClick={onViewFgQr}>View / Print →</a>

@@ -2,6 +2,7 @@
 import Link from "next/link";
 import type { StorageRecordDetail } from "@/lib/types";
 import { PALLET_STAGE_LABELS, PALLET_STAGE_BADGE_CLASS } from "@/lib/types";
+import { T } from "@/lib/terms";
 
 function Kv({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -24,7 +25,7 @@ export default function StorageRecordDetailPanel({ record, onClose }: { record: 
       <div className="side-panel open">
         <div className="sp-head">
           <div>
-            <h2>{record.storage_type === "rm" ? "RM" : "FG"} Storage Record</h2>
+            <h2>{record.storage_type === "rm" ? "Raw Material" : "Finished Goods"} Storage Record</h2>
             <div className="sub">Pallet {record.pallet_display_id}</div>
           </div>
           <button className="sp-close" onClick={onClose}>×</button>
@@ -34,10 +35,10 @@ export default function StorageRecordDetailPanel({ record, onClose }: { record: 
             <h3>General Information</h3>
             <div className="detail-grid">
               <Kv label="Storage Record ID" value={<span className="mono">{record.id}</span>} />
-              <Kv label="Pallet ID" value={<span className="mono">{record.pallet_display_id}</span>} />
-              <Kv label="Shipment Number" value={record.shipment_number} />
-              <Kv label="SKU Name" value={record.sku_code} />
-              <Kv label="SKU Version" value={record.sku_version} />
+              <Kv label={T.palletNumber} value={<span className="mono">{record.pallet_display_id}</span>} />
+              <Kv label={T.shipmentNumber} value={record.shipment_number} />
+              <Kv label={T.sku} value={record.sku_code} />
+              <Kv label={T.skuVersion} value={record.sku_version} />
               {record.storage_type === "fg" && <Kv label="Batch Code" value={<span className="mono">{record.batch_code}</span>} />}
               <Kv label="Location" value={<span className="mono">{record.location_display_id}</span>} />
             </div>
@@ -45,7 +46,7 @@ export default function StorageRecordDetailPanel({ record, onClose }: { record: 
           <div className="detail-card">
             <h3>Source &amp; Traceability</h3>
             <div className="detail-grid">
-              <Kv label={record.storage_type === "rm" ? "Source RM QR Generation Batch" : "Source FG QR Generation Batch"} value={<span className="mono">{record.source_batch_display_id}</span>} />
+              <Kv label={record.storage_type === "rm" ? "Source Raw Material QR Generation Batch" : "Source Finished Goods QR Generation Batch"} value={<span className="mono">{record.source_batch_display_id}</span>} />
               {record.source_inward_qc_id && (
                 <Kv
                   label="Source Inward QC"

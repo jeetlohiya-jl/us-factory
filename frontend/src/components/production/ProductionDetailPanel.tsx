@@ -6,6 +6,7 @@ import { QC_CATEGORY_LABELS } from "@/lib/types";
 import { formatTime12h, nowHHMM } from "@/components/material-consumption/Wizard";
 import { api } from "@/lib/api";
 import ConsumptionConfirmModal from "@/components/production/ConsumptionConfirmModal";
+import { T } from "@/lib/terms";
 
 const CATEGORY_LABELS = QC_CATEGORY_LABELS;
 
@@ -57,7 +58,7 @@ type AttrKey = "machine_no" | "auto_padding" | "container_order_no" | "weight" |
 // QR Generation actually key off, so it's called out on its own rather than
 // buried in this reference table.
 const PROD_DETAIL_ROWS: { label: string; attrKey?: AttrKey; get: (e: ProductionDetail["machine_entries"][number]) => React.ReactNode }[] = [
-  { label: "SKU Name", get: (e) => e.sku_code },
+  { label: T.sku, get: (e) => e.sku_code },
   { label: "Machine No.", attrKey: "machine_no", get: (e) => e.machine_no },
   { label: "Auto Padding", attrKey: "auto_padding", get: (e) => e.auto_padding },
   { label: "Container Order No.", attrKey: "container_order_no", get: (e) => e.container_order_no },
@@ -238,7 +239,7 @@ export default function ProductionDetailPanel({
               <h3>General Information</h3>
               <div className="detail-grid">
                 <Kv label="Production Run ID" value={<span className="mono">{record.run_number}</span>} />
-                <Kv label="Shipment Number" value={record.shipment_number ? <span className="mono">{record.shipment_number}</span> : "—"} />
+                <Kv label={T.shipmentNumber} value={record.shipment_number ? <span className="mono">{record.shipment_number}</span> : "—"} />
                 <Kv label="SKU Code(s)" value={record.sku_codes || "—"} />
                 <Kv label="Date" value={record.date} />
                 <Kv label="Shift" value={record.shift} />
@@ -313,8 +314,8 @@ export default function ProductionDetailPanel({
                     <div className="section-label" style={{ marginTop: 0 }}>{entry.machine || `Machine #${i + 1}`}</div>
                     <div className="detail-grid">
                       <Kv label="Category" value={entry.category ? (CATEGORY_LABELS[entry.category] || entry.category) : "—"} />
-                      <Kv label="SKU Name" value={entry.sku_code} />
-                      <Kv label="SKU Version" value={entry.sku_version} />
+                      <Kv label={T.sku} value={entry.sku_code} />
+                      <Kv label={T.skuVersion} value={entry.sku_version} />
                       <Kv
                         label="Start – End Time"
                         value={entry.start_time ? `${formatTime12h(entry.start_time)}${entry.end_time ? ` – ${formatTime12h(entry.end_time)}` : " – …"}` : "—"}
@@ -322,7 +323,7 @@ export default function ProductionDetailPanel({
                     </div>
 
                     <table className="qc-obs-table" style={{ marginTop: 10 }}>
-                      <thead><tr><th>Pallet</th><th>SKU Name</th><th>SKU Version</th><th style={{ width: 90 }}>Quantity</th></tr></thead>
+                      <thead><tr><th>Pallet</th><th>{T.sku}</th><th>{T.skuVersion}</th><th style={{ width: 90 }}>Quantity</th></tr></thead>
                       <tbody>
                         {entry.pallets.length === 0 ? (
                           <tr><td colSpan={4} className="hint-text">No pallets recorded.</td></tr>
@@ -340,7 +341,7 @@ export default function ProductionDetailPanel({
                     </table>
                     <div style={{ marginTop: 8 }}>
                       <Link className="mono" href={`/material-consumption?open=${entry.material_consumption_id}`} style={{ textDecoration: "underline", fontSize: 12.5 }}>
-                        View source Material Consumption record →
+                        View source Raw Material Consumption record →
                       </Link>
                     </div>
                   </div>
@@ -515,7 +516,7 @@ export default function ProductionDetailPanel({
                   ) : "Not yet created"}
                 />
                 <Kv
-                  label="FG QR Generation"
+                  label="Finished Goods QR Generation"
                   value={record.fg_qr_batches.length === 0 ? "Not yet created" : (
                     <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                       {record.fg_qr_batches.map((b) => (

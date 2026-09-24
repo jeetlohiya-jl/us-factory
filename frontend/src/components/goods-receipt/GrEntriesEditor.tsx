@@ -2,6 +2,7 @@
 import { useState } from "react";
 import type { Category, GoodsReceiptEntryDraft, QuantityUnit, SkuCode } from "@/lib/types";
 import { INWARD_CATEGORY_LABELS, QUANTITY_UNITS, skuFamily } from "@/lib/types";
+import { T } from "@/lib/terms";
 
 /** Category follows the SKU: a Tray SKU is chosen as Base Tray or FNP Tray
  * (the same tray, two stages); any other SKU's material is its category. */
@@ -100,7 +101,7 @@ export default function GrEntriesEditor({
       ) : (
         <table className="qc-obs-table">
           <thead>
-            <tr><th>Shipment Number</th><th>SKU</th><th>Category</th><th>SKU Version</th><th>PO Quantity</th><th>Unit</th><th /></tr>
+            <tr><th>{T.shipmentNumber}</th><th>SKU</th><th>Category</th><th>{T.skuVersion}</th><th>PO Quantity</th><th>Unit</th><th /></tr>
           </thead>
           <tbody>
             {items.map((item, i) =>
@@ -188,7 +189,7 @@ export default function GrEntriesEditor({
                   {TRAY_STAGES.map((c) => <option key={c} value={c}>{INWARD_CATEGORY_LABELS[c]}</option>)}
                 </select></div>
             )}
-            <div className="field"><label>SKU Version</label>
+            <div className="field"><label>{T.skuVersion}</label>
               <select value={qaVersion || ""} onChange={(e) => setQaVersion(e.target.value || null)}>
                 <option value="">Select</option>
                 {versionsFor(qaSku).map((v) => <option key={v.id} value={v.id}>{v.version}</option>)}

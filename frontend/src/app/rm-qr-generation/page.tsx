@@ -9,6 +9,7 @@ import QrGenerationPanel from "@/components/qr-generation/QrGenerationPanel";
 import ConfirmDialog from "@/components/inward-vehicle-inspection/ConfirmDialog";
 import MoreMenu from "@/components/inward-vehicle-inspection/MoreMenu";
 import Pagination from "@/components/Pagination";
+import { MODULE_NAMES, T, statusLabel } from "@/lib/terms";
 
 const MODULE = "rm-qr-generation";
 
@@ -87,8 +88,8 @@ export default function RmQrGenerationPage() {
     <>
       <div className="page-head2">
         <div>
-          <h1>RM QR Generation</h1>
-          <div className="desc">Every RM QR generation record created to date. Records auto-appear here as Pending once the linked Inward QC is approved.</div>
+          <h1>{MODULE_NAMES.rm_qr_generation}</h1>
+          <div className="desc">Every Raw Material QR generation record created to date. Records auto-appear here as Pending once the linked Inward QC is approved.</div>
         </div>
         <span className="auto-note">Records are created automatically from approved Inward QC.</span>
       </div>
@@ -105,7 +106,7 @@ export default function RmQrGenerationPage() {
             </button>
             <div className={`filter-panel ${filtersOpen ? "open" : ""}`}>
               <div className="f-row"><label>Date</label><input type="date" value={fDate} onChange={(e) => setFDate(e.target.value)} /></div>
-              <div className="f-row"><label>SKU Name</label><input type="text" placeholder="e.g. SKU-3P" value={fSku} onChange={(e) => setFSku(e.target.value)} /></div>
+              <div className="f-row"><label>{T.sku}</label><input type="text" placeholder="e.g. SKU-3P" value={fSku} onChange={(e) => setFSku(e.target.value)} /></div>
               <div className="f-actions"><button className="btn-tertiary" onClick={() => { setFDate(""); setFSku(""); }}>Clear all</button></div>
             </div>
           </div>
@@ -117,7 +118,7 @@ export default function RmQrGenerationPage() {
 
       <div className="card card-flush">
         <table className="data">
-          <thead><tr><th>Shipment Number</th><th>SKU Name</th><th>SKU Version</th><th>Country</th><th>Quantity</th><th>Status</th><th>Date</th><th></th></tr></thead>
+          <thead><tr><th>{T.shipmentNumber}</th><th>{T.sku}</th><th>{T.skuVersion}</th><th>Country</th><th>Quantity</th><th>Status</th><th>Date</th><th></th></tr></thead>
           <tbody>
             {items.length === 0 ? (
               <tr className="empty-row"><td colSpan={8}>{loading ? "Loading…" : "No records match your search/filters."}</td></tr>
@@ -129,7 +130,7 @@ export default function RmQrGenerationPage() {
                   <td>{r.sku_version_snapshot}</td>
                   <td className="mono">{r.country_code || "—"}</td>
                   <td>{r.quantity}</td>
-                  <td><span className={`badge ${r.status === "generated" ? "generated" : "pending"}`}>{r.status}</span></td>
+                  <td><span className={`badge ${r.status === "generated" ? "generated" : "pending"}`}>{statusLabel(r.status)}</span></td>
                   <td>{new Date(r.created_at).toLocaleDateString()}</td>
                   <td onClick={(e) => e.stopPropagation()}>
                     <MoreMenu canDelete={!!perms?.can_delete} onDelete={() => setDeleteTarget(r)} />
@@ -144,7 +145,7 @@ export default function RmQrGenerationPage() {
 
       {detail && (
         <QrGenerationPanel
-          title="RM QR Generation"
+          title="Raw Material QR Generation"
           detail={detail}
           canGenerate={!!perms?.can_edit}
           onGenerate={handleGenerate}
@@ -154,8 +155,8 @@ export default function RmQrGenerationPage() {
 
       {deleteTarget && !deleteBlockedMsg && (
         <ConfirmDialog
-          title="Delete this RM QR record?"
-          message={`This will permanently delete the RM QR Generation record for shipment "${deleteTarget.shipment_number}". This cannot be undone.`}
+          title="Delete this Raw Material QR record?"
+          message={`This will permanently delete the Raw Material QR Generation record for shipment "${deleteTarget.shipment_number}". This cannot be undone.`}
           confirmLabel="Delete"
           danger
           onConfirm={confirmDelete}

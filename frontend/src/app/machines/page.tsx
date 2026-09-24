@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import { useMe } from "@/lib/useMe";
 import type { Machine } from "@/lib/types";
+import { MODULE_NAMES } from "@/lib/terms";
 
 /**
  * Admin screen for the Machine master list backing Material Consumption's
@@ -83,8 +84,8 @@ export default function MachinesPage() {
     <>
       <div className="page-head2">
         <div>
-          <h1>Machines</h1>
-          <div className="desc">Manages the machine list used by the Machine dropdown on Material Consumption.</div>
+          <h1>{MODULE_NAMES.machines}</h1>
+          <div className="desc">Manages the machine list used by the Machine dropdown on Raw Material Consumption.</div>
         </div>
       </div>
 

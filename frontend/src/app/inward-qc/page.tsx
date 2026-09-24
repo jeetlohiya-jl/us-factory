@@ -13,6 +13,7 @@ import CategoryPicker from "@/components/inward-qc/CategoryPicker";
 import Wizard from "@/components/inward-qc/Wizard";
 import RecordDetail from "@/components/inward-qc/RecordDetail";
 import Pagination from "@/components/Pagination";
+import { T, statusLabel } from "@/lib/terms";
 
 const MODULE = "inward-qc";
 // Reference data (checklist/sampling meta, SKU codes) barely ever changes --
@@ -22,7 +23,7 @@ const REFERENCE_STALE_MS = 5 * 60_000;
 const CATEGORY_LABELS = QC_CATEGORY_LABELS;
 
 function StatusBadge({ status }: { status: string }) {
-  const map: Record<string, string> = { draft: "Draft", pending: "Pending", accepted: "Approve", onhold: "Hold" };
+  const map: Record<string, string> = { draft: statusLabel("draft"), pending: statusLabel("pending"), accepted: statusLabel("accepted"), onhold: statusLabel("onhold") };
   return <span className={`badge ${status}`}>{map[status] || status}</span>;
 }
 
@@ -204,7 +205,7 @@ function InwardQcPageContent() {
                   <option value="">All</option>
                   <option value="draft">Draft</option>
                   <option value="accepted">Approve</option>
-                  <option value="onhold">Hold</option>
+                  <option value="onhold">On Hold</option>
                 </select>
               </div>
               <div className="f-actions">
@@ -223,7 +224,7 @@ function InwardQcPageContent() {
       <div className="card card-flush">
         <table className="data">
           <thead>
-            <tr><th>Shipment Number</th><th>Category</th><th>COA</th><th>Status</th><th>Date</th><th></th></tr>
+            <tr><th>{T.shipmentNumber}</th><th>Category</th><th>COA</th><th>Status</th><th>Date</th><th></th></tr>
           </thead>
           <tbody>
             {items.length === 0 ? (

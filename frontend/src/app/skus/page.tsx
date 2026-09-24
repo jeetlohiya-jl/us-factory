@@ -4,6 +4,7 @@ import { api } from "@/lib/api";
 import { useMe } from "@/lib/useMe";
 import type { Category, SkuCode, SkuVersion } from "@/lib/types";
 import { skuFamily } from "@/lib/types";
+import { MODULE_NAMES, T } from "@/lib/terms";
 
 // Production Details reference attributes (migration 0013) -- entered once
 // here per SKU Version, then autopopulated (never re-entered) on every
@@ -99,7 +100,7 @@ function SkuVersionDetailsModal({
 // Tray SKU (e.g. 3P) serves Base Tray, FNP Tray and FG -- the stage is
 // chosen on each record, never here.
 const MATERIAL_LABELS: Record<string, string> = {
-  tray: "Tray (Base / FNP / FG)", film: "Film", pad: "Soaker Pad", polybag: "Polybag", cfb: "CFB", glue: "Glue",
+  tray: "Tray (Base Tray / FNP Tray / Finished Goods)", film: "Film", pad: "Soaker Pad", polybag: "Polybag", cfb: "CFB", glue: "Glue",
 };
 const MANAGED_CATEGORIES: Category[] = ["tray", "film", "pad", "polybag", "cfb", "glue"];
 const MATERIAL_SHORT: Record<string, string> = { ...MATERIAL_LABELS, tray: "Tray" };
@@ -261,8 +262,8 @@ export default function SkusPage() {
     <>
       <div className="page-head2">
         <div>
-          <h1>SKU Names</h1>
-          <div className="desc">One SKU per product — a Tray SKU (e.g. 3P) is used for Base Tray, FNP Tray and FG alike.</div>
+          <h1>{MODULE_NAMES.skus}</h1>
+          <div className="desc">One SKU per product — a Tray SKU (e.g. 3P) is used for Base Tray, FNP Tray and Finished Goods alike.</div>
         </div>
       </div>
 
@@ -270,7 +271,7 @@ export default function SkusPage() {
 
       {canEdit && (
         <div className="card" style={{ marginBottom: 20, padding: 18 }}>
-          <div className="section-label">Add SKU Name</div>
+          <div className="section-label">Add {T.sku}</div>
           <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
             <div className="field" style={{ maxWidth: 200 }}>
               <label>Material</label>
@@ -279,7 +280,7 @@ export default function SkusPage() {
               </select>
             </div>
             <div className="field" style={{ flex: 1, minWidth: 220 }}>
-              <label>SKU Name</label>
+              <label>{T.sku}</label>
               <input
                 value={newCode} placeholder="e.g. 3P"
                 onChange={(e) => setNewCode(e.target.value)}
@@ -287,7 +288,7 @@ export default function SkusPage() {
               />
             </div>
             <div className="field" style={{ minWidth: 140 }}>
-              <label>SKU Code (optional)</label>
+              <label>{T.skuCode} (optional)</label>
               <input
                 className="mono" value={newSkuCode} placeholder="e.g. CMP0003P"
                 onChange={(e) => setNewSkuCode(e.target.value)}
@@ -310,7 +311,7 @@ export default function SkusPage() {
                 onKeyDown={(e) => e.key === "Enter" && handleAddSku()}
               />
             </div>
-            <button className="btn btn-primary" disabled={!newCode.trim()} onClick={handleAddSku}>+ Add SKU Name</button>
+            <button className="btn btn-primary" disabled={!newCode.trim()} onClick={handleAddSku}>+ Add {T.sku}</button>
           </div>
         </div>
       )}
@@ -325,7 +326,7 @@ export default function SkusPage() {
 
       <div className="card card-flush">
         <table className="data">
-          <thead><tr><th>Material</th><th>SKU Name</th><th>SKU Code</th><th>Name</th><th>Batch Number</th><th>Versions</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>Material</th><th>{T.sku}</th><th>{T.skuCode}</th><th>Name</th><th>Batch Number</th><th>Versions</th><th>Status</th><th></th></tr></thead>
           <tbody>
             {visible.length === 0 ? (
               <tr className="empty-row"><td colSpan={8}>{loading ? "Loading…" : "No SKUs yet — add one above."}</td></tr>

@@ -12,6 +12,7 @@ import Pagination from "@/components/Pagination";
 import GoodsReceiptFormPanel from "@/components/goods-receipt/GoodsReceiptFormPanel";
 import GoodsReceiptDetailPanel from "@/components/goods-receipt/GoodsReceiptDetailPanel";
 import { GoodsReceiptStatusBadge } from "@/components/goods-receipt/GoodsReceiptStatusBadge";
+import { MODULE_NAMES } from "@/lib/terms";
 
 const MODULE = "goods-receipt";
 const REFERENCE_STALE_MS = 5 * 60_000;
@@ -123,8 +124,8 @@ export default function GoodsReceiptPage() {
     <>
       <div className="page-head2">
         <div>
-          <h1>Goods Receipt</h1>
-          <div className="desc">Receive purchase orders container by container — each inwarded container gets its own RM pallet QRs.</div>
+          <h1>{MODULE_NAMES.goods_receipt}</h1>
+          <div className="desc">Receive purchase orders container by container — each inwarded container gets its own Raw Material pallet QRs.</div>
         </div>
         <button
           className="btn btn-primary"
@@ -153,8 +154,8 @@ export default function GoodsReceiptPage() {
                   <option value="">All</option>
                   <option value="draft">Draft</option>
                   <option value="pending">Pending</option>
-                  <option value="partial">Partially Received</option>
-                  <option value="received">Received</option>
+                  <option value="partial">Partially Inwarded</option>
+                  <option value="received">Inwarded</option>
                 </select>
               </div>
               <div className="f-row"><label>Date</label><input type="date" value={fDate} onChange={(e) => setFDate(e.target.value)} /></div>

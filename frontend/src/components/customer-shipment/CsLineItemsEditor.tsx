@@ -1,6 +1,7 @@
 "use client";
 import type { SkuCode } from "@/lib/types";
 import type { CustomerShipmentLineItemDraft } from "@/lib/types";
+import { T } from "@/lib/terms";
 
 /**
  * Customer Shipment's own line-items editor -- deliberately NOT a reuse of
@@ -60,7 +61,7 @@ export default function CsLineItemsEditor({
     <div>
       <table className="qc-obs-table">
         <thead>
-          <tr><th>SKU Code</th><th>SKU Version</th><th>Quantity</th><th>Pcs</th><th>Pcs/Sleeve</th><th /></tr>
+          <tr><th>{T.sku}</th><th>{T.skuVersion}</th><th>Quantity</th><th>Pcs</th><th>Pcs/Sleeve</th><th /></tr>
         </thead>
         <tbody>
           {items.map((item, i) => (

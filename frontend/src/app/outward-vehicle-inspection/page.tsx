@@ -10,6 +10,7 @@ import OviPanel from "@/components/outward-vehicle-inspection/OviPanel";
 import MoreMenu from "@/components/inward-vehicle-inspection/MoreMenu";
 import ConfirmDialog from "@/components/inward-vehicle-inspection/ConfirmDialog";
 import Pagination from "@/components/Pagination";
+import { T } from "@/lib/terms";
 
 const MODULE = "ovi";
 
@@ -141,7 +142,7 @@ function OviPageContent() {
                   <option value="pending">Pending</option>
                   <option value="draft">Draft</option>
                   <option value="approved">Approved</option>
-                  <option value="hold">Hold</option>
+                  <option value="hold">On Hold</option>
                 </select>
               </div>
               <div className="f-actions">
@@ -160,7 +161,7 @@ function OviPageContent() {
       <div className="card card-flush">
         <table className="data">
           <thead>
-            <tr><th>Shipment Number</th><th>Invoice No.</th><th>Status</th><th>Date</th><th></th></tr>
+            <tr><th>{T.shipmentNumber}</th><th>Invoice No.</th><th>Status</th><th>Date</th><th></th></tr>
           </thead>
           <tbody>
             {items.length === 0 ? (

@@ -13,6 +13,7 @@ import QrGenerationPanel from "@/components/qr-generation/QrGenerationPanel";
 import Pagination from "@/components/Pagination";
 import MoreMenu from "@/components/inward-vehicle-inspection/MoreMenu";
 import ConfirmDialog from "@/components/inward-vehicle-inspection/ConfirmDialog";
+import { MODULE_NAMES, T, statusLabel } from "@/lib/terms";
 
 const MODULE = "rqc";
 
@@ -176,8 +177,8 @@ function FactoryRqcFgQrPageContent() {
     <>
       <div className="page-head2">
         <div>
-          <h1>RQC &amp; FG QR Generation</h1>
-          <div className="desc">Final Quality Control (QMP05) and FG QR Generation for the Factory product -- Production → RQC → Approved Pallets → FG QR.</div>
+          <h1>{MODULE_NAMES.rqc_fg_qr} Generation</h1>
+          <div className="desc">Final Quality Control (QMP05) and Finished Goods QR Generation for the Factory product -- Production → RQC → Approved Pallets → Finished Goods QR.</div>
         </div>
         <button className="btn btn-primary" disabled={!perms?.can_create} onClick={() => setShowWizard(true)}>+ New Record</button>
       </div>
@@ -198,7 +199,7 @@ function FactoryRqcFgQrPageContent() {
         <table className="data compact">
           <thead>
             <tr>
-              <th>Shipment Number</th><th>SKU Code</th><th>Date</th><th>Machine</th><th>Shift</th>
+              <th>{T.shipmentNumber}</th><th>{T.sku}</th><th>Date</th><th>Machine</th><th>Shift</th>
               <th>Pallets Tested</th><th>Approved Pallets</th><th>Table/Person</th><th>Status</th><th></th>
             </tr>
           </thead>
@@ -216,7 +217,7 @@ function FactoryRqcFgQrPageContent() {
                   <td>{r.pallets_tested ?? "—"}</td>
                   <td>{r.fg_pallets_generated ?? "—"}</td>
                   <td>{r.table_person_number || "—"}</td>
-                  <td><span className={`badge ${r.status === "approved" ? "approved" : r.status === "hold" ? "hold" : r.status === "pending" ? "pending" : "draft"}`}>{r.status}</span></td>
+                  <td><span className={`badge ${r.status === "approved" ? "approved" : r.status === "hold" ? "hold" : r.status === "pending" ? "pending" : "draft"}`}>{statusLabel(r.status)}</span></td>
                   <td onClick={(e) => e.stopPropagation()} style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "flex-end" }}>
                     {r.shipment_number && (
                       <a className="btn-tertiary" style={{ cursor: "pointer" }} onClick={() => setCoaShipment(r.shipment_number)}>COA</a>
@@ -262,7 +263,7 @@ function FactoryRqcFgQrPageContent() {
 
       {showFgQrPanel && fgQr && (
         <QrGenerationPanel
-          title="FG QR Generation"
+          title="Finished Goods QR Generation"
           detail={fgQr}
           canGenerate={!!fgQrPerms?.can_edit}
           onGenerate={handleGenerateFgQr}

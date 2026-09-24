@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { api, ApiError } from "@/lib/api";
+import { T } from "@/lib/terms";
 
 /**
  * Section 15 -- PDF Export by Shipment Number. A single-purpose page: type
@@ -48,7 +49,7 @@ export default function TraceabilityPage() {
         <div className="section-label">Export by Shipment Number</div>
         <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
           <div className="field" style={{ flex: 1, minWidth: 220 }}>
-            <label>Shipment Number</label>
+            <label>{T.shipmentNumber}</label>
             <input
               value={shipmentNumber}
               placeholder="e.g. D4"

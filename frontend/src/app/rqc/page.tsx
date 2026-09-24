@@ -12,6 +12,7 @@ import CoaEntryPanel from "@/components/rqc/CoaEntryPanel";
 import MoreMenu from "@/components/inward-vehicle-inspection/MoreMenu";
 import ConfirmDialog from "@/components/inward-vehicle-inspection/ConfirmDialog";
 import Pagination from "@/components/Pagination";
+import { T, statusLabel } from "@/lib/terms";
 
 const MODULE = "rqc";
 
@@ -19,7 +20,7 @@ const STATUSES = [
   { value: "draft", label: "Draft" },
   { value: "pending", label: "Pending" },
   { value: "approved", label: "Approved" },
-  { value: "hold", label: "Hold" },
+  { value: "hold", label: statusLabel("hold") },
 ];
 
 export default function RqcPage() {
@@ -177,7 +178,7 @@ function RqcPageContent() {
         <table className="data">
           <thead>
             <tr>
-              <th>Shipment Number</th><th>SKU Code</th><th>SKU Version</th>
+              <th>{T.shipmentNumber}</th><th>{T.sku}</th><th>{T.skuVersion}</th>
               <th>Manufacturer</th><th>Status</th><th>Date</th><th>COA</th><th></th>
             </tr>
           </thead>

@@ -7,6 +7,7 @@ import { useImmediateThenDebounced } from "@/lib/useImmediateThenDebounced";
 import type { ShipmentPickingDetail, ShipmentPickingListItem } from "@/lib/types";
 import ShipmentPickingPanel from "@/components/shipment-picking/ShipmentPickingPanel";
 import Pagination from "@/components/Pagination";
+import { MODULE_NAMES, T } from "@/lib/terms";
 
 const MODULE = "shipment-picking";
 
@@ -76,7 +77,7 @@ export default function ShipmentPickingPage() {
     <>
       <div className="page-head2">
         <div>
-          <h1>Shipment Picking</h1>
+          <h1>{MODULE_NAMES.shipment_picking}</h1>
           <div className="desc">Every pick requirement created to date — pick requirements are generated per SKU/Version line item from Customer Shipment.</div>
         </div>
         <span className="auto-note">Pick requirements are created automatically from Customer Shipment.</span>
@@ -117,7 +118,7 @@ export default function ShipmentPickingPage() {
       <div className="card card-flush">
         <table className="data">
           <thead>
-            <tr><th>Shipment Number</th><th>Customer</th><th>SKU Code</th><th>SKU Version</th><th>Qty Required</th><th>Qty Picked</th><th>Status</th><th></th></tr>
+            <tr><th>{T.shipmentNumber}</th><th>Customer</th><th>{T.sku}</th><th>{T.skuVersion}</th><th>Quantity Required</th><th>Quantity Picked</th><th>Status</th><th></th></tr>
           </thead>
           <tbody>
             {items.length === 0 ? (

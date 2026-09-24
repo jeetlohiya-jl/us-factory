@@ -9,6 +9,7 @@ import StorageScanPanel from "@/components/storage/StorageScanPanel";
 import StorageRecordDetailPanel from "@/components/storage/StorageRecordDetailPanel";
 import Pagination from "@/components/Pagination";
 import { useProduct } from "@/lib/productContext";
+import { MODULE_NAMES, T } from "@/lib/terms";
 
 const MODULE = "rm-storage";
 
@@ -82,7 +83,7 @@ export default function RmStoragePage() {
     <>
       <div className="page-head2">
         <div>
-          <h1>RM Storage</h1>
+          <h1>{MODULE_NAMES.rm_storage}</h1>
           <div className="desc">Pallets still Pending Storage — scan and confirm to put them away. Stored pallets drop off this list automatically.</div>
         </div>
         <button className="btn btn-primary" disabled={!perms?.can_create} onClick={() => setShowScan(true)}>+ New Record</button>
@@ -102,7 +103,7 @@ export default function RmStoragePage() {
 
       <div className="card card-flush">
         <table className="data">
-          <thead><tr><th>Pallet Number</th><th>SKU Name</th><th>Status</th></tr></thead>
+          <thead><tr><th>{T.palletNumber}</th><th>{T.sku}</th><th>Status</th></tr></thead>
           <tbody>
             {pending.length === 0 ? (
               <tr className="empty-row"><td colSpan={3}>{loading ? "Loading…" : "No pallets currently pending storage."}</td></tr>
@@ -137,7 +138,7 @@ export default function RmStoragePage() {
       </div>
       <div className="card card-flush">
         <table className="data">
-          <thead><tr><th>Pallet Number</th><th>SKU Name</th><th>Location</th><th>Stored At</th></tr></thead>
+          <thead><tr><th>{T.palletNumber}</th><th>{T.sku}</th><th>Location</th><th>Stored At</th></tr></thead>
           <tbody>
             {records.length === 0 ? (
               <tr className="empty-row"><td colSpan={4}>No pallets stored yet.</td></tr>
@@ -158,7 +159,7 @@ export default function RmStoragePage() {
 
       {showScan && (
         <StorageScanPanel
-          title="New RM Storage Record"
+          title="New Raw Material Storage Record"
           hintSub="Scan the Pallet, then scan the Location."
           onScanPallet={(payload) => api.scanRmPallet(payload, scanSource)}
           onScanLocation={api.scanRmLocation}

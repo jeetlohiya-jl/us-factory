@@ -2,6 +2,7 @@
 import { useState } from "react";
 import type { Pallet } from "@/lib/types";
 import CameraQrScanner from "./CameraQrScanner";
+import { T } from "@/lib/terms";
 
 /**
  * RM/FG Storage's "New Storage Record" panel — the exact two-step scan
@@ -198,10 +199,10 @@ export default function StorageScanPanel({
                   <div className="section-label">Confirm Storage Record</div>
                   <table className="summary-table">
                     <tbody>
-                      <tr><td>Pallet Number</td><td>{pallet.display_id}</td></tr>
-                      <tr><td>Shipment Number</td><td>{pallet.shipment_number || "—"}</td></tr>
-                      <tr><td>SKU Name</td><td>{pallet.sku_code}</td></tr>
-                      <tr><td>SKU Version</td><td>{pallet.sku_version}</td></tr>
+                      <tr><td>{T.palletNumber}</td><td>{pallet.display_id}</td></tr>
+                      <tr><td>{T.shipmentNumber}</td><td>{pallet.shipment_number || "—"}</td></tr>
+                      <tr><td>{T.sku}</td><td>{pallet.sku_code}</td></tr>
+                      <tr><td>{T.skuVersion}</td><td>{pallet.sku_version}</td></tr>
                       <tr><td>Location</td><td>{location.display_id}</td></tr>
                     </tbody>
                   </table>

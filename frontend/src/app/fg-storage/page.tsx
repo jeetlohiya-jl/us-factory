@@ -8,6 +8,7 @@ import type { Pallet, StorageRecordDetail } from "@/lib/types";
 import StorageScanPanel from "@/components/storage/StorageScanPanel";
 import StorageRecordDetailPanel from "@/components/storage/StorageRecordDetailPanel";
 import Pagination from "@/components/Pagination";
+import { MODULE_NAMES, T } from "@/lib/terms";
 
 const MODULE = "fg-storage";
 
@@ -73,7 +74,7 @@ export default function FgStoragePage() {
     <>
       <div className="page-head2">
         <div>
-          <h1>FG Storage</h1>
+          <h1>{MODULE_NAMES.fg_storage}</h1>
           <div className="desc">Pallets still Pending Storage — scan and confirm to put them away. Stored pallets drop off this list automatically.</div>
         </div>
         <button className="btn btn-primary" disabled={!perms?.can_create} onClick={() => setShowScan(true)}>+ New Record</button>
@@ -93,7 +94,7 @@ export default function FgStoragePage() {
 
       <div className="card card-flush">
         <table className="data">
-          <thead><tr><th>Pallet Number</th><th>SKU Name</th><th>Status</th></tr></thead>
+          <thead><tr><th>{T.palletNumber}</th><th>{T.sku}</th><th>Status</th></tr></thead>
           <tbody>
             {pending.length === 0 ? (
               <tr className="empty-row"><td colSpan={3}>{loading ? "Loading…" : "No pallets currently pending storage."}</td></tr>
@@ -128,7 +129,7 @@ export default function FgStoragePage() {
       </div>
       <div className="card card-flush">
         <table className="data">
-          <thead><tr><th>Pallet Number</th><th>SKU Name</th><th>Batch Code</th><th>Location</th><th>Stored At</th></tr></thead>
+          <thead><tr><th>{T.palletNumber}</th><th>{T.sku}</th><th>Batch Code</th><th>Location</th><th>Stored At</th></tr></thead>
           <tbody>
             {records.length === 0 ? (
               <tr className="empty-row"><td colSpan={5}>No pallets stored yet.</td></tr>
@@ -150,7 +151,7 @@ export default function FgStoragePage() {
 
       {showScan && (
         <StorageScanPanel
-          title="New FG Storage Record"
+          title="New Finished Goods Storage Record"
           hintSub="Scan the Pallet, then scan the Location. Zone is auto-set to FPG."
           onScanPallet={api.scanFgPallet}
           onScanLocation={api.scanFgLocation}

@@ -90,16 +90,16 @@ export default function ConsumptionConfirmModal({
   return (
     <div className="modal-overlay" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
       <div className="card" style={{ maxWidth: 640, width: "90%", maxHeight: "80vh", overflowY: "auto", padding: 20 }}>
-        <h3 style={{ marginTop: 0 }}>Confirm Material Consumption</h3>
+        <h3 style={{ marginTop: 0 }}>Confirm Raw Material Consumption</h3>
         <div className="hint-text" style={{ marginBottom: 14 }}>
           Before saving this Production Run, confirm whether each raw material pallet picked for it was fully
-          consumed. Anything left "No" stays available to rescan into a later Material Consumption record.
+          consumed. Anything left "No" stays available to rescan into a later Raw Material Consumption record.
         </div>
         {rows.length === 0 ? (
-          <div className="hint-text">No Material Consumption pallets linked to this run.</div>
+          <div className="hint-text">No Raw Material Consumption pallets linked to this run.</div>
         ) : (
           <table className="qc-obs-table" style={{ marginBottom: 14 }}>
-            <thead><tr><th>Pallet</th><th>Machine</th><th>SKU</th><th style={{ width: 120 }}>Fully Consumed</th><th style={{ width: 140 }}>Qty Consumed</th></tr></thead>
+            <thead><tr><th>Pallet</th><th>Machine</th><th>SKU</th><th style={{ width: 120 }}>Fully Consumed</th><th style={{ width: 140 }}>Quantity Consumed</th></tr></thead>
             <tbody>
               {rows.map((r) => {
                 const showQuantityAsk = awaitingQuantity.has(r.id) || !values[r.id];
@@ -130,7 +130,7 @@ export default function ConsumptionConfirmModal({
                       {showQuantityAsk ? (
                         <div style={{ display: "flex", gap: 4 }}>
                           <input
-                            type="number" step="0.01" min="0" placeholder="Qty consumed" autoFocus={awaitingQuantity.has(r.id)}
+                            type="number" step="0.01" min="0" placeholder="Quantity consumed" autoFocus={awaitingQuantity.has(r.id)}
                             style={{ width: 80 }}
                             disabled={saving}
                             value={draftQuantity[r.id] ?? String(r.quantity)}

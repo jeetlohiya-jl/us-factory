@@ -114,15 +114,15 @@ def resolve_machine_allocations(db: Session, rqc: models.RqcRecord) -> list[tupl
     """
     total = int(rqc.fg_pallets_generated or 0)
     if total <= 0:
-        raise BatchCodeError("Enter Number of FG Pallets Generated on the RQC record before generating QR codes.")
+        raise BatchCodeError("Enter Number of Finished Goods Pallets Generated on the RQC record before generating QR codes.")
 
     explicit = [(a.machine, a.fg_pallets_count) for a in rqc.machine_allocations if a.fg_pallets_count > 0]
     if explicit:
         allocated_total = sum(count for _, count in explicit)
         if allocated_total != total:
             raise BatchCodeError(
-                f"Machine allocation for FG Pallets Generated adds up to {allocated_total}, "
-                f"but Number of FG Pallets Generated is {total}. Correct the per-machine split on the RQC record."
+                f"Machine allocation for Finished Goods Pallets Generated adds up to {allocated_total}, "
+                f"but Number of Finished Goods Pallets Generated is {total}. Correct the per-machine split on the RQC record."
             )
         return explicit
 
@@ -135,7 +135,7 @@ def resolve_machine_allocations(db: Session, rqc: models.RqcRecord) -> list[tupl
             "This Production Run has no machine on record -- add a Machine Allocation on the RQC record before generating QR codes."
         )
     raise BatchCodeError(
-        "This Production Run spans multiple machines -- split Number of FG Pallets Generated across "
+        "This Production Run spans multiple machines -- split Number of Finished Goods Pallets Generated across "
         "them in the RQC record's Machine Allocation section before generating QR codes."
     )
 

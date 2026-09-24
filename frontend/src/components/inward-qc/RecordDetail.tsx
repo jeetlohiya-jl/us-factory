@@ -5,6 +5,7 @@ import type { QcDetail } from "@/lib/types";
 import { TRAY_FAMILY_QC_CATEGORIES, QC_CATEGORY_LABELS } from "@/lib/types";
 import VehicleInspectionDetailContent from "@/components/inward-vehicle-inspection/VehicleInspectionDetailContent";
 import HoldReleaseSection from "@/components/HoldReleaseSection";
+import { T, statusLabel } from "@/lib/terms";
 
 const CATEGORY_LABELS = QC_CATEGORY_LABELS;
 
@@ -30,7 +31,7 @@ export default function RecordDetail({ detail, onClose, onEdit, canEdit }: {
         <div className="sp-head">
           <div>
             <h2>{CATEGORY_LABELS[detail.category]} Inward QC Record</h2>
-            <div className="sub">Shipment {detail.shipment_number} · <span className={`badge ${detail.status}`}>{detail.status}</span></div>
+            <div className="sub">Shipment {detail.shipment_number} · <span className={`badge ${detail.status}`}>{statusLabel(detail.status)}</span></div>
           </div>
           <button className="sp-close" onClick={onClose}>×</button>
         </div>
@@ -53,16 +54,16 @@ export default function RecordDetail({ detail, onClose, onEdit, canEdit }: {
               <div className="detail-card">
                 <h3>Basic Information</h3>
                 <div className="detail-grid">
-                  <Kv label="Shipment Number" value={detail.shipment_number} />
+                  <Kv label={T.shipmentNumber} value={detail.shipment_number} />
                   <Kv label="Category" value={CATEGORY_LABELS[detail.category]} />
-                  <Kv label="Status" value={<span className={`badge ${detail.status}`}>{detail.status}</span>} />
+                  <Kv label="Status" value={<span className={`badge ${detail.status}`}>{statusLabel(detail.status)}</span>} />
                   <Kv label="Vendor" value={detail.vendor_name} />
                   <Kv label={detail.quantity_label || "Quantity"} value={detail.quantity} />
                   <Kv label="QC Date" value={new Date(detail.created_at).toLocaleDateString()} />
                   <Kv label="Submitted" value={detail.submitted_at ? new Date(detail.submitted_at).toLocaleString() : "Not yet submitted"} />
                   <Kv label="Recorded By" value={detail.created_by_name} />
-                  {!isTray && <Kv label="SKU Name" value={detail.sku_code} />}
-                  {!isTray && <Kv label="SKU Version" value={detail.sku_version} />}
+                  {!isTray && <Kv label={T.sku} value={detail.sku_code} />}
+                  {!isTray && <Kv label={T.skuVersion} value={detail.sku_version} />}
                 </div>
               </div>
 
@@ -70,7 +71,7 @@ export default function RecordDetail({ detail, onClose, onEdit, canEdit }: {
                 <div className="detail-card">
                   <h3>SKU / Version / Quantity</h3>
                   <table className="qc-obs-table">
-                    <thead><tr><th>SKU Name</th><th>SKU Version</th><th>Quantity</th></tr></thead>
+                    <thead><tr><th>{T.sku}</th><th>{T.skuVersion}</th><th>Quantity</th></tr></thead>
                     <tbody>
                       {detail.line_item_snapshots.map((li, i) => (
                         <tr key={i}><td>{li.sku_code || "—"}</td><td>{li.sku_version || "—"}</td><td>{li.quantity}</td></tr>

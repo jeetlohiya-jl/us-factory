@@ -7,11 +7,11 @@ import LineItemsEditor, { EditableLineItem } from "./LineItemsEditor";
 import ImageField from "./ImageField";
 import MultiImageField from "./MultiImageField";
 import ChecklistStep from "./ChecklistStep";
+import { INWARD_CATEGORY_LABELS } from "@/lib/types";
+import { statusLabel } from "@/lib/terms";
 
-const CATEGORY_LABELS: Record<Category, string> = {
-  tray: "Base Tray", fnp_tray: "FNP Tray", film: "Film",
-  pad: "Soaker Pad", polybag: "Polybag", cfb: "CFB", glue: "Glue",
-};
+// Central category names (lib/terms.ts via lib/types.ts).
+const CATEGORY_LABELS: Record<Category, string> = INWARD_CATEGORY_LABELS;
 
 // Categories whose Shipment Number is manually entered by the user rather
 // than auto-generated (mirrors backend CATEGORY_PREFIX's None entries in
@@ -233,7 +233,7 @@ export default function Wizard({
         <div className="sp-head">
           <div>
             <h2>{isFinalized ? "Vehicle Inspection Record" : "New Vehicle Inspection"}</h2>
-            <div className="sub">Shipment {detail.shipment_number || "(pending)"} · <span className={`badge ${detail.status}`}>{detail.status}</span></div>
+            <div className="sub">Shipment {detail.shipment_number || "(pending)"} · <span className={`badge ${detail.status}`}>{statusLabel(detail.status)}</span></div>
           </div>
           <button className="sp-close" onClick={handleCancel}>×</button>
         </div>

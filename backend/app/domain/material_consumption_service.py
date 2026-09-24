@@ -50,11 +50,11 @@ def _resolve_scanned_pallet(db: Session, raw_scan: str) -> models.Pallet:
         return pallet
     location = pallet_service.resolve_location_from_scan(db, raw_scan)
     if location:
-        raise MaterialConsumptionError("Invalid scan. Please scan an RM pallet QR, not a storage location.")
+        raise MaterialConsumptionError("Invalid scan. Please scan a Raw Material pallet QR, not a storage location.")
     fg_pallet = pallet_service.resolve_pallet_from_scan(db, raw_scan, "fg")
     if fg_pallet:
-        raise MaterialConsumptionError("Invalid QR. Please scan an RM pallet QR.")
-    raise MaterialConsumptionError("Unrecognized QR. Please scan a valid RM pallet QR.")
+        raise MaterialConsumptionError("Invalid QR. Please scan a Raw Material pallet QR.")
+    raise MaterialConsumptionError("Unrecognized QR. Please scan a valid Raw Material pallet QR.")
 
 
 def _assert_pallet_available(pallet: models.Pallet) -> None:
@@ -64,7 +64,7 @@ def _assert_pallet_available(pallet: models.Pallet) -> None:
         raise MaterialConsumptionError(f"Pallet {pallet.display_id} has already been {pallet.lifecycle_status} and is not available.")
     if pallet.lifecycle_status != "stored":
         raise MaterialConsumptionError(
-            f"Pallet {pallet.display_id} is not currently available in RM Storage (status: {pallet.lifecycle_status})."
+            f"Pallet {pallet.display_id} is not currently available in Raw Material Storage (status: {pallet.lifecycle_status})."
         )
 
 
@@ -95,7 +95,7 @@ def _assert_not_already_allocated(db: Session, pallet: models.Pallet, exclude_mc
     row = q.first()
     if row:
         raise MaterialConsumptionError(
-            f"Pallet {pallet.display_id} is already scanned into another in-progress Material Consumption record."
+            f"Pallet {pallet.display_id} is already scanned into another in-progress Raw Material Consumption record."
         )
 
 
@@ -157,7 +157,7 @@ def machine_label(entry: models.MaterialConsumptionMachineEntry, index: int) -> 
 
 def add_machine_entry(db: Session, mc: models.MaterialConsumption, machine_id=None) -> models.MaterialConsumptionMachineEntry:
     if mc.status != "draft":
-        raise MaterialConsumptionError("This Material Consumption record has already been saved and cannot be changed.")
+        raise MaterialConsumptionError("This Raw Material Consumption record has already been saved and cannot be changed.")
     entry = models.MaterialConsumptionMachineEntry(
         material_consumption_id=mc.id, machine_id=machine_id, sort_order=len(mc.machine_entries),
     )
@@ -168,7 +168,7 @@ def add_machine_entry(db: Session, mc: models.MaterialConsumption, machine_id=No
 
 def remove_machine_entry(db: Session, mc: models.MaterialConsumption, entry_id) -> None:
     if mc.status != "draft":
-        raise MaterialConsumptionError("This Material Consumption record has already been saved and cannot be changed.")
+        raise MaterialConsumptionError("This Raw Material Consumption record has already been saved and cannot be changed.")
     entry = next((e for e in mc.machine_entries if e.id == entry_id), None)
     if not entry:
         raise MaterialConsumptionError("Machine entry not found on this record.")
@@ -180,7 +180,7 @@ def remove_machine_entry(db: Session, mc: models.MaterialConsumption, entry_id) 
 
 def set_machine_entry_machine(db: Session, mc: models.MaterialConsumption, entry: models.MaterialConsumptionMachineEntry, machine_id) -> None:
     if mc.status != "draft":
-        raise MaterialConsumptionError("This Material Consumption record has already been saved and cannot be changed.")
+        raise MaterialConsumptionError("This Raw Material Consumption record has already been saved and cannot be changed.")
     entry.machine_id = machine_id
     db.flush()
 
@@ -224,7 +224,7 @@ def add_primary_pallet(
     _assert_not_already_allocated and _assert_pallet_available.
     """
     if mc.status != "draft":
-        raise MaterialConsumptionError("This Material Consumption record has already been saved and cannot be changed.")
+        raise MaterialConsumptionError("This Raw Material Consumption record has already been saved and cannot be changed.")
 
     pallet = _resolve_scanned_pallet(db, raw_scan)
 
@@ -262,8 +262,8 @@ def add_primary_pallet(
         )
         if collision:
             raise MaterialConsumptionError(
-                f"Shipment Number {pallet.shipment_number} is already used by another Material Consumption record. "
-                "Each Material Consumption record must have its own distinct Shipment Number."
+                f"Shipment Number {pallet.shipment_number} is already used by another Raw Material Consumption record. "
+                "Each Raw Material Consumption record must have its own distinct Shipment Number."
             )
         mc.shipment_number = pallet.shipment_number
         _sync_ipqc_shipment_number(db, mc, None, mc.shipment_number)
@@ -351,7 +351,7 @@ def add_secondary_pallet(
     auto-picked from RM Storage -- matching this module's own docstring.
     """
     if mc.status != "draft":
-        raise MaterialConsumptionError("This Material Consumption record has already been saved and cannot be changed.")
+        raise MaterialConsumptionError("This Raw Material Consumption record has already been saved and cannot be changed.")
     if category not in SECONDARY_ROLES:
         raise MaterialConsumptionError(f"Unknown secondary material category '{category}'.")
 
@@ -382,7 +382,7 @@ def add_secondary_pallet(
 
 def remove_pallet(db: Session, mc: models.MaterialConsumption, row_id) -> None:
     if mc.status != "draft":
-        raise MaterialConsumptionError("This Material Consumption record has already been saved and cannot be changed.")
+        raise MaterialConsumptionError("This Raw Material Consumption record has already been saved and cannot be changed.")
     row = next((p for p in _all_pallets(mc) if p.id == row_id), None)
     if not row:
         raise MaterialConsumptionError("Pallet not found on this record.")
@@ -466,7 +466,7 @@ def update_pallet_consumption(
                 "Quantity/Unit can only be changed while this record is still a draft."
             )
         if fully_consumed is None:
-            raise MaterialConsumptionError("This Material Consumption record has already been saved and cannot be changed.")
+            raise MaterialConsumptionError("This Raw Material Consumption record has already been saved and cannot be changed.")
         if fully_consumed != row.fully_consumed:
             if fully_consumed:
                 pallet_service.record_lifecycle_event(
@@ -543,7 +543,7 @@ def find_dependent_summary(mc: models.MaterialConsumption) -> str | None:
     status alone is the reliable, cheap guard."""
     if mc.status == "saved":
         return (
-            "This Material Consumption record has already consumed pallets and is linked to a "
+            "This Raw Material Consumption record has already consumed pallets and is linked to a "
             "Production Run" + (" and IPQC record" if mc.production_run and mc.production_run.ipqc_record else "")
             + "; it cannot be deleted."
         )
@@ -682,7 +682,7 @@ def finalize(db: Session, mc: models.MaterialConsumption, actor_user_id=None) ->
             raise MaterialConsumptionError(f"Select a Machine for {label}.")
         primary_pallets = [p for p in entry.pallets if p.role == "primary"]
         if not primary_pallets:
-            raise MaterialConsumptionError(f"Scan at least one RM pallet for {label} before saving.")
+            raise MaterialConsumptionError(f"Scan at least one Raw Material pallet for {label} before saving.")
         if not entry.start_time:
             raise MaterialConsumptionError(f"Start Time is missing for {label} -- scan at least one pallet first, it's recorded automatically.")
         if not entry.end_time:
@@ -706,7 +706,7 @@ def finalize(db: Session, mc: models.MaterialConsumption, actor_user_id=None) ->
             live_status = live_status_by_id.get(row.pallet_id)
             if live_status != "stored":
                 raise MaterialConsumptionError(
-                    f"Pallet {row.pallet.display_id} is no longer available in RM Storage "
+                    f"Pallet {row.pallet.display_id} is no longer available in Raw Material Storage "
                     f"(status: {live_status}) and cannot be consumed. Remove it and re-scan."
                 )
 

@@ -10,6 +10,7 @@ import ConfirmDialog from "@/components/inward-vehicle-inspection/ConfirmDialog"
 import NewCustomerShipmentPanel from "@/components/customer-shipment/NewCustomerShipmentPanel";
 import CustomerShipmentDetailPanel from "@/components/customer-shipment/CustomerShipmentDetailPanel";
 import Pagination from "@/components/Pagination";
+import { MODULE_NAMES, T } from "@/lib/terms";
 
 const MODULE = "customer-shipment";
 const REFERENCE_STALE_MS = 5 * 60_000;
@@ -95,7 +96,7 @@ export default function CustomerShipmentPage() {
     <>
       <div className="page-head2">
         <div>
-          <h1>Customer Shipment</h1>
+          <h1>{MODULE_NAMES.customer_shipment}</h1>
           <div className="desc">Every customer shipment record created to date.</div>
         </div>
         <button
@@ -136,7 +137,7 @@ export default function CustomerShipmentPage() {
       <div className="card card-flush">
         <table className="data">
           <thead>
-            <tr><th>Shipment Number</th><th>Container Number</th><th>Customer</th><th>SKU Code(s)</th><th>Quantity</th><th>Date</th><th></th></tr>
+            <tr><th>{T.shipmentNumber}</th><th>Container Number</th><th>Customer</th><th>SKU Code(s)</th><th>Quantity</th><th>Date</th><th></th></tr>
           </thead>
           <tbody>
             {items.length === 0 ? (

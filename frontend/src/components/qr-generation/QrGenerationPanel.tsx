@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import type { QrGenerationDetail, Pallet } from "@/lib/types";
 import { PALLET_STAGE_LABELS, PALLET_STAGE_BADGE_CLASS } from "@/lib/types";
 import PalletTile from "./PalletTile";
+import { T } from "@/lib/terms";
 
 /**
  * "New RM/FG QR Generation Record" side panel from the prototype
@@ -81,9 +82,9 @@ export default function QrGenerationPanel({
         <div className="sp-body">
           {error && <div className="error-banner">{error}</div>}
           <div className="form-grid">
-            <div className="field"><label>Shipment Number</label><div className="readonly-val mono">{detail.shipment_number || "—"}</div></div>
-            <div className="field"><label>SKU Name</label><div className="readonly-val mono">{detail.sku_code_snapshot || "—"}</div></div>
-            <div className="field"><label>SKU Version</label><div className="readonly-val mono">{detail.sku_version_snapshot || "—"}</div></div>
+            <div className="field"><label>{T.shipmentNumber}</label><div className="readonly-val mono">{detail.shipment_number || "—"}</div></div>
+            <div className="field"><label>{T.sku}</label><div className="readonly-val mono">{detail.sku_code_snapshot || "—"}</div></div>
+            <div className="field"><label>{T.skuVersion}</label><div className="readonly-val mono">{detail.sku_version_snapshot || "—"}</div></div>
             <div className="field"><label>Country</label><div className="readonly-val mono">{detail.country_code || "—"}</div></div>
             <div className="field"><label>Quantity</label><div className="readonly-val mono">{detail.quantity}</div></div>
           </div>
@@ -136,7 +137,7 @@ export default function QrGenerationPanel({
                 ))}
               </div>
               <table className="qc-obs-table" style={{ marginTop: 18 }}>
-                <thead><tr><th>Pallet ID</th><th>Lifecycle Status</th><th>Storage Location</th></tr></thead>
+                <thead><tr><th>{T.palletNumber}</th><th>Lifecycle Status</th><th>Storage Location</th></tr></thead>
                 <tbody>
                   {detail.pallets.map((p) => (
                     <tr key={p.id}>

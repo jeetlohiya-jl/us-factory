@@ -2,6 +2,7 @@
 import type { InspectionDetail } from "@/lib/types";
 import VehicleInspectionDetailContent from "./VehicleInspectionDetailContent";
 import HoldReleaseSection from "@/components/HoldReleaseSection";
+import { statusLabel } from "@/lib/terms";
 
 export default function RecordDetail({ detail, onClose, onEdit, canEdit }: {
   detail: InspectionDetail; onClose: () => void; onEdit: () => void; canEdit: boolean;
@@ -13,7 +14,7 @@ export default function RecordDetail({ detail, onClose, onEdit, canEdit }: {
         <div className="sp-head">
           <div>
             <h2>Vehicle Inspection Record</h2>
-            <div className="sub">Shipment {detail.shipment_number} · <span className={`badge ${detail.status}`}>{detail.status}</span></div>
+            <div className="sub">Shipment {detail.shipment_number} · <span className={`badge ${detail.status}`}>{statusLabel(detail.status)}</span></div>
           </div>
           <button className="sp-close" onClick={onClose}>×</button>
         </div>

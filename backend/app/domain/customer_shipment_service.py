@@ -163,7 +163,7 @@ def create_customer_shipment(
 
 
 BLOCKED_LINE_ITEM_EDIT_MESSAGE = (
-    "This line item already has picked FG pallets against it and can't have its "
+    "This line item already has picked Finished Goods pallets against it and can't have its "
     "SKU, Version, or Quantity changed, or be removed. Remove the existing picks first."
 )
 

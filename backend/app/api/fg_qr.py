@@ -41,7 +41,7 @@ def _get_or_404(db: Session, rec_id: uuid.UUID) -> models.QrGenerationRecord:
         .first()
     )
     if not rec:
-        raise HTTPException(status_code=404, detail="FG QR Generation record not found")
+        raise HTTPException(status_code=404, detail="Finished Goods QR Generation record not found")
     return rec
 
 
@@ -94,7 +94,7 @@ def delete_fg_qr(rec_id: uuid.UUID, db: Session = Depends(get_db), _perm=Depends
     if rec.pallets:
         raise HTTPException(
             status_code=409,
-            detail="This FG QR record has generated pallets already in storage, picking, or shipment and cannot be deleted.",
+            detail="This Finished Goods QR record has generated pallets already in storage, picking, or shipment and cannot be deleted.",
         )
     db.delete(rec)
     db.commit()
@@ -130,7 +130,7 @@ def create_fg_qr_from_run(
     # recently created one as its best-effort "the" record.
     rqc = run.rqc_records[-1] if run.rqc_records else None
     if not rqc or rqc.status != "approved":
-        raise HTTPException(status_code=422, detail="Only a Production Run whose (most recent) RQC record is Approved can feed FG QR Generation.")
+        raise HTTPException(status_code=422, detail="Only a Production Run whose (most recent) RQC record is Approved can feed Finished Goods QR Generation.")
     rec = qr_generation_service.get_or_create_fg_qr_for_production_run(
         db, run, fg_pallets_generated=rqc.fg_pallets_generated,
     )

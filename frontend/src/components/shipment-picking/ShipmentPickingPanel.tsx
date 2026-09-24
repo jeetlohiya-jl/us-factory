@@ -3,6 +3,7 @@ import { useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import type { ShipmentPickingDetail } from "@/lib/types";
 import CameraQrScanner from "@/components/storage/CameraQrScanner";
+import { T } from "@/lib/terms";
 
 /**
  * Single-scan pick panel -- reuses CameraQrScanner directly (the reusable
@@ -89,11 +90,11 @@ export default function ShipmentPickingPanel({
         <div className="sp-body">
           <table className="summary-table" style={{ marginBottom: 16 }}>
             <tbody>
-              <tr><td>Shipment Number</td><td className="mono">{detail.shipment_number || "—"}</td></tr>
+              <tr><td>{T.shipmentNumber}</td><td className="mono">{detail.shipment_number || "—"}</td></tr>
               <tr><td>Customer</td><td>{detail.customer || "—"}</td></tr>
-              <tr><td>SKU Code</td><td className="mono">{detail.sku_code || "—"}</td></tr>
-              <tr><td>SKU Version</td><td>{detail.sku_version || "—"}</td></tr>
-              <tr><td>Qty Required</td><td>{detail.pallets_required}</td></tr>
+              <tr><td>{T.sku}</td><td className="mono">{detail.sku_code || "—"}</td></tr>
+              <tr><td>{T.skuVersion}</td><td>{detail.sku_version || "—"}</td></tr>
+              <tr><td>Quantity Required</td><td>{detail.pallets_required}</td></tr>
             </tbody>
           </table>
 
@@ -109,7 +110,7 @@ export default function ShipmentPickingPanel({
             <div className="scan-grid" style={{ gridTemplateColumns: "1fr" }}>
               <div className="scan-card">
                 <div className="scan-icon">📦</div>
-                <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 6 }}>Scan FG Pallet QR</div>
+                <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 6 }}>Scan Finished Goods Pallet QR</div>
                 {cameraOpen ? (
                   <CameraQrScanner onDetected={handleCameraDetected} onCancel={() => setCameraOpen(false)} />
                 ) : (
@@ -136,7 +137,7 @@ export default function ShipmentPickingPanel({
             <div className="hint-text">No pallets picked yet for this requirement.</div>
           ) : (
             <table className="qc-obs-table">
-              <thead><tr><th>Pallet Number</th><th>Picked At</th><th /></tr></thead>
+              <thead><tr><th>{T.palletNumber}</th><th>Picked At</th><th /></tr></thead>
               <tbody>
                 {detail.picks.map((p) => (
                   <tr key={p.id}>

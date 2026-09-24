@@ -10,6 +10,7 @@ import QrGenerationPanel from "@/components/qr-generation/QrGenerationPanel";
 import ConfirmDialog from "@/components/inward-vehicle-inspection/ConfirmDialog";
 import MoreMenu from "@/components/inward-vehicle-inspection/MoreMenu";
 import Pagination from "@/components/Pagination";
+import { MODULE_NAMES, T, statusLabel } from "@/lib/terms";
 
 const MODULE = "fg-qr-generation";
 
@@ -104,8 +105,8 @@ function FgQrGenerationPageContent() {
     <>
       <div className="page-head2">
         <div>
-          <h1>FG QR Generation</h1>
-          <div className="desc">Every FG QR generation record created to date. Records auto-appear here once RQC (Final Quality Control) approves a Production Run — the same fundamental design as RM QR Generation.</div>
+          <h1>{MODULE_NAMES.fg_qr_generation}</h1>
+          <div className="desc">Every Finished Goods QR generation record created to date. Records auto-appear here once RQC (Final Quality Control) approves a Production Run — the same fundamental design as Raw Material QR Generation.</div>
         </div>
         <span className="auto-note">Records are created automatically from an Approved RQC record.</span>
       </div>
@@ -124,7 +125,7 @@ function FgQrGenerationPageContent() {
 
       <div className="card card-flush">
         <table className="data">
-          <thead><tr><th>Shipment Number</th><th>SKU Name</th><th>SKU Version</th><th>Quantity</th><th>Status</th><th>Date</th><th></th></tr></thead>
+          <thead><tr><th>{T.shipmentNumber}</th><th>{T.sku}</th><th>{T.skuVersion}</th><th>Quantity</th><th>Status</th><th>Date</th><th></th></tr></thead>
           <tbody>
             {items.length === 0 ? (
               <tr className="empty-row"><td colSpan={7}>{loading ? "Loading…" : "No records match your search."}</td></tr>
@@ -135,7 +136,7 @@ function FgQrGenerationPageContent() {
                   <td className="mono">{r.sku_code_snapshot}</td>
                   <td>{r.sku_version_snapshot}</td>
                   <td>{r.quantity}</td>
-                  <td><span className={`badge ${r.status === "generated" ? "generated" : "pending"}`}>{r.status}</span></td>
+                  <td><span className={`badge ${r.status === "generated" ? "generated" : "pending"}`}>{statusLabel(r.status)}</span></td>
                   <td>{new Date(r.created_at).toLocaleDateString()}</td>
                   <td onClick={(e) => e.stopPropagation()}>
                     <MoreMenu canDelete={!!perms?.can_delete} onDelete={() => setDeleteTarget(r)} />
@@ -150,7 +151,7 @@ function FgQrGenerationPageContent() {
 
       {detail && (
         <QrGenerationPanel
-          title="FG QR Generation"
+          title="Finished Goods QR Generation"
           detail={detail}
           canGenerate={!!perms?.can_edit}
           onGenerate={handleGenerate}
@@ -160,8 +161,8 @@ function FgQrGenerationPageContent() {
 
       {deleteTarget && !deleteBlockedMsg && (
         <ConfirmDialog
-          title="Delete this FG QR record?"
-          message={`This will permanently delete the FG QR Generation record for shipment "${deleteTarget.shipment_number}". This cannot be undone.`}
+          title="Delete this Finished Goods QR record?"
+          message={`This will permanently delete the Finished Goods QR Generation record for shipment "${deleteTarget.shipment_number}". This cannot be undone.`}
           confirmLabel="Delete"
           danger
           onConfirm={confirmDelete}

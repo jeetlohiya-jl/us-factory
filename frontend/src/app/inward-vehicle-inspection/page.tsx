@@ -10,12 +10,13 @@ import Wizard from "@/components/inward-vehicle-inspection/Wizard";
 import RecordDetail from "@/components/inward-vehicle-inspection/RecordDetail";
 import ConfirmDialog from "@/components/inward-vehicle-inspection/ConfirmDialog";
 import Pagination from "@/components/Pagination";
+import { T, statusLabel } from "@/lib/terms";
 
 const MODULE = "inward-vehicle-inspection";
 const REFERENCE_STALE_MS = 5 * 60_000;
 
 function StatusBadge({ status }: { status: string }) {
-  const map: Record<string, string> = { draft: "Draft", approved: "Approved", hold: "Hold" };
+  const map: Record<string, string> = { draft: statusLabel("draft"), approved: statusLabel("approved"), hold: statusLabel("hold") };
   return <span className={`badge ${status}`}>{map[status] || status}</span>;
 }
 
@@ -161,7 +162,7 @@ export default function InwardVehicleInspectionPage() {
                   <option value="">All</option>
                   <option value="draft">Draft</option>
                   <option value="approved">Approved</option>
-                  <option value="hold">Hold</option>
+                  <option value="hold">On Hold</option>
                 </select>
               </div>
               <div className="f-actions">
@@ -180,7 +181,7 @@ export default function InwardVehicleInspectionPage() {
       <div className="card card-flush">
         <table className="data">
           <thead>
-            <tr><th>Shipment Number</th><th>Invoice No.</th><th>Actual Container Number</th><th>Status</th><th>Date</th><th></th></tr>
+            <tr><th>{T.shipmentNumber}</th><th>Invoice No.</th><th>Actual Container Number</th><th>Status</th><th>Date</th><th></th></tr>
           </thead>
           <tbody>
             {items.length === 0 ? (

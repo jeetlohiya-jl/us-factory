@@ -11,6 +11,7 @@ import MaterialConsumptionWizard, { formatTime12h } from "@/components/material-
 import MoreMenu from "@/components/inward-vehicle-inspection/MoreMenu";
 import ConfirmDialog from "@/components/inward-vehicle-inspection/ConfirmDialog";
 import Pagination from "@/components/Pagination";
+import { MODULE_NAMES, T } from "@/lib/terms";
 
 const CATEGORY_LABELS = QC_CATEGORY_LABELS;
 const MODULE = "material-consumption";
@@ -134,7 +135,7 @@ function MaterialConsumptionPageContent() {
     <>
       <div className="page-head2">
         <div>
-          <h1>Material Consumption</h1>
+          <h1>{MODULE_NAMES.material_consumption}</h1>
           <div className="desc">Every material consumption record created to date.</div>
         </div>
         <button className="btn btn-primary" disabled={!perms?.can_create} onClick={handleNewRecord}>+ New Record</button>
@@ -180,13 +181,13 @@ function MaterialConsumptionPageContent() {
         <table className="data compact">
           <thead>
             <tr>
-              <th>Category</th><th>SKU Code</th><th>SKU Version</th><th>Pallet Numbers</th>
-              <th>Shift</th><th>Shipment Number</th><th>Date</th><th>Machines · Start – End Time</th><th>Status</th><th></th>
+              <th>Category</th><th>{T.sku}</th><th>{T.skuVersion}</th><th>{T.palletNumbers}</th>
+              <th>Shift</th><th>{T.shipmentNumber}</th><th>Date</th><th>Machines · Start – End Time</th><th>Status</th><th></th>
             </tr>
           </thead>
           <tbody>
             {records.length === 0 ? (
-              <tr className="empty-row"><td colSpan={10}>{loading ? "Loading…" : "No Material Consumption records yet."}</td></tr>
+              <tr className="empty-row"><td colSpan={10}>{loading ? "Loading…" : "No Raw Material Consumption records yet."}</td></tr>
             ) : (
               records.map((r) => (
                 <tr key={r.id} style={{ cursor: "pointer" }} onClick={() => openRecord(r.id)}>
@@ -240,7 +241,7 @@ function MaterialConsumptionPageContent() {
       {deleteTarget && !deleteError && (
         <ConfirmDialog
           title="Delete this record?"
-          message="This will permanently delete this Material Consumption record. This cannot be undone."
+          message="This will permanently delete this Raw Material Consumption record. This cannot be undone."
           confirmLabel="Delete"
           danger
           onConfirm={confirmDelete}

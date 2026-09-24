@@ -5,6 +5,7 @@ import type { GoodsReceiptDetail, GoodsReceiptEntry, QrGenerationDetail } from "
 import { INWARD_CATEGORY_LABELS, TRAY_FAMILY_QC_CATEGORIES } from "@/lib/types";
 import QrGenerationPanel from "@/components/qr-generation/QrGenerationPanel";
 import { GoodsReceiptStatusBadge } from "./GoodsReceiptStatusBadge";
+import { T } from "@/lib/terms";
 
 function Kv({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -179,8 +180,8 @@ export default function GoodsReceiptDetailPanel({
               <table className="qc-obs-table">
                 <thead>
                   <tr>
-                    <th>Shipment No.</th><th>SKU</th><th>Category</th><th>Version</th>
-                    <th>PO Qty</th><th>Received</th><th>Status</th><th />
+                    <th>{T.shipmentNumber}</th><th>SKU</th><th>Category</th><th>{T.skuVersion}</th>
+                    <th>PO Quantity</th><th>Received</th><th>Status</th><th />
                   </tr>
                 </thead>
                 <tbody>
@@ -262,7 +263,7 @@ export default function GoodsReceiptDetailPanel({
                               </div>
                             </div>
                             <div className="hint-text" style={{ marginBottom: 8 }}>
-                              PO: {fmt(e.po_quantity)} {e.unit}. One RM pallet QR per pallet received. Only {e.shipment_number} is marked Inwarded — other containers are unchanged.
+                              PO: {fmt(e.po_quantity)} {e.unit}. One Raw Material pallet QR per pallet received. Only {e.shipment_number} is marked Inwarded — other containers are unchanged.
                             </div>
                             <div style={{ display: "flex", gap: 10, marginBottom: 8 }}>
                               <button className="btn btn-primary" disabled={busy === e.id} onClick={() => confirmInward(e)}>
@@ -292,7 +293,7 @@ export default function GoodsReceiptDetailPanel({
 
       {qr && (
         <QrGenerationPanel
-          title={`RM QR · ${record.po_number} / ${qr.entry.shipment_number}`}
+          title={`Raw Material QR · ${record.po_number} / ${qr.entry.shipment_number}`}
           detail={qr.detail}
           canGenerate={canReceive}
           onGenerate={async () => { await openOrGenerateQr(qr.entry); }}
