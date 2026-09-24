@@ -61,7 +61,9 @@ export default function GoodsReceiptFormPanel({
       const label = e.shipment_number.trim() || `Row ${i + 1}`;
       if (!e.shipment_number.trim()) return `${label}: Shipment Number is required.`;
       if (!e.sku_code_id) return `${label}: select a SKU.`;
-      if (!(Number(e.po_quantity) > 0) || !Number.isInteger(Number(e.po_quantity))) return `${label}: PO Quantity must be a whole number of pallets.`;
+      const tray = skuFamily(skuCodes.find((s) => s.id === e.sku_code_id)?.category) === "tray";
+      if (!(Number(e.po_quantity) > 0)) return `${label}: PO Quantity must be greater than 0.`;
+      if (tray && !Number.isInteger(Number(e.po_quantity))) return `${label}: tray PO Quantity is a whole number of pallets.`;
       if (skuFamily(skuCodes.find((s) => s.id === e.sku_code_id)?.category) === "tray" && !e.category) {
         return `${label}: choose Base Tray or FNP Tray.`;
       }
@@ -73,7 +75,8 @@ export default function GoodsReceiptFormPanel({
       po_number: poNumber.trim(), vendor_id: vendorId, as_draft: asDraft,
       entries: rows.map((e) => ({
         id: e.id, shipment_number: e.shipment_number.trim(), category: e.category || null,
-        sku_code_id: e.sku_code_id as string, sku_version_id: e.sku_version_id, po_quantity: Number(e.po_quantity), unit: "Pallets",
+        sku_code_id: e.sku_code_id as string, sku_version_id: e.sku_version_id, po_quantity: Number(e.po_quantity),
+        unit: skuFamily(skuCodes.find((s) => s.id === e.sku_code_id)?.category) === "tray" ? "Pallets" : e.unit,
       })),
     };
   }
