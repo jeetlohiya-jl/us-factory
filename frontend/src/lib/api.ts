@@ -1957,11 +1957,12 @@ async function qcMetaSb(): Promise<QcMeta> {
 // path to goods_receipt_entries once pallets/storage_records are counted,
 // so the hint keeps PostgREST from ever guessing).
 const GR_LIST_SELECT =
-  "id,po_number,vendor_name,status,created_at," +
+  "id,po_number,vendor_name,status,created_at,zoho_purchaseorder_id,zoho_cancelled," +
   "entries:goods_receipt_entries(status,pallet_count,sku_code_snapshot,category)";
 
 const GR_DETAIL_SELECT =
   "id,po_number,category,vendor_id,vendor_name,status,created_at,updated_at," +
+  "zoho_purchaseorder_id,zoho_cancelled,zoho_synced_at,zoho_sync_notes," +
   "entries:goods_receipt_entries(id,shipment_number,category,sku_code_id,sku_version_id," +
   "sku_code:sku_code_snapshot,sku_version:sku_version_snapshot,po_quantity,received_quantity,unit,pallet_count," +
   "status,inwarded_at,sort_order," +
@@ -1996,10 +1997,12 @@ async function listGoodsReceiptsSb(params: { search?: string; status?: string; d
   if (error) throw new ApiError(500, error.message);
   const rows = (data || []) as unknown as {
     id: string; po_number: string; vendor_name: string; status: GoodsReceiptListItem["status"]; created_at: string;
+    zoho_purchaseorder_id: string | null; zoho_cancelled: boolean;
     entries: { status: string; pallet_count: number | null; sku_code_snapshot: string | null; category: string | null }[];
   }[];
   const items: GoodsReceiptListItem[] = rows.map((r) => ({
     id: r.id, po_number: r.po_number, vendor_name: r.vendor_name,
+    from_zoho: !!r.zoho_purchaseorder_id, zoho_cancelled: !!r.zoho_cancelled,
     categories: Array.from(new Set(r.entries.map((e) => e.category).filter(Boolean))) as GoodsReceiptListItem["categories"], status: r.status, created_at: r.created_at,
     container_count: r.entries.length,
     inwarded_count: r.entries.filter((e) => e.status === "inwarded").length,
