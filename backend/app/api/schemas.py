@@ -868,6 +868,29 @@ class CustomerShipmentCreateOut(BaseModel):
     line_items: list[CustomerShipmentLineItemOut] = []
 
 
+# 2026-09-24 -- Goods Outward Edit. `id` is the existing CustomerShipmentLineItem
+# id for a kept line item, or None for a brand-new one being added on this
+# edit -- same "id present = update, id absent = insert" convention as every
+# other diff-by-id save in this app (e.g. RQC's coa_observations). There is
+# no explicit "deleted" list: any existing line item whose id is simply left
+# out of the payload is treated as removed (see customer_shipment_service.
+# update_customer_shipment), same as IPQC/RQC's own child-list "replace
+# wholesale, minus what's blocked" convention.
+class CustomerShipmentLineItemUpdateIn(BaseModel):
+    id: Optional[uuid.UUID] = None
+    sku_code_id: uuid.UUID
+    sku_version_id: uuid.UUID
+    pallets_required: int
+    pcs: Optional[int] = None
+    pcs_per_sleeve: Optional[str] = None
+
+
+class CustomerShipmentUpdateIn(BaseModel):
+    customer: str
+    shipment_number: str
+    line_items: list[CustomerShipmentLineItemUpdateIn] = []
+
+
 class ShipmentPickIn(BaseModel):
     payload: str  # scanned pallet QR payload
 

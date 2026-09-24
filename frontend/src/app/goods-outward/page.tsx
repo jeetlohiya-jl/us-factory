@@ -51,6 +51,7 @@ export default function GoodsOutwardPage() {
   const [page, setPage] = useState(1);
 
   const [newPanelOpen, setNewPanelOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<GoodsOutwardDetail | null>(null);
   const [detail, setDetail] = useState<GoodsOutwardDetail | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<GoodsOutwardListItem | null>(null);
   const [deleteBlockedMsg, setDeleteBlockedMsg] = useState<string | null>(null);
@@ -80,11 +81,26 @@ export default function GoodsOutwardPage() {
     refresh();
   }, [refresh]);
 
-  function openNewPanel() {
+  function ensureSkuCodesLoaded() {
     if (skuCodes.length === 0) {
       cachedList("customer-shipment-meta:skuCodes", () => api.skuCodes(), REFERENCE_STALE_MS).then(setSkuCodes).catch(() => setSkuCodes([]));
     }
+  }
+
+  function openNewPanel() {
+    ensureSkuCodesLoaded();
     setNewPanelOpen(true);
+  }
+
+  async function openEditPanel(id: string) {
+    ensureSkuCodesLoaded();
+    setError(null);
+    try {
+      const rec = await api.getGoodsOutward(id);
+      setEditTarget(rec);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load record");
+    }
   }
 
   async function openDetail(id: string) {
@@ -176,7 +192,12 @@ export default function GoodsOutwardPage() {
                   <td><StatusBadge status={r.status} /></td>
                   <td>{new Date(r.created_at).toLocaleDateString()}</td>
                   <td onClick={(e) => e.stopPropagation()}>
-                    <MoreMenu canDelete={!!csPerms?.can_delete} onDelete={() => setDeleteTarget(r)} />
+                    <MoreMenu
+                      canEdit={!!csPerms?.can_edit}
+                      canDelete={!!csPerms?.can_delete}
+                      onEdit={() => openEditPanel(r.id)}
+                      onDelete={() => setDeleteTarget(r)}
+                    />
                   </td>
                 </tr>
               ))
@@ -197,12 +218,26 @@ export default function GoodsOutwardPage() {
         </>
       )}
 
+      {editTarget && (
+        <>
+          <div className="panel-overlay open" onClick={() => setEditTarget(null)} />
+          <NewCustomerShipmentPanel
+            skuCodes={skuCodes}
+            editTarget={editTarget}
+            onClose={() => setEditTarget(null)}
+            onSaved={refreshAfterMutation}
+          />
+        </>
+      )}
+
       {detail && (
         <GoodsOutwardDetailPanel
           detail={detail}
           canPick={!!spPerms?.can_create}
+          canEdit={!!csPerms?.can_edit}
           onClose={() => setDetail(null)}
           onChanged={refreshAfterMutation}
+          onEdit={() => { ensureSkuCodesLoaded(); setEditTarget(detail); setDetail(null); }}
         />
       )}
 

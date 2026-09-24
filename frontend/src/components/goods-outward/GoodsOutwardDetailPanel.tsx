@@ -40,12 +40,14 @@ function StatusBadge({ status }: { status: string }) {
  * call returns.
  */
 export default function GoodsOutwardDetailPanel({
-  detail, canPick, onClose, onChanged,
+  detail, canPick, canEdit, onClose, onChanged, onEdit,
 }: {
   detail: GoodsOutwardDetail;
   canPick: boolean;
+  canEdit?: boolean;
   onClose: () => void;
   onChanged: () => void;
+  onEdit?: () => void;
 }) {
   const [record, setRecord] = useState(detail);
   const [scanInput, setScanInput] = useState("");
@@ -231,6 +233,11 @@ export default function GoodsOutwardDetailPanel({
         </div>
         <div className="sp-foot">
           <button className="btn btn-ghost" onClick={onClose}>Close</button>
+          {canEdit && onEdit && (
+            <div className="sp-foot-right">
+              <button className="btn btn-primary" onClick={onEdit}>Edit</button>
+            </div>
+          )}
         </div>
       </div>
     </>

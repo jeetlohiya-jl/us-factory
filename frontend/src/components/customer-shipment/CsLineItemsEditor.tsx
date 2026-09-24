@@ -78,12 +78,18 @@ export default function CsLineItemsEditor({
                 </select>
               </td>
               <td>
-                <input
-                  type="number"
-                  min={1}
-                  value={item.pallets_required}
-                  onChange={(e) => update(i, { pallets_required: e.target.value })}
-                />
+                {/* Quantity is always counted in Pallets -- shown as a fixed
+                    suffix inside the same input box rather than a separate
+                    "Unit" column, since it's never anything else here. */}
+                <div className="input-with-suffix">
+                  <input
+                    type="number"
+                    min={1}
+                    value={item.pallets_required}
+                    onChange={(e) => update(i, { pallets_required: e.target.value })}
+                  />
+                  <span className="suffix">Pallets</span>
+                </div>
               </td>
               <td>
                 <input
@@ -95,7 +101,8 @@ export default function CsLineItemsEditor({
               </td>
               <td>
                 <input
-                  type="text"
+                  type="number"
+                  min={0}
                   value={item.pcs_per_sleeve}
                   onChange={(e) => update(i, { pcs_per_sleeve: e.target.value })}
                 />

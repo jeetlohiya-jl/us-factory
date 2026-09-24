@@ -174,6 +174,13 @@ def save_rqc_record(
     Everything else on the record (Shipment Number, SKU Code/Version, the
     Production Run / IPQC link) is autopopulated at creation and read-only
     -- never touched here, lives entirely in Supabase-direct reads.
+
+    2026-09-24: blocked (409) via rqc_service.blocked_edit_reason once this
+    record's FG QR batch has already been GENERATED (real, physical
+    pallets/labels already printed off it) -- same spirit as the DELETE
+    route's blocked_delete_reason, so an Edit from the Factory RQC & FG QR
+    page can't silently change a record whose approval has already been
+    acted on downstream.
     """
     rec = (
         db.query(models.RqcRecord)
@@ -186,6 +193,10 @@ def save_rqc_record(
     )
     if not rec:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="RQC record not found.")
+
+    blocked_reason = rqc_service.blocked_edit_reason(db, rec)
+    if blocked_reason:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=blocked_reason)
 
     rec.manufacturer = rqc_service.RQC_MANUFACTURER_PLACEHOLDER
     rec.overall_result = payload.overall_result

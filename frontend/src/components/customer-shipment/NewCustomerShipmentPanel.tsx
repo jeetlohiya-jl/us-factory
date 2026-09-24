@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
-import { api } from "@/lib/api";
-import type { CustomerShipmentLineItemDraft, SkuCode } from "@/lib/types";
+import { api, ApiError } from "@/lib/api";
+import type { CustomerShipmentLineItemDraft, GoodsOutwardDetail, SkuCode } from "@/lib/types";
 import CsLineItemsEditor from "./CsLineItemsEditor";
 
 /**
@@ -13,25 +13,55 @@ import CsLineItemsEditor from "./CsLineItemsEditor";
  * incrementing preview as soon as the panel opens and stays read-only --
  * it's a genuine internal auto-allocation, only allocated atomically at
  * save (customer_shipment_service.create_customer_shipment).
+ *
+ * 2026-09-24 -- Goods Outward Edit: this same panel now doubles as the edit
+ * form when `editTarget` is passed (an already-saved GoodsOutwardDetail).
+ * Only what's genuinely different in edit mode changes: fields prefill
+ * from the existing record instead of starting blank, Container Number
+ * shows the record's real (already-allocated) one instead of a preview,
+ * each line item carries its real `id` (see CustomerShipmentLineItemDraft)
+ * so the PUT payload can diff by id, and Save calls api.updateCustomerShipment
+ * instead of api.createCustomerShipment. A line item that already has FG
+ * pallets picked against it is still fully editable here -- the 409 that
+ * comes back from a blocked change (SKU/Version/Quantity change or
+ * removal) is surfaced as this panel's own error banner, same as any other
+ * save failure; nothing here tries to pre-emptively lock those rows, since
+ * an operator correcting an unrelated line item shouldn't be blocked from
+ * saving at all.
  */
 export default function NewCustomerShipmentPanel({
-  skuCodes, onClose, onSaved,
+  skuCodes, onClose, onSaved, editTarget,
 }: {
   skuCodes: SkuCode[];
   onClose: () => void;
   onSaved: () => void;
+  editTarget?: GoodsOutwardDetail | null;
 }) {
-  const [customer, setCustomer] = useState("");
-  const [shipmentNumber, setShipmentNumber] = useState("");
-  const [containerPreview, setContainerPreview] = useState<string | null>(null);
-  const [lineItems, setLineItems] = useState<CustomerShipmentLineItemDraft[]>([
-    { key: "li-0", sku_code_id: null, sku_version_id: null, pallets_required: "", pcs: "", pcs_per_sleeve: "" },
-  ]);
+  const isEdit = !!editTarget;
+  const [customer, setCustomer] = useState(editTarget?.customer || "");
+  const [shipmentNumber, setShipmentNumber] = useState(editTarget?.shipment_number || "");
+  const [containerPreview, setContainerPreview] = useState<string | null>(editTarget?.container_number || null);
+  const [lineItems, setLineItems] = useState<CustomerShipmentLineItemDraft[]>(
+    editTarget && editTarget.line_items.length > 0
+      ? editTarget.line_items.map((li) => ({
+          key: li.id,
+          id: li.id,
+          sku_code_id: li.sku_code_id,
+          sku_version_id: li.sku_version_id,
+          pallets_required: li.pallets_required,
+          pcs: li.pcs ?? "",
+          pcs_per_sleeve: li.pcs_per_sleeve || "",
+        }))
+      : [{ key: "li-0", sku_code_id: null, sku_version_id: null, pallets_required: "", pcs: "", pcs_per_sleeve: "" }]
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api.peekNextContainerNumber().then(setContainerPreview).catch(() => setContainerPreview(null));
+    if (!isEdit) {
+      api.peekNextContainerNumber().then(setContainerPreview).catch(() => setContainerPreview(null));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const validItems = lineItems.filter(
@@ -54,21 +84,36 @@ export default function NewCustomerShipmentPanel({
     setSaving(true);
     setError(null);
     try {
-      await api.createCustomerShipment({
-        customer: customer.trim(),
-        shipment_number: shipmentNumber.trim(),
-        line_items: validItems.map((li) => ({
-          sku_code_id: li.sku_code_id as string,
-          sku_version_id: li.sku_version_id as string,
-          pallets_required: Number(li.pallets_required),
-          pcs: li.pcs === "" ? null : Number(li.pcs),
-          pcs_per_sleeve: li.pcs_per_sleeve || null,
-        })),
-      });
+      if (isEdit && editTarget) {
+        await api.updateCustomerShipment(editTarget.id, {
+          customer: customer.trim(),
+          shipment_number: shipmentNumber.trim(),
+          line_items: validItems.map((li) => ({
+            id: li.id || null,
+            sku_code_id: li.sku_code_id as string,
+            sku_version_id: li.sku_version_id as string,
+            pallets_required: Number(li.pallets_required),
+            pcs: li.pcs === "" ? null : Number(li.pcs),
+            pcs_per_sleeve: li.pcs_per_sleeve || null,
+          })),
+        });
+      } else {
+        await api.createCustomerShipment({
+          customer: customer.trim(),
+          shipment_number: shipmentNumber.trim(),
+          line_items: validItems.map((li) => ({
+            sku_code_id: li.sku_code_id as string,
+            sku_version_id: li.sku_version_id as string,
+            pallets_required: Number(li.pallets_required),
+            pcs: li.pcs === "" ? null : Number(li.pcs),
+            pcs_per_sleeve: li.pcs_per_sleeve || null,
+          })),
+        });
+      }
       onSaved();
       onClose();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to save Customer Shipment");
+      setError(e instanceof ApiError ? e.message : e instanceof Error ? e.message : `Failed to save ${isEdit ? "changes" : "Customer Shipment"}`);
     } finally {
       setSaving(false);
     }
@@ -77,7 +122,7 @@ export default function NewCustomerShipmentPanel({
   return (
     <div className="side-panel open" id="panel-customer-shipment">
       <div className="sp-head">
-        <div><h2>New Customer Shipment</h2></div>
+        <div><h2>{isEdit ? "Edit Goods Outward Record" : "New Customer Shipment"}</h2></div>
         <button className="sp-close" onClick={onClose}>×</button>
       </div>
       <div className="sp-body">
