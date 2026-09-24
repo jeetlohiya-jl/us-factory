@@ -162,12 +162,12 @@ export default function GoodsReceiptDetailPanel({
                 <thead>
                   <tr>
                     <th>Shipment No.</th><th>SKU</th><th>Category</th><th>Version</th>
-                    <th>PO Qty</th><th>Received</th><th>Pallets</th><th>Status</th><th />
+                    <th>PO Qty</th><th>Received</th><th>Status</th><th />
                   </tr>
                 </thead>
                 <tbody>
                   {record.entries.length === 0 && (
-                    <tr className="empty-row"><td colSpan={9}>No containers on this receipt yet.</td></tr>
+                    <tr className="empty-row"><td colSpan={8}>No containers on this receipt yet.</td></tr>
                   )}
                   {record.entries.map((e) => (
                     <Fragment key={e.id}>
@@ -178,12 +178,15 @@ export default function GoodsReceiptDetailPanel({
                         <td className="mono">{e.sku_version || "—"}</td>
                         <td>{fmt(e.po_quantity)} {e.unit}</td>
                         <td>
-                          {e.received_quantity != null ? `${fmt(e.received_quantity)} ${e.unit}` : "—"}
+                          {/* A tray's received quantity IS its pallet count; other
+                              materials show their quantity plus the pallets it came on. */}
+                          {e.received_quantity == null ? "—"
+                            : isTray(e) ? `${fmt(e.received_quantity)} ${e.unit}`
+                            : `${fmt(e.received_quantity)} ${e.unit} · ${e.pallet_count} pallet${e.pallet_count === 1 ? "" : "s"}`}
                           {e.received_quantity != null && e.received_quantity < e.po_quantity && (
                             <span className="badge partial" style={{ marginLeft: 6 }}>Short</span>
                           )}
                         </td>
-                        <td>{e.pallet_count ?? "—"}</td>
                         <td>
                           {e.status === "inwarded"
                             ? <span className="badge approved">Inwarded</span>
@@ -208,7 +211,7 @@ export default function GoodsReceiptDetailPanel({
                       </tr>
                       {inwardingId === e.id && form && (
                         <tr>
-                          <td colSpan={9} style={{ background: "var(--ink-04, #f6f5f0)" }}>
+                          <td colSpan={8} style={{ background: "var(--ink-04, #f6f5f0)" }}>
                             <div className="form-grid" style={{ margin: "8px 0" }}>
                               {!isTray(e) && (
                                 <>
