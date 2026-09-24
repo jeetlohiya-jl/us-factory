@@ -1497,6 +1497,8 @@ export interface GoodsReceiptEntry {
   id: string;
   // The PO line's own identifier (HA1, V6, ...) -- this IS the shipment number.
   shipment_number: string;
+  // Per container (migration 0050): a PO can mix materials.
+  category: Category | null;
   sku_code_id: string;
   sku_version_id: string | null;
   sku_code: string | null;
@@ -1525,7 +1527,7 @@ export interface GoodsReceiptDetail {
 export interface GoodsReceiptListItem {
   id: string;
   po_number: string;
-  category: Category | null;
+  categories: Category[];
   vendor_name: string;
   status: GoodsReceiptStatus;
   created_at: string;
@@ -1542,6 +1544,9 @@ export interface GoodsReceiptEntryDraft {
   id: string | null;
   locked: boolean;
   shipment_number: string;
+  // Only chosen by hand for a Tray SKU (Base Tray / FNP Tray); any other
+  // SKU's material is its category.
+  category: Category | "";
   sku_code_id: string | null;
   sku_version_id: string | null;
   po_quantity: string;
@@ -1550,11 +1555,10 @@ export interface GoodsReceiptEntryDraft {
 
 export interface GoodsReceiptSavePayload {
   po_number: string;
-  category: Category;
   vendor_id: string;
   as_draft: boolean;
   entries: {
-    id?: string | null; shipment_number: string;
+    id?: string | null; shipment_number: string; category: Category | null;
     sku_code_id: string; sku_version_id: string | null; po_quantity: number; unit: QuantityUnit;
   }[];
 }

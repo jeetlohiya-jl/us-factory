@@ -2,63 +2,27 @@
 import { useEffect, useMemo, useState } from "react";
 import { useProduct } from "./productContext";
 import { permissionsForProduct } from "./currentProduct";
-import { api } from "@/lib/api";
+import { currentBootstrap, subscribeBootstrap } from "./bootstrap";
 import type { MeResponse } from "@/lib/types";
 
 /**
- * Every page independently called `api.me()` on mount, so every single
- * navigation re-fetched the full user + permissions payload from scratch —
- * six routes, six redundant round trips for data that essentially never
- * changes mid-session. This hook fetches it once per app session (module
- * state survives client-side navigation, since Next.js App Router doesn't
- * reload the page) and every component just reads the cached value;
- * `refreshMe()` (wired to the existing "factory_os_user_changed" event,
- * fired by the dev user-switcher) is the only thing that forces a re-fetch.
+ * The signed-in person's user + permissions. Comes from the single startup
+ * call AppShell makes (lib/bootstrap.ts, app_bootstrap) -- never a request
+ * of its own, so no screen or navigation re-fetches it.
  */
-let cached: MeResponse | null = null;
-let inFlight: Promise<MeResponse> | null = null;
-const subscribers = new Set<(me: MeResponse | null) => void>();
-
-function notify(me: MeResponse | null) {
-  cached = me;
-  subscribers.forEach((fn) => fn(me));
-}
-
-async function load(force: boolean): Promise<MeResponse | null> {
-  if (cached && !force) return cached;
-  if (inFlight && !force) return inFlight;
-  inFlight = api.me();
-  try {
-    const me = await inFlight;
-    notify(me);
-    return me;
-  } catch {
-    notify(null);
-    return null;
-  } finally {
-    inFlight = null;
-  }
-}
-
 export function refreshMe() {
-  load(true);
+  window.dispatchEvent(new Event("factory_os_user_changed"));
 }
 
 export function useMe(): MeResponse | null {
-  const [me, setMe] = useState<MeResponse | null>(cached);
+  const [me, setMe] = useState<MeResponse | null>(() => currentBootstrap()?.me ?? null);
   // Inside Factory, shared screens reading e.g. permissions.rm_storage get
   // the person's Factory permission instead (lib/currentProduct.ts).
   const product = useProduct();
 
   useEffect(() => {
-    subscribers.add(setMe);
-    load(false).then(setMe);
-    function onUserChanged() { load(true); }
-    window.addEventListener("factory_os_user_changed", onUserChanged);
-    return () => {
-      subscribers.delete(setMe);
-      window.removeEventListener("factory_os_user_changed", onUserChanged);
-    };
+    setMe(currentBootstrap()?.me ?? null);
+    return subscribeBootstrap((b) => setMe(b?.me ?? null));
   }, []);
 
   return useMemo(

@@ -6,9 +6,9 @@ import type { Session } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabaseClient";
 import { signInWithGoogle, signOut } from "@/lib/session";
 import { useMe } from "@/lib/useMe";
-import { api, ApiError } from "@/lib/api";
 import type { PortfolioAccessMe } from "@/lib/types";
 import { ProductProvider } from "@/lib/productContext";
+import { clearBootstrap, loadBootstrap, primeBootstrap, readCachedBootstrap, readRememberedProduct, rememberProduct } from "@/lib/bootstrap";
 import { setCurrentProduct } from "@/lib/currentProduct";
 
 /**
@@ -332,56 +332,77 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     }
   }, [chosenProduct, pathname, router]);
 
+  // Startup, in one Supabase call (lib/bootstrap.ts): access + permissions.
+  // With a stored copy from the last visit the app draws immediately and
+  // the fresh copy replaces it a moment later; the remembered product choice
+  // keeps the person on the screen they were on across reloads.
+  function applyAccess(userId: string, access: PortfolioAccessMe) {
+    setPortfolioAccess(access);
+    const remembered = readRememberedProduct(userId);
+    if (access.access_us_factory && !access.access_factory) setChosenProduct("us_factory");
+    else if (access.access_factory && !access.access_us_factory) setChosenProduct("factory");
+    else if (remembered && (remembered === "factory" ? access.access_factory : access.access_us_factory)) setChosenProduct(remembered);
+    setCheckedPortfolio(true);
+  }
+
+  function startFor(newSession: Session | null) {
+    const userId = newSession?.user?.id ?? null;
+    signedInUserId.current = userId;
+    setSession(newSession);
+    setCheckedSession(true);
+    if (!userId) return;
+    const cached = readCachedBootstrap(userId);
+    if (cached) {
+      primeBootstrap(userId, cached);
+      applyAccess(userId, cached.portfolio);
+    }
+    setPortfolioError(null);
+    loadBootstrap(userId, true)
+      .then((b) => { if (signedInUserId.current === userId) applyAccess(userId, b.portfolio); })
+      .catch((e) => {
+        if (signedInUserId.current !== userId) return;
+        // With a stored copy, keep working on it; only block when there is none.
+        if (!cached) {
+          setPortfolioError(e instanceof Error ? e.message : "Could not check your access.");
+          setCheckedPortfolio(true);
+        }
+      });
+  }
+
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      signedInUserId.current = data.session?.user?.id ?? null;
-      setSession(data.session);
-      setCheckedSession(true);
-    });
+    supabase.auth.getSession().then(({ data }) => startFor(data.session));
     const { data: sub } = supabase.auth.onAuthStateChange((event, newSession) => {
-      setSession(newSession);
-      // Supabase also fires SIGNED_IN / TOKEN_REFRESHED for the SAME person
-      // whenever a tab regains focus or the token refreshes -- that must not
-      // send them back to the product picker (it used to, on every tab
-      // switch). Only a genuine sign-out or a different person signing in
-      // resets the choice and forces a fresh /me + permissions fetch.
+      // Supabase fires INITIAL_SESSION at startup (handled by getSession
+      // above -- reacting here too used to fetch permissions twice), and
+      // SIGNED_IN / TOKEN_REFRESHED for the SAME person whenever a tab
+      // regains focus. Only a sign-out or a different person matters.
+      if (event === "INITIAL_SESSION") return;
       const newUserId = newSession?.user?.id ?? null;
       if (event === "SIGNED_OUT" || newUserId !== signedInUserId.current) {
-        signedInUserId.current = newUserId;
+        const previous = signedInUserId.current;
+        if (event === "SIGNED_OUT" && previous) rememberProduct(previous, null);
+        clearBootstrap(event === "SIGNED_OUT" ? previous : null);
         setChosenProduct(null);
         setCheckedPortfolio(false);
         setPortfolioAccess(null);
-        window.dispatchEvent(new Event("factory_os_user_changed"));
+        startFor(newSession);
+      } else {
+        setSession(newSession);
       }
     });
-    return () => sub.subscription.unsubscribe();
+    function onUserChanged() {
+      if (signedInUserId.current) loadBootstrap(signedInUserId.current, true).catch(() => {});
+    }
+    window.addEventListener("factory_os_user_changed", onUserChanged);
+    return () => {
+      sub.subscription.unsubscribe();
+      window.removeEventListener("factory_os_user_changed", onUserChanged);
+    };
   }, []);
 
   useEffect(() => {
-    if (!session) return;
-    let cancelled = false;
-    setCheckedPortfolio(false);
-    setPortfolioError(null);
-    api
-      .myPortfolioAccess()
-      .then((res) => {
-        if (cancelled) return;
-        setPortfolioAccess(res);
-        // Only one access -- go straight there, no picker shown.
-        if (res.access_us_factory && !res.access_factory) setChosenProduct("us_factory");
-        else if (res.access_factory && !res.access_us_factory) setChosenProduct("factory");
-      })
-      .catch((e) => {
-        if (cancelled) return;
-        setPortfolioError(e instanceof ApiError ? e.message : "Could not check your access.");
-      })
-      .finally(() => {
-        if (!cancelled) setCheckedPortfolio(true);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [session]);
+    if (signedInUserId.current && chosenProduct) rememberProduct(signedInUserId.current, chosenProduct);
+  }, [chosenProduct]);
 
   if (!checkedSession) {
     return <div className="auth-loading">Loading…</div>;
@@ -510,7 +531,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <div>Signed in as {session.user.email}</div>
           <div className="sb-role" style={{ display: "flex", gap: 10 }}>
             {hasFactory && hasUsFactory && (
-              <button className="btn-tertiary" onClick={() => setChosenProduct(null)}>Switch</button>
+              <button className="btn-tertiary" onClick={() => { if (signedInUserId.current) rememberProduct(signedInUserId.current, null); setChosenProduct(null); }}>Switch</button>
             )}
             <button className="btn-tertiary" onClick={() => signOut()}>Sign out</button>
           </div>

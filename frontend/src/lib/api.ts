@@ -1864,12 +1864,12 @@ async function qcMetaSb(): Promise<QcMeta> {
 // path to goods_receipt_entries once pallets/storage_records are counted,
 // so the hint keeps PostgREST from ever guessing).
 const GR_LIST_SELECT =
-  "id,po_number,category,vendor_name,status,created_at," +
-  "entries:goods_receipt_entries(status,pallet_count,sku_code_snapshot)";
+  "id,po_number,vendor_name,status,created_at," +
+  "entries:goods_receipt_entries(status,pallet_count,sku_code_snapshot,category)";
 
 const GR_DETAIL_SELECT =
   "id,po_number,category,vendor_id,vendor_name,status,created_at,updated_at," +
-  "entries:goods_receipt_entries(id,shipment_number,sku_code_id,sku_version_id," +
+  "entries:goods_receipt_entries(id,shipment_number,category,sku_code_id,sku_version_id," +
   "sku_code:sku_code_snapshot,sku_version:sku_version_snapshot,po_quantity,received_quantity,unit,pallet_count," +
   "status,inwarded_at,sort_order," +
   "qr_batch:qr_generation_records!qr_generation_records_source_goods_receipt_entry_id_fkey(id,batch_display_id,status,quantity))";
@@ -1902,11 +1902,12 @@ async function listGoodsReceiptsSb(params: { search?: string; status?: string; d
     .range((page - 1) * LIST_PAGE_SIZE, page * LIST_PAGE_SIZE - 1);
   if (error) throw new ApiError(500, error.message);
   const rows = (data || []) as unknown as {
-    id: string; po_number: string; category: GoodsReceiptListItem["category"]; vendor_name: string; status: GoodsReceiptListItem["status"]; created_at: string;
-    entries: { status: string; pallet_count: number | null; sku_code_snapshot: string | null }[];
+    id: string; po_number: string; vendor_name: string; status: GoodsReceiptListItem["status"]; created_at: string;
+    entries: { status: string; pallet_count: number | null; sku_code_snapshot: string | null; category: string | null }[];
   }[];
   const items: GoodsReceiptListItem[] = rows.map((r) => ({
-    id: r.id, po_number: r.po_number, category: r.category, vendor_name: r.vendor_name, status: r.status, created_at: r.created_at,
+    id: r.id, po_number: r.po_number, vendor_name: r.vendor_name,
+    categories: Array.from(new Set(r.entries.map((e) => e.category).filter(Boolean))) as GoodsReceiptListItem["categories"], status: r.status, created_at: r.created_at,
     container_count: r.entries.length,
     inwarded_count: r.entries.filter((e) => e.status === "inwarded").length,
     pallet_total: r.entries.reduce((n, e) => n + (e.status === "inwarded" ? e.pallet_count || 0 : 0), 0),
