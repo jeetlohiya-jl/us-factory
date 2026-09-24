@@ -74,6 +74,11 @@ app.include_router(portfolio_access.router)
 app.include_router(customers.router)
 
 
-@app.get("/api/v1/health")
+@app.api_route("/api/v1/health", methods=["GET", "HEAD"])
 def health():
+    # 2026-09-24 -- explicit HEAD support so a HEAD-only uptime monitor
+    # (e.g. UptimeRobot's free plan, which cannot send GET) gets a real 200
+    # instead of a 405 ("Allow: GET") that falsely reports the service as
+    # down even though it responded instantly. A plain @app.get() route
+    # doesn't add HEAD support here, so this is spelled out explicitly.
     return {"status": "ok"}
