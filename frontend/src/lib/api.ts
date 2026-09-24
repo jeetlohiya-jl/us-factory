@@ -6,7 +6,7 @@ import type {
   InspectionDetail, InspectionListItem, SkuCode, SkuVersion, ChecklistItemRef, MeResponse, Category, ImageType, LineItem,
   QcMeta, QcListItem, QcDetail, QcManualCategory, QcAttributeDefinition, QcFgtrayCriterion, QcSamplingPlanTier,
   Pallet, QrGenerationListItem, QrGenerationDetail, StorageRecordDetail, LocationRef, LocationAdmin, ProductionRun,
-  Vendor, Machine, MaterialConsumptionListItem, MaterialConsumptionDetail, SecondaryMaterialCategory,
+  Vendor, Machine, Customer, MaterialConsumptionListItem, MaterialConsumptionDetail, SecondaryMaterialCategory,
   MaterialConsumptionPalletRow, ProductionListItem, ProductionDetail, ProductionMachineEntry, ProductionSavePayload,
   IpqcListItem, IpqcDetail, IpqcSavePayload,
   RqcListItem, RqcDetail, RqcSavePayload, RqcApprovalEntryPayload, RqcCoaEntry, RqcCoaObservation,
@@ -86,18 +86,45 @@ export class ApiError extends Error {
  * existing `catch (e) { e instanceof ApiError ... }` in the frontend keeps
  * working exactly as it did against FastAPI, with no page-level changes.
  */
+/**
+ * 2026-09-24 -- item 4 companion fix: postgrest-js (the Supabase query
+ * builder every sbRequest/sbRequestPage/sbVoid call below wraps) never
+ * throws on a dropped connection -- it catches the browser's own "Failed
+ * to fetch" TypeError itself and returns it as `error.message` verbatim,
+ * so every one of this file's many Supabase-direct reads/writes was
+ * silently capable of showing that exact unhelpful string too, not just
+ * the FastAPI request() path. This detects that class of error message
+ * (as opposed to a real Postgres/PostgREST error, which never looks like
+ * this) so callers can retry (reads) or at least explain (writes) instead
+ * of surfacing it raw.
+ */
+function isNetworkFailureMessage(message: string): boolean {
+  return /failed to fetch|network ?error|load failed|networkrequestfailed/i.test(message);
+}
+
 async function sbRequest<T>(
   fn: () => Promise<{ data: T | null; error: { message: string; code?: string } | null }>,
   messages?: { conflict?: string; fk?: string; denied?: string }
 ): Promise<T> {
-  const { data, error } = await fn();
-  if (error) {
-    if (error.code === "23505") throw new ApiError(409, messages?.conflict || error.message);
-    if (error.code === "23503") throw new ApiError(409, messages?.fk || error.message);
-    if (error.code === "42501") throw new ApiError(403, messages?.denied || "You do not have permission to do this.");
-    throw new ApiError(500, error.message);
+  const maxAttempts = 3;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const { data, error } = await fn();
+    if (error) {
+      if (error.code === "23505") throw new ApiError(409, messages?.conflict || error.message);
+      if (error.code === "23503") throw new ApiError(409, messages?.fk || error.message);
+      if (error.code === "42501") throw new ApiError(403, messages?.denied || "You do not have permission to do this.");
+      if (isNetworkFailureMessage(error.message) && attempt < maxAttempts) {
+        await sleep(attempt * 500);
+        continue;
+      }
+      if (isNetworkFailureMessage(error.message)) {
+        throw new ApiError(0, "Network error -- check your connection and try again.");
+      }
+      throw new ApiError(500, error.message);
+    }
+    return data as T;
   }
-  return data as T;
+  throw new ApiError(0, "Network error -- check your connection and try again.");
 }
 
 /** Same as `sbRequest`, but for a paginated `.range()` list query -- also
@@ -107,10 +134,20 @@ async function sbRequest<T>(
 async function sbRequestPage<T>(
   fn: () => Promise<{ data: T[] | null; error: { message: string; code?: string } | null; count: number | null }>
 ): Promise<{ items: T[]; matched_count: number }> {
-  const { data, error, count } = await fn();
-  if (error) throw new ApiError(500, error.message);
-  const items = data || [];
-  return { items, matched_count: count ?? items.length };
+  const maxAttempts = 3;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const { data, error, count } = await fn();
+    if (error) {
+      if (isNetworkFailureMessage(error.message) && attempt < maxAttempts) {
+        await sleep(attempt * 500);
+        continue;
+      }
+      throw new ApiError(0, isNetworkFailureMessage(error.message) ? "Network error -- check your connection and try again." : error.message);
+    }
+    const items = data || [];
+    return { items, matched_count: count ?? items.length };
+  }
+  throw new ApiError(0, "Network error -- check your connection and try again.");
 }
 
 // Postgrest-style query builder -- structurally compatible with every
@@ -400,34 +437,90 @@ async function sbVoid(
     if (error.code === "23505") throw new ApiError(409, messages?.conflict || error.message);
     if (error.code === "23503") throw new ApiError(409, messages?.fk || error.message);
     if (error.code === "42501") throw new ApiError(403, messages?.denied || "You do not have permission to do this.");
+    // Not auto-retried (this is a write) -- see isNetworkFailureMessage's
+    // doc comment above sbRequest -- but still translated to a clear,
+    // actionable message instead of the raw "Failed to fetch".
+    if (isNetworkFailureMessage(error.message)) {
+      throw new ApiError(0, "Network error -- check your connection and try again.");
+    }
     throw new ApiError(500, error.message);
   }
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * 2026-09-24 -- item 4 of the operator feedback batch ("sometimes ... it
+ * shows failed to fetch"). "Failed to fetch" is the browser's own raw
+ * TypeError for a request that never got a response at all -- a dropped
+ * wifi packet, a tablet suspending the tab's network while backgrounded or
+ * locked, or the Supabase Auth token-refresh call (inside getAuthHeader,
+ * itself a network request) hitting the same thing -- and previously
+ * nothing here caught it: it propagated straight out of `request()` and
+ * every caller's `e instanceof Error ? e.message : ...` fallback showed
+ * that literal, unhelpful browser string to the operator with no recourse
+ * but to retry the whole action by hand.
+ *
+ * Fixes two things:
+ *  1. GET requests (and the auth-header fetch every request starts with)
+ *     are safe to retry blind, since nothing was written -- so a
+ *     transient network blip now retries silently (short backoff, 3
+ *     attempts total) instead of surfacing an error at all.
+ *  2. A mutating request (POST/PUT/DELETE/PATCH) is never auto-retried
+ *     blind here -- if the connection dropped after the server actually
+ *     applied the change but before the response came back, retrying
+ *     could double it. Its network failure is instead wrapped in a plain
+ *     ApiError with a clear, actionable message, so the operator sees
+ *     "Network error -- check your connection and try again" instead of
+ *     "Failed to fetch", and knows whether it's safe to just tap Save
+ *     again (nothing here claims it necessarily is).
+ */
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const authHeader = await getAuthHeader();
-  const res = await fetch(`${BASE}${path}`, {
-    ...init,
-    headers: {
-      ...(init?.body && !(init.body instanceof FormData) ? { "Content-Type": "application/json" } : {}),
-      Authorization: authHeader,
-      ...(getCurrentProduct() ? { "X-Product": getCurrentProduct() as string } : {}),
-      ...(init?.headers || {}),
-    },
-    cache: "no-store",
-  });
-  if (!res.ok) {
-    let detail = res.statusText;
+  const method = (init?.method || "GET").toUpperCase();
+  const isRetryable = method === "GET";
+  const maxAttempts = isRetryable ? 3 : 1;
+
+  let res: Response | null = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      const data = await res.json();
+      const authHeader = await getAuthHeader();
+      res = await fetch(`${BASE}${path}`, {
+        ...init,
+        headers: {
+          ...(init?.body && !(init.body instanceof FormData) ? { "Content-Type": "application/json" } : {}),
+          Authorization: authHeader,
+          ...(getCurrentProduct() ? { "X-Product": getCurrentProduct() as string } : {}),
+          ...(init?.headers || {}),
+        },
+        cache: "no-store",
+      });
+      break;
+    } catch (e) {
+      const isLastAttempt = attempt === maxAttempts;
+      if (!isLastAttempt) {
+        await sleep(attempt * 500);
+        continue;
+      }
+      const reason = e instanceof Error ? e.message : String(e);
+      throw new ApiError(0, `Network error -- check your connection and try again. (${reason})`);
+    }
+  }
+  // res is always assigned by the time the loop exits without throwing.
+  const response = res as Response;
+  if (!response.ok) {
+    let detail = response.statusText;
+    try {
+      const data = await response.json();
       detail = data.detail || JSON.stringify(data);
     } catch {
       // ignore
     }
-    throw new ApiError(res.status, detail);
+    throw new ApiError(response.status, detail);
   }
-  if (res.status === 204) return undefined as unknown as T;
-  return res.json();
+  if (response.status === 204) return undefined as unknown as T;
+  return response.json();
 }
 
 // -- Material Consumption: list/detail via Supabase -------------------------
@@ -2075,6 +2168,28 @@ export const api = {
       { fk: "This vendor is referenced by existing records and can't be deleted — deactivate it instead." }
     ).then(() => invalidateListCache("ref:vendors")),
 
+  // -- Customer master data (Goods Outward's Customer / Recipient dropdown,
+  // 2026-09-24) -- served through FastAPI (backend/app/api/customers.py),
+  // not Supabase-direct like Vendor above.
+  customers: (params: { includeInactive?: boolean } = {}) =>
+    cachedList(listCacheKey("ref:customers", params), () =>
+      request<Customer[]>(`/api/v1/customers${params.includeInactive ? "?include_inactive=true" : ""}`)
+    ),
+  createCustomer: async (name: string) => {
+    const res = await request<Customer>("/api/v1/customers", { method: "POST", body: JSON.stringify({ name }) });
+    invalidateListCache("ref:customers");
+    return res;
+  },
+  updateCustomer: async (id: string, patch: { name?: string; is_active?: boolean }) => {
+    const res = await request<Customer>(`/api/v1/customers/${id}`, { method: "PUT", body: JSON.stringify(patch) });
+    invalidateListCache("ref:customers");
+    return res;
+  },
+  deleteCustomer: async (id: string) => {
+    await request<void>(`/api/v1/customers/${id}`, { method: "DELETE" });
+    invalidateListCache("ref:customers");
+  },
+
   // -- Phase 2: Inward Vehicle Inspection list/detail, direct Supabase ----
   listInspections: async (params: { search?: string; status?: string; category?: string; date?: string; page?: number }) => {
     const page = params.page && params.page > 0 ? params.page : 1;
@@ -2238,7 +2353,13 @@ export const api = {
     const ordered = (filtered as unknown as typeof base).order("created_at", { ascending: false }).range((page - 1) * LIST_PAGE_SIZE, page * LIST_PAGE_SIZE - 1);
     const { data, error, count } = await ordered;
     if (error) throw new ApiError(500, error.message);
-    const total_count = await countAll("inward_qc_records");
+    // 2026-09-24 -- mirror listInspections' hasActiveFilter guard: with no
+    // filter active, the exact-count from the main query above already IS
+    // the grand total, so calling countAll unconditionally here was one
+    // extra Postgres round trip on every single Inward QC page load, not
+    // just filtered ones.
+    const hasActiveFilter = !!(params.search || params.status || params.category || params.date);
+    const total_count = hasActiveFilter ? await countAll("inward_qc_records") : count ?? 0;
     return { items: (data || []) as QcListItem[], matched_count: count ?? 0, total_count };
   },
 

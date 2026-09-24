@@ -103,6 +103,54 @@ def _all_pallets(mc: models.MaterialConsumption) -> list[models.MaterialConsumpt
     return [p for entry in mc.machine_entries for p in entry.pallets]
 
 
+def _release_storage_location(db: Session, pallet: models.Pallet) -> "uuid.UUID | None":
+    """2026-09-24: a pallet's RM Storage location becomes available again
+    the instant it's physically picked for Material Consumption --
+    unconditionally, regardless of whether it later ends up marked "fully
+    consumed" or not (an operator has pulled it off the shelf either way).
+    Previously, location release only ever happened at finalize()/lifecycle
+    -consumed time (and only implicitly, never at all -- RM Storage's own
+    occupancy listing is purely StorageRecord-row-driven, so a scanned-but-
+    not-yet-finalized pallet used to still show as occupying its shelf).
+    Mirrors shipment_picking_service.pick_pallet_for_request's exact
+    pattern for FG pallets. Returns the freed location's id (or None if the
+    pallet had no StorageRecord to begin with) so the caller can remember
+    it on the MaterialConsumptionPallet row for a possible later restore
+    (see remove_pallet)."""
+    storage_record = db.query(models.StorageRecord).filter(models.StorageRecord.pallet_id == pallet.id).first()
+    if not storage_record:
+        return None
+    location_id = storage_record.location_id
+    db.delete(storage_record)
+    db.flush()
+    return location_id
+
+
+def _restore_storage_location(db: Session, row: models.MaterialConsumptionPallet) -> None:
+    """Reverse of _release_storage_location -- called when a scanned pallet
+    is removed from a still-draft record before finalizing (a mistaken
+    scan). Only restores when the pallet is still genuinely 'stored' (never
+    actually consumed) and doesn't already have a StorageRecord (e.g. it
+    was never released to begin with, or was already re-stored by some
+    other path) -- both guards make this safe to call unconditionally."""
+    if not row.released_location_id:
+        return
+    pallet = row.pallet
+    if pallet.lifecycle_status != "stored":
+        return
+    exists = db.query(models.StorageRecord.id).filter(models.StorageRecord.pallet_id == pallet.id).first()
+    if exists:
+        return
+    db.add(models.StorageRecord(
+        storage_type="rm",
+        pallet_id=pallet.id,
+        location_id=row.released_location_id,
+        source_qr_generation_id=pallet.source_qr_generation_id,
+        source_inward_qc_id=pallet.source_inward_qc_id,
+        source_goods_receipt_entry_id=pallet.source_goods_receipt_entry_id,
+    ))
+
+
 def machine_label(entry: models.MaterialConsumptionMachineEntry, index: int) -> str:
     return entry.machine.code if entry.machine else f"Machine #{index + 1}"
 
@@ -192,13 +240,43 @@ def add_primary_pallet(
     # received on). Set it BEFORE the Production Run / IPQC find-or-create
     # below, so the IPQC created by this very first scan already carries
     # it (RQC later matches IPQC by Shipment Number).
+    #
+    # 2026-09-24: each Material Consumption record is its OWN distinct
+    # pick-up event and must keep its own distinct Shipment Number, even
+    # when it ends up sharing a Production Run with another MC record on
+    # the same date+shift (find_or_create_production_run's own (date,
+    # shift) matching is unrelated to Shipment Number and was already
+    # correct -- this guard only stops two different MC records from ever
+    # claiming the very same shipment). Checked only at the moment
+    # Shipment Number would actually be assigned (mc.shipment_number not
+    # yet set) -- a record that already has one obviously can't collide
+    # with itself on a later scan.
     if not mc.shipment_number and pallet.shipment_number:
+        collision = (
+            db.query(models.MaterialConsumption.id)
+            .filter(
+                models.MaterialConsumption.shipment_number == pallet.shipment_number,
+                models.MaterialConsumption.id != mc.id,
+            )
+            .first()
+        )
+        if collision:
+            raise MaterialConsumptionError(
+                f"Shipment Number {pallet.shipment_number} is already used by another Material Consumption record. "
+                "Each Material Consumption record must have its own distinct Shipment Number."
+            )
         mc.shipment_number = pallet.shipment_number
         _sync_ipqc_shipment_number(db, mc, None, mc.shipment_number)
     already_scanned = {p.pallet_id for p in _all_pallets(mc) if p.role == "primary"}
     if pallet.id in already_scanned:
         raise MaterialConsumptionError(f"Pallet {pallet.display_id} has already been scanned into this record.")
     _assert_not_already_allocated(db, pallet, exclude_mc_id=mc.id)
+
+    # 2026-09-24: free this pallet's RM Storage location immediately on
+    # scan, regardless of whether it ends up marked fully-consumed or not
+    # -- see _release_storage_location's own docstring for why this used
+    # to not happen at all.
+    released_location_id = _release_storage_location(db, pallet)
 
     existing_primary = [p for p in entry.pallets if p.role == "primary"]
     if existing_primary:
@@ -250,6 +328,7 @@ def add_primary_pallet(
         material_consumption_id=mc.id, machine_entry_id=entry.id, role="primary", pallet_id=pallet.id,
         quantity=quantity if quantity is not None else Decimal("1"), unit=unit or "Pallets",
         fully_consumed=fully_consumed, sort_order=len(entry.pallets),
+        released_location_id=released_location_id,
     )
     db.add(row)
     db.flush()
@@ -288,9 +367,13 @@ def add_secondary_pallet(
         raise MaterialConsumptionError(f"Pallet {pallet.display_id} has already been scanned into this record.")
     _assert_not_already_allocated(db, pallet, exclude_mc_id=mc.id)
 
+    # 2026-09-24: same immediate location-release as add_primary_pallet.
+    released_location_id = _release_storage_location(db, pallet)
+
     row = models.MaterialConsumptionPallet(
         material_consumption_id=mc.id, machine_entry_id=entry.id, role=category, pallet_id=pallet.id,
         quantity=Decimal("1"), sort_order=len(entry.pallets),
+        released_location_id=released_location_id,
     )
     db.add(row)
     db.flush()
@@ -311,6 +394,12 @@ def remove_pallet(db: Session, mc: models.MaterialConsumption, row_id) -> None:
         old_shipment = mc.shipment_number
         mc.shipment_number = _first_primary_shipment_number(mc, exclude_row_id=row.id)
         _sync_ipqc_shipment_number(db, mc, old_shipment, mc.shipment_number)
+    # Removing a mistakenly-scanned pallet from a still-draft record should
+    # give the operator their RM Storage location back -- it was released
+    # unconditionally at scan time (see add_primary_pallet/add_secondary_pallet),
+    # so undo that release here before the row (and its released_location_id)
+    # is gone.
+    _restore_storage_location(db, row)
     db.delete(row)
     db.flush()
     # If the removed pallet was the last primary pallet on this machine

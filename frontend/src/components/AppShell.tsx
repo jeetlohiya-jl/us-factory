@@ -227,6 +227,25 @@ const FACTORY_NAV_ITEMS = [
       <path d="M3 3h18v18H3zM3 9h18M9 3v18M15 15l3 3M18 15l-3 3" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
     ),
   },
+  // "History" (item 11 of the 2026-09-24 feedback batch) -- the feature the
+  // user meant is US Factory's own Traceability export: exact same
+  // /traceability route/page US Factory's own sidebar uses, no second copy,
+  // same reuse pattern as every other module above. Its PDF walks all 8
+  // pipeline stages tolerant of missing ones (see traceability_service.py);
+  // Factory shipments simply show Inward Vehicle Inspection/Inward QC (the
+  // two stages Factory's own Goods Receipt module replaces) as "not yet
+  // recorded" and populate normally from RM QR/Storage onward, since every
+  // stage from there on already reuses the exact same tables Factory writes
+  // to (RM Storage, Material Consumption, Production, RQC/FG QR, FG
+  // Storage, Goods Outward). Product-scoping (ProductScoped + RLS) already
+  // ensures a Factory user's search only ever surfaces Factory's own rows.
+  {
+    href: "/traceability",
+    label: "Traceability",
+    icon: (
+      <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    ),
+  },
 ];
 
 // Routes that exist only inside the Factory product.
@@ -259,6 +278,17 @@ const SETUP_NAV_ITEMS = [
     label: "Machines",
     icon: (
       <path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+    ),
+  },
+  // 2026-09-24 -- master list backing Goods Outward's Customer dropdown
+  // (frontend/src/components/customer-shipment/NewCustomerShipmentPanel.tsx),
+  // same "master data page reusing the module it serves" pattern as Vendors
+  // above (see /customers/page.tsx's own header comment).
+  {
+    href: "/customers",
+    label: "Customers",
+    icon: (
+      <path d="M17 21v-2a4 4 0 00-4-4H7a4 4 0 00-4 4v2M11 3a4 4 0 110 8 4 4 0 010-8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
     ),
   },
 ];

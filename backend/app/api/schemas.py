@@ -61,6 +61,23 @@ class VendorUpdateIn(BaseModel):
     is_active: Optional[bool] = None
 
 
+# 2026-09-24 -- Customer master data for Goods Outward (see models.Customer).
+class CustomerOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    name: str
+    is_active: bool
+
+
+class CustomerIn(BaseModel):
+    name: str
+
+
+class CustomerUpdateIn(BaseModel):
+    name: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
 class ChecklistItemOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: uuid.UUID

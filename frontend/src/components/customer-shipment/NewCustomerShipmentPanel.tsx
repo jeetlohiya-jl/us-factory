@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
-import type { CustomerShipmentLineItemDraft, GoodsOutwardDetail, SkuCode } from "@/lib/types";
+import type { Customer, CustomerShipmentLineItemDraft, GoodsOutwardDetail, SkuCode } from "@/lib/types";
 import CsLineItemsEditor from "./CsLineItemsEditor";
 
 /**
@@ -17,10 +17,9 @@ import CsLineItemsEditor from "./CsLineItemsEditor";
  * 2026-09-24 -- Goods Outward Edit: this same panel now doubles as the edit
  * form when `editTarget` is passed (an already-saved GoodsOutwardDetail).
  * Only what's genuinely different in edit mode changes: fields prefill
- * from the existing record instead of starting blank, Container Number
- * shows the record's real (already-allocated) one instead of a preview,
- * each line item carries its real `id` (see CustomerShipmentLineItemDraft)
- * so the PUT payload can diff by id, and Save calls api.updateCustomerShipment
+ * from the existing record instead of starting blank, each line item
+ * carries its real `id` (see CustomerShipmentLineItemDraft) so the PUT
+ * payload can diff by id, and Save calls api.updateCustomerShipment
  * instead of api.createCustomerShipment. A line item that already has FG
  * pallets picked against it is still fully editable here -- the 409 that
  * comes back from a blocked change (SKU/Version/Quantity change or
@@ -28,6 +27,18 @@ import CsLineItemsEditor from "./CsLineItemsEditor";
  * save failure; nothing here tries to pre-emptively lock those rows, since
  * an operator correcting an unrelated line item shouldn't be blocked from
  * saving at all.
+ *
+ * Container Number is still allocated atomically at save (customer_
+ * shipment_service.create_customer_shipment) -- it's just no longer shown
+ * anywhere in this UI (2026-09-24): it exists purely for internal table
+ * relationships/traceability, not something an operator needs to see or
+ * act on here.
+ *
+ * Customer / Recipient is a dropdown (2026-09-24) backed by the Customer
+ * master list (api.customers, managed from /customers) instead of a
+ * freehand text field, so shipments consistently reuse the same customer
+ * names. "+ Add new customer" reveals an inline text field so an operator
+ * with edit rights doesn't have to leave this panel to add one on the fly.
  */
 export default function NewCustomerShipmentPanel({
   skuCodes, onClose, onSaved, editTarget,
@@ -40,7 +51,10 @@ export default function NewCustomerShipmentPanel({
   const isEdit = !!editTarget;
   const [customer, setCustomer] = useState(editTarget?.customer || "");
   const [shipmentNumber, setShipmentNumber] = useState(editTarget?.shipment_number || "");
-  const [containerPreview, setContainerPreview] = useState<string | null>(editTarget?.container_number || null);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [addingCustomer, setAddingCustomer] = useState(false);
+  const [newCustomerName, setNewCustomerName] = useState("");
+  const [customerError, setCustomerError] = useState<string | null>(null);
   const [lineItems, setLineItems] = useState<CustomerShipmentLineItemDraft[]>(
     editTarget && editTarget.line_items.length > 0
       ? editTarget.line_items.map((li) => ({
@@ -59,10 +73,27 @@ export default function NewCustomerShipmentPanel({
 
   useEffect(() => {
     if (!isEdit) {
-      api.peekNextContainerNumber().then(setContainerPreview).catch(() => setContainerPreview(null));
+      // Container Number is still allocated at save time -- previewing it
+      // is no longer needed since it's not shown anywhere in this panel.
     }
+    api.customers().then(setCustomers).catch(() => setCustomers([]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  async function handleAddCustomer() {
+    const name = newCustomerName.trim();
+    if (!name) return;
+    setCustomerError(null);
+    try {
+      const created = await api.createCustomer(name);
+      setCustomers((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
+      setCustomer(created.name);
+      setNewCustomerName("");
+      setAddingCustomer(false);
+    } catch (e) {
+      setCustomerError(e instanceof ApiError ? e.message : e instanceof Error ? e.message : "Failed to add customer");
+    }
+  }
 
   const validItems = lineItems.filter(
     (li) => li.sku_code_id && li.sku_version_id && Number(li.pallets_required) > 0
@@ -130,15 +161,37 @@ export default function NewCustomerShipmentPanel({
         <div className="form-grid" style={{ marginBottom: 18 }}>
           <div className="field">
             <label>Customer / Recipient</label>
-            <input type="text" placeholder="e.g. 3P China" value={customer} onChange={(e) => setCustomer(e.target.value)} />
+            {addingCustomer ? (
+              <div style={{ display: "flex", gap: 6 }}>
+                <input
+                  type="text" autoFocus placeholder="New customer name" value={newCustomerName}
+                  onChange={(e) => setNewCustomerName(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleAddCustomer()}
+                />
+                <button type="button" className="btn btn-secondary" onClick={handleAddCustomer}>Add</button>
+                <button type="button" className="btn btn-ghost" onClick={() => { setAddingCustomer(false); setNewCustomerName(""); setCustomerError(null); }}>Cancel</button>
+              </div>
+            ) : (
+              <select
+                value={customer}
+                onChange={(e) => {
+                  if (e.target.value === "__add__") { setAddingCustomer(true); return; }
+                  setCustomer(e.target.value);
+                }}
+              >
+                <option value="">Select</option>
+                {customer && !customers.some((c) => c.name === customer) && (
+                  <option value={customer}>{customer}</option>
+                )}
+                {customers.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
+                <option value="__add__">+ Add new customer…</option>
+              </select>
+            )}
+            {customerError && <div className="hint-text" style={{ color: "var(--red)" }}>{customerError}</div>}
           </div>
           <div className="field">
             <label>Shipment Number</label>
             <input type="text" placeholder="e.g. US-SHP-2609-0001" value={shipmentNumber} onChange={(e) => setShipmentNumber(e.target.value)} />
-          </div>
-          <div className="field">
-            <label>Container Number</label>
-            <div className="readonly-val">{containerPreview ?? "…"}</div>
           </div>
         </div>
         <div className="section-label" style={{ marginTop: 0 }}>Line Items</div>

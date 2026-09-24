@@ -135,7 +135,6 @@ export default function GoodsOutwardDetailPanel({
             <h3>Shipment Details</h3>
             <div className="detail-grid">
               <Kv label="Shipment Number" value={<span className="mono">{record.shipment_number}</span>} />
-              <Kv label="Container Number" value={<span className="mono">{record.container_number}</span>} />
               <Kv label="Customer / Recipient" value={record.customer} />
               <Kv label="Date" value={new Date(record.created_at).toLocaleDateString()} />
               <Kv label="Status" value={<StatusBadge status={record.status} />} />
