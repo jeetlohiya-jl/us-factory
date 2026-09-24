@@ -1,8 +1,8 @@
 "use client";
 import { Fragment, useState } from "react";
 import { api } from "@/lib/api";
-import type { GoodsReceiptDetail, GoodsReceiptEntry, QrGenerationDetail, QuantityUnit } from "@/lib/types";
-import { INWARD_CATEGORY_LABELS, QUANTITY_UNITS } from "@/lib/types";
+import type { GoodsReceiptDetail, GoodsReceiptEntry, QrGenerationDetail } from "@/lib/types";
+import { INWARD_CATEGORY_LABELS } from "@/lib/types";
 import QrGenerationPanel from "@/components/qr-generation/QrGenerationPanel";
 import { GoodsReceiptStatusBadge } from "./GoodsReceiptStatusBadge";
 
@@ -19,12 +19,14 @@ function fmt(n: number | null | undefined) {
   return n == null ? "—" : Number(n).toLocaleString();
 }
 
-type InwardForm = { received_quantity: string; unit: QuantityUnit; pallet_count: string };
+// Goods Receipt counts pallets: the PO Quantity is pallets ordered, and
+// inwarding asks one number -- pallets received (one RM QR per pallet).
+type InwardForm = { pallets: string };
 
 /**
  * Goods Receipt detail -- the receiving screen. Every container x SKU entry
  * is its own row with its own status; "Inward" opens an inline form on
- * THAT row only (Quantity Received + Unit, Number of Pallets), and
+ * THAT row only (Pallets Received), and
  * confirming it changes only that entry. Once inwarded, the
  * row offers Generate / View QRs, which opens the existing RM QR panel
  * (QrGenerationPanel, unchanged: pallet grid, 2x2in label printing).
@@ -64,23 +66,19 @@ export default function GoodsReceiptDetailPanel({
     setForm({
       // Default to the ordered quantity -- the common case is a full
       // container -- but it stays editable for a short delivery.
-      received_quantity: String(e.po_quantity),
-      unit: e.unit,
-      pallet_count: "",
+      pallets: String(e.po_quantity),
     });
   }
 
   async function confirmInward(e: GoodsReceiptEntry) {
     if (!form) return;
-    const pallets = parseInt(form.pallet_count, 10);
-    const qty = Number(form.received_quantity);
-    if (!(qty > 0)) { setError(`${e.shipment_number}: Quantity Received must be greater than 0.`); return; }
-    if (!(pallets >= 1)) { setError(`${e.shipment_number}: Number of Pallets must be at least 1.`); return; }
+    const pallets = Number(form.pallets);
+    if (!(pallets >= 1) || !Number.isInteger(pallets)) { setError(`${e.shipment_number}: Pallets Received must be a whole number of at least 1.`); return; }
     setBusy(e.id);
     setError(null);
     try {
       const next = await api.inwardGoodsReceiptEntry(record.id, e.id, {
-        received_quantity: qty, unit: form.unit, pallet_count: pallets,
+        received_quantity: pallets, unit: "Pallets", pallet_count: pallets,
       });
       apply(next);
       setInwardingId(null);
@@ -156,12 +154,12 @@ export default function GoodsReceiptDetailPanel({
                 <thead>
                   <tr>
                     <th>Shipment No.</th><th>SKU</th><th>Category</th><th>Version</th>
-                    <th>PO Qty</th><th>Qty Received</th><th>Unit</th><th>Pallets</th><th>Status</th><th />
+                    <th>PO Pallets</th><th>Pallets Received</th><th>Status</th><th />
                   </tr>
                 </thead>
                 <tbody>
                   {record.entries.length === 0 && (
-                    <tr className="empty-row"><td colSpan={10}>No containers on this receipt yet.</td></tr>
+                    <tr className="empty-row"><td colSpan={8}>No containers on this receipt yet.</td></tr>
                   )}
                   {record.entries.map((e) => (
                     <Fragment key={e.id}>
@@ -172,13 +170,11 @@ export default function GoodsReceiptDetailPanel({
                         <td className="mono">{e.sku_version || "—"}</td>
                         <td>{fmt(e.po_quantity)}</td>
                         <td>
-                          {fmt(e.received_quantity)}
-                          {e.received_quantity != null && e.received_quantity < e.po_quantity && (
+                          {fmt(e.pallet_count)}
+                          {e.pallet_count != null && e.pallet_count < e.po_quantity && (
                             <span className="badge partial" style={{ marginLeft: 6 }}>Short</span>
                           )}
                         </td>
-                        <td>{e.unit}</td>
-                        <td>{e.pallet_count ?? "—"}</td>
                         <td>
                           {e.status === "inwarded"
                             ? <span className="badge approved">Inwarded</span>
@@ -203,27 +199,16 @@ export default function GoodsReceiptDetailPanel({
                       </tr>
                       {inwardingId === e.id && form && (
                         <tr>
-                          <td colSpan={10} style={{ background: "var(--ink-04, #f6f5f0)" }}>
+                          <td colSpan={8} style={{ background: "var(--ink-04, #f6f5f0)" }}>
                             <div className="form-grid" style={{ margin: "8px 0" }}>
                               <div className="field">
-                                <label>Quantity Received</label>
-                                <input type="number" min={0} value={form.received_quantity}
-                                  onChange={(ev) => setForm({ ...form, received_quantity: ev.target.value })} />
-                              </div>
-                              <div className="field">
-                                <label>Unit</label>
-                                <select value={form.unit} onChange={(ev) => setForm({ ...form, unit: ev.target.value as QuantityUnit })}>
-                                  {QUANTITY_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
-                                </select>
-                              </div>
-                              <div className="field">
-                                <label>Number of Pallets</label>
-                                <input type="number" min={1} value={form.pallet_count} autoFocus
-                                  onChange={(ev) => setForm({ ...form, pallet_count: ev.target.value })} />
+                                <label>Pallets Received</label>
+                                <input type="number" min={1} step={1} value={form.pallets} autoFocus
+                                  onChange={(ev) => setForm({ pallets: ev.target.value })} />
                               </div>
                             </div>
                             <div className="hint-text" style={{ marginBottom: 8 }}>
-                              One RM pallet QR per pallet becomes available to generate once inwarded. Only {e.shipment_number} is marked Inwarded — other containers are unchanged.
+                              PO: {fmt(e.po_quantity)} pallets. One RM pallet QR per pallet received. Only {e.shipment_number} is marked Inwarded — other containers are unchanged.
                             </div>
                             <div style={{ display: "flex", gap: 10, marginBottom: 8 }}>
                               <button className="btn btn-primary" disabled={busy === e.id} onClick={() => confirmInward(e)}>
