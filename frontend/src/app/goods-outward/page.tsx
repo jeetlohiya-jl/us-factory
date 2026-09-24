@@ -173,18 +173,17 @@ export default function GoodsOutwardPage() {
         <table className="data">
           <thead>
             <tr>
-              <th>Shipment Number</th><th>Container Number</th><th>Customer</th><th>SKU Code(s)</th>
+              <th>Shipment Number</th><th>Customer</th><th>SKU Code(s)</th>
               <th>No. of Pallets</th><th>Picked</th><th>Status</th><th>Date</th><th></th>
             </tr>
           </thead>
           <tbody>
             {items.length === 0 ? (
-              <tr className="empty-row"><td colSpan={9}>{loading ? "Loading…" : "No records match your search/filters."}</td></tr>
+              <tr className="empty-row"><td colSpan={8}>{loading ? "Loading…" : "No records match your search/filters."}</td></tr>
             ) : (
               items.map((r) => (
                 <tr key={r.id} style={{ cursor: "pointer" }} onClick={() => openDetail(r.id)}>
                   <td className="mono">{r.shipment_number}</td>
-                  <td className="mono">{r.container_number}</td>
                   <td>{r.customer}</td>
                   <td className="mono">{r.sku_summary || "—"}</td>
                   <td>{r.pallets_required_total}</td>

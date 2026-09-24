@@ -21,6 +21,7 @@ from app.api.deps import get_current_user
 from app.api import deps
 from app.adapters.auth.base import AuthenticatedUser
 from app.domain import material_consumption_service as mc_svc
+from app.domain.material_consumption_service import MaterialConsumptionError
 
 router = APIRouter(prefix="/api/v1/production-runs", tags=["production-runs"])
 
@@ -277,6 +278,26 @@ def save_production_run(
     # save (not just the pending->saved transition) so a machine that
     # started after the run was first saved still gets its end_time.
     mc_svc.stamp_end_times_for_production_run(db, run, client_time=payload.client_time)
+
+    # 2026-09-24 -- item 7 of the operator feedback batch: saving Production
+    # (which is what asks, via ConsumptionConfirmModal, whether each picked
+    # pallet was fully consumed) should be the point a still-'draft' linked
+    # Material Consumption record actually becomes 'saved', instead of
+    # silently staying 'draft' forever. end_time was just stamped above, so
+    # finalize()'s own "save the Production Run first" check is now
+    # satisfied. Runs every save (idempotent -- finalize() is a no-op
+    # target only for 'draft' records; an already-'saved' MC record is
+    # skipped) so a machine consumption added after the run's first save
+    # still gets finalized on a later save. A validation failure here
+    # aborts the whole Production save (nothing has been committed yet)
+    # rather than leaving Production 'saved' with its Material Consumption
+    # silently stuck in 'draft'.
+    for mc in run.material_consumptions:
+        if mc.status == "draft":
+            try:
+                mc_svc.finalize(db, mc, actor_user_id=uuid.UUID(current_user.user_id))
+            except MaterialConsumptionError as e:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
     # NOTE: FG QR Generation is intentionally NOT triggered from here.
     # Saving Total FG Pallets Generated only records Production's own

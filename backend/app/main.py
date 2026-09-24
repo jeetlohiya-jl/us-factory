@@ -10,7 +10,7 @@ from app.api import (
     reference, inward_vehicle_inspections, me, inward_qc,
     rm_qr, rm_storage, fg_qr, fg_storage, production, ipqc, rqc, rqc_coa, locations, vendors, skus,
     machines, material_consumption, users, customer_shipment, shipment_picking,
-    outward_vehicle_inspection, traceability, hold_release, portfolio_access,
+    outward_vehicle_inspection, traceability, hold_release, portfolio_access, customers,
 )
 
 settings = get_settings()
@@ -71,6 +71,7 @@ app.include_router(me.router)
 app.include_router(users.router)
 app.include_router(hold_release.router)
 app.include_router(portfolio_access.router)
+app.include_router(customers.router)
 
 
 @app.get("/api/v1/health")

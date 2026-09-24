@@ -587,29 +587,24 @@ export default function MaterialConsumptionWizard({
 
           {page === 1 ? (
             <>
-              <div className="section-label" style={{ marginTop: 0 }}>Production Details</div>
-              <div className="form-grid" style={{ marginBottom: 18 }}>
-                <div className="field">
-                  <label>Shift</label>
-                  <select disabled={!canEdit} value={detail.shift || ""} onChange={(e) => handleShiftChange(e.target.value)}>
-                    <option value="">Select</option>
-                    {shifts.map((s) => <option key={s} value={s}>{s}</option>)}
-                  </select>
-                </div>
-                {/* Shipment Number used to be shown here too, but it's never
-                    typed in on this page -- it's only filled automatically
-                    once the first RM pallet is scanned on Page 2 (material_
-                    consumption_service.add_primary_pallet), so showing it
-                    here just displayed a confusing permanently-empty
-                    placeholder. It's still surfaced, read-only, in the
-                    header sub-line above (both pages) the moment it's
-                    actually known -- nothing is lost by dropping it from
-                    this page's own field grid. */}
-              </div>
-
-              <div className="section-label">Machines</div>
+              <div className="section-label" style={{ marginTop: 0 }}>Machines</div>
+              {/* Shift is one record-level field shared across the whole
+                  record (not per-machine), but it's shown inline in the
+                  same row as Machine 1 -- rather than its own separate
+                  "Production Details" row above -- per explicit request to
+                  keep Machine and Shift next to each other instead of on
+                  their own lines. */}
               {detail.machine_entries.map((entry, i) => (
                 <div key={entry.id} className="form-grid" style={{ marginBottom: 10, alignItems: "end" }}>
+                  {i === 0 && (
+                    <div className="field">
+                      <label>Shift</label>
+                      <select disabled={!canEdit} value={detail.shift || ""} onChange={(e) => handleShiftChange(e.target.value)}>
+                        <option value="">Select</option>
+                        {shifts.map((s) => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </div>
+                  )}
                   <div className="field">
                     <label>Machine {i + 1}</label>
                     <select

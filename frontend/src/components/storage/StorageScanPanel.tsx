@@ -102,6 +102,20 @@ export default function StorageScanPanel({
     }
   }
 
+  // "Save & Store Another" -- resets the panel back to Step 1 instead of
+  // closing it, so an operator storing a whole batch of pallets doesn't
+  // have to reopen this panel from the parent page after every single one.
+  // Entirely local: this panel already owns all of its own scan/confirm
+  // state, so no parent-side change is needed.
+  function handleStoreAnother() {
+    setPallet(null);
+    setLocation(null);
+    setPalletInput("");
+    setLocationInput("");
+    setConfirmed(false);
+    setError(null);
+  }
+
   return (
     <>
       <div className="panel-overlay open" onClick={onClose} />
@@ -199,7 +213,9 @@ export default function StorageScanPanel({
         <div className="sp-foot">
           <button className="btn btn-ghost" onClick={onClose}>{confirmed ? "Done" : "Cancel"}</button>
           <div className="sp-foot-right">
-            {!confirmed && (
+            {confirmed ? (
+              <button className="btn btn-primary" onClick={handleStoreAnother}>+ Store Another Pallet</button>
+            ) : (
               <button className="btn btn-primary" disabled={busy || !pallet || !location} onClick={handleConfirm}>Confirm Storage</button>
             )}
           </div>

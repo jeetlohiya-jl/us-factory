@@ -90,6 +90,18 @@ export interface Vendor {
   is_active: boolean;
 }
 
+// 2026-09-24 -- Customer master data for Goods Outward's Customer /
+// Recipient dropdown (backend/app/db/models.py's Customer model). Unlike
+// Vendor, this is served straight through FastAPI (backend/app/api/
+// customers.py), not Supabase-direct -- there's no existing Supabase RLS
+// wiring to reuse for a brand-new table, and CRUD-via-FastAPI is simpler
+// and equally correct here.
+export interface Customer {
+  id: string;
+  name: string;
+  is_active: boolean;
+}
+
 export interface ChecklistItemRef {
   id: string;
   label: string;

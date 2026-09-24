@@ -1,0 +1,175 @@
+"use client";
+import { useCallback, useEffect, useState } from "react";
+import { api, ApiError } from "@/lib/api";
+import { useMe } from "@/lib/useMe";
+import type { Customer } from "@/lib/types";
+
+/**
+ * Admin screen for the Customer master list backing Goods Outward's
+ * Customer / Recipient dropdown (2026-09-24), replacing what used to be a
+ * freehand text field on Customer Shipment / Goods Outward's "New Record"
+ * panel. Gated on the same customer_shipment module permission that
+ * module already uses (can_edit to add/deactivate/delete) rather than a
+ * separate module -- same "reuse the permission of the module this master
+ * data serves" convention as /vendors's own page.
+ */
+export default function CustomersPage() {
+  const me = useMe();
+  const perms = me?.permissions.customer_shipment;
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [newName, setNewName] = useState("");
+  const [showInactive, setShowInactive] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingValue, setEditingValue] = useState("");
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setCustomers(await api.customers({ includeInactive: true }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load customers");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { refresh(); }, [refresh]);
+
+  async function handleAdd() {
+    const name = newName.trim();
+    if (!name) return;
+    setError(null);
+    try {
+      await api.createCustomer(name);
+      setNewName("");
+      refresh();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Failed to add customer");
+    }
+  }
+
+  async function handleSaveName(c: Customer) {
+    const name = editingValue.trim();
+    if (!name) return;
+    setError(null);
+    try {
+      await api.updateCustomer(c.id, { name });
+      setEditingId(null);
+      refresh();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Failed to update customer");
+    }
+  }
+
+  async function toggleActive(c: Customer) {
+    try {
+      await api.updateCustomer(c.id, { is_active: !c.is_active });
+      refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to update customer");
+    }
+  }
+
+  async function handleDelete(c: Customer) {
+    if (!confirm(`Delete "${c.name}"? This cannot be undone.`)) return;
+    try {
+      await api.deleteCustomer(c.id);
+      refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to delete customer");
+    }
+  }
+
+  const canEdit = !!perms?.can_edit;
+  const visible = customers.filter((c) => showInactive || c.is_active);
+
+  return (
+    <>
+      <div className="page-head2">
+        <div>
+          <h1>Customers</h1>
+          <div className="desc">Manages the Customer list used by the Customer / Recipient dropdown on Goods Outward.</div>
+        </div>
+      </div>
+
+      {error && <div className="error-banner">{error}</div>}
+
+      {canEdit && (
+        <div className="card" style={{ marginBottom: 20, padding: 18 }}>
+          <div className="section-label">Add Customer</div>
+          <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
+            <div className="field" style={{ flex: 1, minWidth: 220 }}>
+              <label>Customer / Recipient Name</label>
+              <input
+                value={newName} placeholder="e.g. 3P China"
+                onChange={(e) => setNewName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleAdd()}
+              />
+            </div>
+            <button className="btn btn-primary" disabled={!newName.trim()} onClick={handleAdd}>+ Add Customer</button>
+          </div>
+        </div>
+      )}
+
+      <div className="toolbar">
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5 }}>
+          <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} />
+          Show inactive customers
+        </label>
+        <div className="showing-count">{loading ? "Loading…" : `${visible.length} customer${visible.length === 1 ? "" : "s"}`}</div>
+      </div>
+
+      <div className="card card-flush">
+        <table className="data">
+          <thead><tr><th>Customer Name</th><th>Status</th><th></th></tr></thead>
+          <tbody>
+            {visible.length === 0 ? (
+              <tr className="empty-row"><td colSpan={3}>{loading ? "Loading…" : "No customers yet — add one above."}</td></tr>
+            ) : (
+              visible.map((c) => (
+                <tr key={c.id}>
+                  <td className="mono">
+                    {editingId === c.id ? (
+                      <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                        <input
+                          autoFocus value={editingValue}
+                          onChange={(e) => setEditingValue(e.target.value)}
+                          onKeyDown={(e) => e.key === "Enter" && handleSaveName(c)}
+                        />
+                        <a className="btn-tertiary" style={{ cursor: "pointer" }} onClick={() => handleSaveName(c)}>Save</a>
+                        <a className="btn-tertiary" style={{ cursor: "pointer" }} onClick={() => setEditingId(null)}>Cancel</a>
+                      </span>
+                    ) : (
+                      <a
+                        style={{ cursor: canEdit ? "pointer" : "default", textDecoration: canEdit ? "underline" : "none" }}
+                        onClick={() => { if (canEdit) { setEditingId(c.id); setEditingValue(c.name); } }}
+                      >
+                        {c.name}
+                      </a>
+                    )}
+                  </td>
+                  <td><span className={`badge ${c.is_active ? "accepted" : "draft"}`}>{c.is_active ? "Active" : "Inactive"}</span></td>
+                  <td style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                    {canEdit && (
+                      <>
+                        <a className="btn-tertiary" style={{ cursor: "pointer" }} onClick={() => toggleActive(c)}>
+                          {c.is_active ? "Deactivate" : "Reactivate"}
+                        </a>
+                        <a className="btn-tertiary" style={{ cursor: "pointer", color: "var(--red)" }} onClick={() => handleDelete(c)}>
+                          Delete
+                        </a>
+                      </>
+                    )}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}

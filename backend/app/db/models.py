@@ -163,6 +163,22 @@ class Vendor(ProductScoped, Base):
     __table_args__ = (UniqueConstraint("category", "name"),)
 
 
+class Customer(ProductScoped, Base):
+    """Customer master data for Goods Outward's "Customer / Recipient"
+    field (2026-09-24) -- same admin-managed-list pattern as Vendor/Machine
+    above, replacing what used to be a freehand text input on Customer
+    Shipment / Goods Outward. customer_shipments.customer stays a plain
+    text snapshot (not a foreign key), so renaming/deactivating a customer
+    here never rewrites an already-created shipment's history."""
+    __tablename__ = "customers"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    name = Column(Text, nullable=False)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+    __table_args__ = (UniqueConstraint("product", "name"),)
+
+
 class Machine(ProductScoped, Base):
     """Machine master data for Material Consumption / Production, following
     the exact same admin-managed-list pattern as Vendor (see Vendor above)
@@ -1191,6 +1207,14 @@ class MaterialConsumptionPallet(Base):
     fully_consumed = Column(Boolean, nullable=False, default=True)
     sort_order = Column(Integer, nullable=False, default=0)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    # 2026-09-24 -- this pallet's RM Storage location, remembered at the
+    # moment it was scanned into this row (see material_consumption_
+    # service's _release_storage_location), so that if the operator removes
+    # this row again before finalizing (a mistaken scan), the pallet's
+    # StorageRecord can be recreated at the exact same location instead of
+    # the pallet silently vanishing from RM Storage's inventory. Mirrors
+    # ShipmentPickingPick.location_id's own remembered-location convention.
+    released_location_id = Column(UUID(as_uuid=True), ForeignKey("locations.id"), nullable=True)
 
     machine_entry = relationship("MaterialConsumptionMachineEntry", back_populates="pallets")
     pallet = relationship("Pallet")

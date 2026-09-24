@@ -187,7 +187,7 @@ def save_rqc_record(
         .options(joinedload(models.RqcRecord.defect_results))
         .options(joinedload(models.RqcRecord.coa_observations))
         .options(joinedload(models.RqcRecord.production_run))
-        .options(joinedload(models.RqcRecord.machine_allocations))
+        .options(joinedload(models.RqcRecord.machine_allocations).joinedload(models.RqcMachineAllocation.machine))
         .filter(models.RqcRecord.id == record_id)
         .first()
     )
@@ -303,7 +303,17 @@ def create_rqc_approval_entry(
         db.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
 
-    db.refresh(entry)
+    # Re-query with machine_allocations -> machine eager-loaded (matching
+    # the GET-refetch routes below) rather than db.refresh(entry) + letting
+    # _serialize_approval_entry's a.machine.code access lazy-load each
+    # allocation's machine one row at a time -- this is the actual N+1 on
+    # the hot "record an approval" write path, not just a re-fetch.
+    entry = (
+        db.query(models.RqcApprovalEntry)
+        .options(joinedload(models.RqcApprovalEntry.machine_allocations).joinedload(models.RqcMachineAllocation.machine))
+        .filter(models.RqcApprovalEntry.id == entry.id)
+        .one()
+    )
     return _serialize_approval_entry(entry, fg_qr_batch_id=fg_qr_batch_id, fg_pallets_generated=rec.fg_pallets_generated)
 
 
@@ -326,7 +336,7 @@ def generate_fg_qr_for_approval_entry(
     """
     entry = (
         db.query(models.RqcApprovalEntry)
-        .options(joinedload(models.RqcApprovalEntry.machine_allocations))
+        .options(joinedload(models.RqcApprovalEntry.machine_allocations).joinedload(models.RqcMachineAllocation.machine))
         .options(joinedload(models.RqcApprovalEntry.rqc_record))
         .filter(models.RqcApprovalEntry.id == entry_id, models.RqcApprovalEntry.rqc_record_id == record_id)
         .first()
