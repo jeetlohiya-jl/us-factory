@@ -71,7 +71,7 @@ export default function GoodsOutwardDetailPanel({
     try {
       const pallet = await api.previewScannedFgPallet(raw);
       if (!pallet) {
-        setError("No Finished Goods pallet found for that scan.");
+        setError("No FG pallet found for that scan.");
         return;
       }
       const target = record.line_items.find(
@@ -171,15 +171,15 @@ export default function GoodsOutwardDetailPanel({
 
           {canPick && !allComplete && (
             <div className="detail-card">
-              <h3>Pick Finished Goods Pallets</h3>
+              <h3>Pick FG Pallets</h3>
               <div className="hint-text" style={{ marginBottom: 10 }}>
-                Scan any Finished Goods pallet QR for this shipment — it will automatically be matched to the correct SKU/Version line item above. Over-picking and duplicate picks are blocked.
+                Scan any FG pallet QR for this shipment — it will automatically be matched to the correct SKU/Version line item above. Over-picking and duplicate picks are blocked.
               </div>
               {error && <div className="hint-text" style={{ display: "block", color: "var(--red)", fontWeight: 700, marginBottom: 10 }}>{error}</div>}
               <div className="scan-grid" style={{ gridTemplateColumns: "1fr" }}>
                 <div className="scan-card">
                   <div className="scan-icon">📦</div>
-                  <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 6 }}>Scan Finished Goods Pallet QR</div>
+                  <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 6 }}>Scan FG Pallet QR</div>
                   {cameraOpen ? (
                     <CameraQrScanner onDetected={handleCameraDetected} onCancel={() => setCameraOpen(false)} />
                   ) : (
@@ -203,7 +203,7 @@ export default function GoodsOutwardDetailPanel({
           )}
 
           <div className="detail-card">
-            <h3>Picked Finished Goods Pallets</h3>
+            <h3>Picked FG Pallets</h3>
             {record.line_items.every((li) => li.picks.length === 0) ? (
               <div className="hint-text">No pallets picked yet for this shipment.</div>
             ) : (

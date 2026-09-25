@@ -8,6 +8,7 @@ import { useImmediateThenDebounced } from "@/lib/useImmediateThenDebounced";
 import type { ProductionListItem, ProductionDetail, Machine } from "@/lib/types";
 import ProductionDetailPanel from "@/components/production/ProductionDetailPanel";
 import MoreMenu from "@/components/inward-vehicle-inspection/MoreMenu";
+import ConfirmDialog from "@/components/inward-vehicle-inspection/ConfirmDialog";
 import Pagination from "@/components/Pagination";
 import { MODULE_NAMES, T } from "@/lib/terms";
 
@@ -34,6 +35,8 @@ function ProductionPageContent() {
   const [machines, setMachines] = useState<Machine[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ProductionListItem | null>(null);
+  const [deleteBlocked, setDeleteBlocked] = useState<string | null>(null);
 
   const [search, setSearch] = useState("");
   const [date, setDate] = useState("");
@@ -103,7 +106,7 @@ function ProductionPageContent() {
           <h1>{MODULE_NAMES.production}</h1>
           <div className="desc">Every production record created to date.</div>
         </div>
-        <span className="auto-note">Records are created automatically from Raw Material Consumption.</span>
+        <span className="auto-note">Records are created automatically from RM Consumption.</span>
       </div>
 
       <div className="toolbar">
@@ -188,6 +191,8 @@ function ProductionPageContent() {
                       <MoreMenu
                         canEdit={!!perms?.can_fill_section}
                         onEdit={() => openDetail(r.id, "edit")}
+                        canDelete={!!perms?.can_delete}
+                        onDelete={() => setDeleteTarget(r)}
                       />
                     </td>
                   </tr>
@@ -198,6 +203,34 @@ function ProductionPageContent() {
         </table>
         <Pagination page={page} pageSize={50} matchedCount={matchedCount} onPageChange={setPage} loading={loading} />
       </div>
+
+      {deleteTarget && !deleteBlocked && (
+        <ConfirmDialog
+          title="Delete this Production record?"
+          message={`This will permanently delete Production Run ${deleteTarget.run_number} and its IPQC record. This cannot be undone.`}
+          confirmLabel="Delete"
+          danger
+          onConfirm={async () => {
+            try {
+              await api.deleteProductionRun(deleteTarget.id);
+              setDeleteTarget(null);
+              invalidateListCache(MODULE);
+              refresh();
+            } catch (e) {
+              setDeleteBlocked(e instanceof Error ? e.message : "Failed to delete record");
+            }
+          }}
+          onCancel={() => setDeleteTarget(null)}
+        />
+      )}
+      {deleteBlocked && (
+        <ConfirmDialog
+          title="Can't delete this record"
+          message=""
+          blockedNote={deleteBlocked}
+          onCancel={() => { setDeleteBlocked(null); setDeleteTarget(null); }}
+        />
+      )}
 
       {openRecord && (
         <ProductionDetailPanel

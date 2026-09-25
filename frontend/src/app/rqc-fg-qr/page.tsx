@@ -178,7 +178,7 @@ function FactoryRqcFgQrPageContent() {
       <div className="page-head2">
         <div>
           <h1>{MODULE_NAMES.rqc_fg_qr} Generation</h1>
-          <div className="desc">Final Quality Control (QMP05) and Finished Goods QR Generation for the Factory product -- Production → RQC → Approved Pallets → Finished Goods QR.</div>
+          <div className="desc">Final Quality Control (QMP05) and FG QR Generation for the Factory product -- Production → RQC → Approved Pallets → FG QR.</div>
         </div>
         <button className="btn btn-primary" disabled={!perms?.can_create} onClick={() => setShowWizard(true)}>+ New Record</button>
       </div>
@@ -263,7 +263,7 @@ function FactoryRqcFgQrPageContent() {
 
       {showFgQrPanel && fgQr && (
         <QrGenerationPanel
-          title="Finished Goods QR Generation"
+          title="FG QR Generation"
           detail={fgQr}
           canGenerate={!!fgQrPerms?.can_edit}
           onGenerate={handleGenerateFgQr}

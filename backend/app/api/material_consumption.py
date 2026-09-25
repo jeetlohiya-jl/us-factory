@@ -104,7 +104,7 @@ def _filtered_mc_query(db: Session, search: str, category: str, date: str, statu
 def _get_or_404(db: Session, mc_id: uuid.UUID) -> models.MaterialConsumption:
     mc = _q(db).filter(models.MaterialConsumption.id == mc_id).first()
     if not mc:
-        raise HTTPException(status_code=404, detail="Raw Material Consumption record not found")
+        raise HTTPException(status_code=404, detail="RM Consumption record not found")
     return mc
 
 
@@ -180,7 +180,7 @@ def update_basic(
 ):
     mc = _get_or_404(db, mc_id)
     if mc.status != "draft":
-        raise HTTPException(status_code=422, detail="This Raw Material Consumption record has already been saved and cannot be changed.")
+        raise HTTPException(status_code=422, detail="This RM Consumption record has already been saved and cannot be changed.")
     if payload.shift is not None:
         mc.shift = payload.shift or None
     if payload.shipment_number is not None:

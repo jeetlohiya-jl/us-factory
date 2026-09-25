@@ -255,7 +255,7 @@ export default function IpqcDetailPanel({
 
           {showContextCards && (
             <div className="detail-card">
-              <h3>Production &amp; Raw Material Consumption Source</h3>
+              <h3>Production &amp; RM Consumption Source</h3>
               <div className="detail-grid">
                 <Kv
                   label="Production Run"
@@ -266,7 +266,7 @@ export default function IpqcDetailPanel({
                   ) : "—"}
                 />
                 <Kv
-                  label="Raw Material Consumption"
+                  label="RM Consumption"
                   value={record.material_consumptions.length === 0 ? "—" : (
                     <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                       {record.material_consumptions.map((mc) => (

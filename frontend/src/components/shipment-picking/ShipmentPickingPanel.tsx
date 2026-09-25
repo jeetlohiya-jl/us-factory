@@ -110,7 +110,7 @@ export default function ShipmentPickingPanel({
             <div className="scan-grid" style={{ gridTemplateColumns: "1fr" }}>
               <div className="scan-card">
                 <div className="scan-icon">📦</div>
-                <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 6 }}>Scan Finished Goods Pallet QR</div>
+                <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 6 }}>Scan FG Pallet QR</div>
                 {cameraOpen ? (
                   <CameraQrScanner onDetected={handleCameraDetected} onCancel={() => setCameraOpen(false)} />
                 ) : (

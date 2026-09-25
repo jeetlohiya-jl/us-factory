@@ -159,7 +159,7 @@ export default function RmStoragePage() {
 
       {showScan && (
         <StorageScanPanel
-          title="New Raw Material Storage Record"
+          title="New RM Storage Record"
           hintSub="Scan the Pallet, then scan the Location."
           onScanPallet={(payload) => api.scanRmPallet(payload, scanSource)}
           onScanLocation={api.scanRmLocation}

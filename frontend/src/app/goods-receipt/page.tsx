@@ -125,7 +125,7 @@ export default function GoodsReceiptPage() {
       <div className="page-head2">
         <div>
           <h1>{MODULE_NAMES.goods_receipt}</h1>
-          <div className="desc">Receive purchase orders container by container — each inwarded container gets its own Raw Material pallet QRs.</div>
+          <div className="desc">Receive purchase orders container by container — each inwarded container gets its own RM pallet QRs.</div>
         </div>
         <button
           className="btn btn-primary"

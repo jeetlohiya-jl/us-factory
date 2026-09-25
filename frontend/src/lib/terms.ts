@@ -2,8 +2,8 @@
  * The ONE source of display names across the Factory platform (and the US
  * Factory screens it shares). Every concept has exactly one name:
  *
- *   Raw Material            never "RM"
- *   Finished Goods          never "FG"
+ *   RM                      Raw Material -- the short form is the name, never spelled out
+ *   FG                      Finished Goods -- likewise
  *   FNP Tray                never "FNPG" / "FG Non-Padded Tray" / "FNP"
  *   Base Tray
  *   SKU                     the product (e.g. 3P) -- never "SKU Name" / "SKU Code" for it
@@ -12,7 +12,7 @@
  *   Shipment Number         never "Shipment No."
  *   Pallet Number           never "Pallet ID"
  *   Quantity                never "Qty"
- *   Raw Material Consumption  never "Material Consumption"
+ *   RM Consumption          never "Material Consumption" / "Raw Material Consumption"
  *   On Hold                 never "hold" / "Hold"
  *
  * Display text only: internal IDs, database values (e.g. category "fnp_tray",
@@ -21,8 +21,8 @@
  */
 
 export const T = {
-  rawMaterial: "Raw Material",
-  finishedGoods: "Finished Goods",
+  rawMaterial: "RM",
+  finishedGoods: "FG",
   baseTray: "Base Tray",
   fnpTray: "FNP Tray",
   sku: "SKU",

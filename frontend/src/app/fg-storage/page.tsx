@@ -151,7 +151,7 @@ export default function FgStoragePage() {
 
       {showScan && (
         <StorageScanPanel
-          title="New Finished Goods Storage Record"
+          title="New FG Storage Record"
           hintSub="Scan the Pallet, then scan the Location. Zone is auto-set to FPG."
           onScanPallet={api.scanFgPallet}
           onScanLocation={api.scanFgLocation}

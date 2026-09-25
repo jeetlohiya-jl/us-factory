@@ -298,7 +298,7 @@ export default function FactoryRqcWizard({
                 </div>
               </div>
               <div className="hint-text" style={{ marginTop: 10 }}>
-                Saving as Approved will automatically generate Finished Goods QR codes for the Approved Pallets above.
+                Saving as Approved will automatically generate FG QR codes for the Approved Pallets above.
               </div>
             </div>
           )}

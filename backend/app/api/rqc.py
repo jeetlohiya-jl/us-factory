@@ -206,6 +206,11 @@ def save_rqc_record(
     rec.machine_id = payload.machine_id
     rec.shift = payload.shift
     rec.activity_date = payload.activity_date
+    # One container (Shipment Number) is consumed across several shifts, so
+    # several Production Runs can share it. With this activity's date +
+    # shift known, link to THAT run rather than the most recent one.
+    # (Blocked above once FG QR codes exist, so nothing printed moves.)
+    rqc_service.relink_to_run_for_activity(db, rec)
 
     if (
         payload.pallets_tested is not None
