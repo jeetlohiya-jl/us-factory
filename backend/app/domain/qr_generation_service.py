@@ -29,7 +29,7 @@ def _resolve_qc_sku(qc: models.InwardQcRecord) -> tuple[str | None, str | None, 
     """
     Manual QC categories (Glue, Soaker Pad, Polybag, CFB) carry their single
     SKU directly on the InwardQcRecord row (sku_code_id/sku_code_snapshot).
-    Base Tray / FNP Tray QC — auto-created from an approved Vehicle
+    Base Tray / LNP Tray QC — auto-created from an approved Vehicle
     Inspection, which can list multiple SKU line items — carries its SKU(s)
     in the separate line_item_snapshots table instead; the top-level columns
     are never populated for that category. Fall back to the first line-item
@@ -63,7 +63,7 @@ def _resolve_qc_country(db: Session, qc: models.InwardQcRecord) -> str:
 
     The vendor lookup category is NOT always qc.category: a Tray-family QC
     record's category now mirrors its source Inward Vehicle Inspection
-    directly ("tray" or "fnp_tray" -- see vehicle_inspection_service.
+    directly ("tray" or "lnp_tray" -- see vehicle_inspection_service.
     propagate_to_qc), so for a current record this already matches. This
     fallback exists for a QC record created before that passthrough existed
     (qc.category == "fgtray", a value the Vendors admin screen's managed

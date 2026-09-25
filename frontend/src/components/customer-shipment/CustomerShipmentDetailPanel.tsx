@@ -56,12 +56,11 @@ export default function CustomerShipmentDetailPanel({
           <div className="detail-card">
             <h3>Line Items</h3>
             <table className="qc-obs-table">
-              <thead><tr><th>{T.sku}</th><th>{T.skuVersion}</th><th>Quantity</th><th>Pcs</th><th>Pcs/Sleeve</th></tr></thead>
+              <thead><tr><th>{T.sku}</th><th>Quantity</th><th>Pcs</th><th>Trays/Sleeve</th></tr></thead>
               <tbody>
                 {detail.line_items.map((li) => (
                   <tr key={li.id}>
                     <td className="mono">{li.sku_code || "—"}</td>
-                    <td>{li.sku_version || "—"}</td>
                     <td>{li.pallets_required}</td>
                     <td>{li.pcs ?? "—"}</td>
                     <td>{li.pcs_per_sleeve || "—"}</td>
@@ -74,12 +73,11 @@ export default function CustomerShipmentDetailPanel({
           <div className="detail-card">
             <h3>Shipment Picking Requests</h3>
             <table className="qc-obs-table">
-              <thead><tr><th>{T.sku}</th><th>{T.skuVersion}</th><th>Quantity Required</th><th>Quantity Picked</th><th>Status</th></tr></thead>
+              <thead><tr><th>{T.sku}</th><th>Quantity Required</th><th>Quantity Picked</th><th>Status</th></tr></thead>
               <tbody>
                 {detail.picking_requests.map((r) => (
                   <tr key={r.id}>
                     <td className="mono">{r.sku_code || "—"}</td>
-                    <td>{r.sku_version || "—"}</td>
                     <td>{r.pallets_required}</td>
                     <td>{r.pallets_picked}</td>
                     <td><SpStatusBadge status={r.status} /></td>

@@ -334,7 +334,7 @@ def delete_production_run(run_id: uuid.UUID, db: Session = Depends(get_db), _per
 
     A run is created automatically by Raw Material Consumption (the first
     scanned pallet), so it can only go once:
-      - no RM Consumption record uses it (its scanned pallets ARE this run's
+      - no RM Requisition record uses it (its scanned pallets ARE this run's
         consumption -- delete / correct that record first), and
       - no RQC record, FG QR batch or FG pallet comes from it.
     Its IPQC record (and that IPQC's inspection data / Hold & Release) is
@@ -347,7 +347,7 @@ def delete_production_run(run_id: uuid.UUID, db: Session = Depends(get_db), _per
     if mcs:
         raise HTTPException(
             status_code=409,
-            detail=f"{run.run_number} is used by {mcs} RM Consumption record{'s' if mcs != 1 else ''}. "
+            detail=f"{run.run_number} is used by {mcs} RM Requisition record{'s' if mcs != 1 else ''}. "
                    "Delete or correct those first, then delete this Production record.",
         )
     rqcs = db.query(models.RqcRecord).filter(models.RqcRecord.production_run_id == run.id).all()

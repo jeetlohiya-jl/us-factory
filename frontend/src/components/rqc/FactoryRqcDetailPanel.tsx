@@ -157,7 +157,6 @@ export default function FactoryRqcDetailPanel({
             <div className="detail-grid">
               <Kv label={T.shipmentNumber} value={record.shipment_number ? <span className="mono">{record.shipment_number}</span> : "—"} />
               <Kv label={T.sku} value={record.sku_code ? <span className="mono">{record.sku_code}</span> : "—"} />
-              <Kv label={T.skuVersion} value={record.sku_version} />
               <Kv label="Manufacturer" value={record.manufacturer || "—"} />
               <Kv label="Status" value={<StatusBadge status={record.status} />} />
             </div>

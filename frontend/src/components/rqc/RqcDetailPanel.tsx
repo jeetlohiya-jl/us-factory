@@ -438,7 +438,6 @@ export default function RqcDetailPanel({
             <h3>Record Details</h3>
             <div className="detail-grid">
               <Kv label={T.sku} value={record.sku_code ? <span className="mono">{record.sku_code}</span> : "—"} />
-              <Kv label={T.skuVersion} value={record.sku_version} />
               {/* Manufacturer is no longer user-entered -- always "Cirkla
                   INC" (rqc_service.RQC_MANUFACTURER_PLACEHOLDER), set
                   server-side at creation. Read-only everywhere. */}

@@ -204,14 +204,14 @@ def create_manual_draft(
     current_user: AuthenticatedUser = Depends(get_current_user),
     _perm=Depends(require_qc_permission("create")),
 ):
-    """Tray-family (Base Tray / FNP Tray) QC is NEVER manually created — it is
+    """Tray-family (Base Tray / LNP Tray) QC is NEVER manually created — it is
     auto-created only from an approved Vehicle Inspection (see
     vehicle_inspection_service.propagate_to_qc). '+ New Record' on this
     module only ever offers the four manual categories."""
     if category not in svc.MANUAL_CATEGORIES:
         raise HTTPException(
             status_code=400,
-            detail="Base Tray / FNP Tray QC cannot be created manually — it is generated automatically when its Inward Vehicle Inspection is approved.",
+            detail="Base Tray / LNP Tray QC cannot be created manually — it is generated automatically when its Inward Vehicle Inspection is approved.",
         )
     shipment_number, is_auto = svc.next_shipment_number(db, category)
     qty_label = svc.quantity_label_for(db, category)
@@ -266,7 +266,7 @@ async def upload_coa(
 ):
     qc = _get_or_404(db, qc_id)
     if qc.category in svc.TRAY_FAMILY_CATEGORIES:
-        raise HTTPException(status_code=400, detail="COA is not applicable to Base Tray / FNP Tray QC.")
+        raise HTTPException(status_code=400, detail="COA is not applicable to Base Tray / LNP Tray QC.")
     content = await file.read()
     ext = (file.filename or "coa").rsplit(".", 1)[-1] if "." in (file.filename or "") else "pdf"
     storage_path = f"qc/{qc_id}/coa_{uuid.uuid4().hex[:8]}.{ext}"
@@ -331,7 +331,7 @@ def save_fgtray_answers(
 ):
     qc = _get_or_404(db, qc_id)
     if qc.category not in svc.TRAY_FAMILY_CATEGORIES:
-        raise HTTPException(status_code=400, detail="Only applicable to Base Tray / FNP Tray QC.")
+        raise HTTPException(status_code=400, detail="Only applicable to Base Tray / LNP Tray QC.")
     valid_ids = {c.id for c in svc.get_fgtray_criteria(db)}
     for item in payload:
         if item.criteria_id not in valid_ids:
@@ -358,7 +358,7 @@ def save_attributes(
 ):
     qc = _get_or_404(db, qc_id)
     if qc.category in svc.TRAY_FAMILY_CATEGORIES:
-        raise HTTPException(status_code=400, detail="Not applicable to Base Tray / FNP Tray QC.")
+        raise HTTPException(status_code=400, detail="Not applicable to Base Tray / LNP Tray QC.")
     valid_ids = {d.id for d in svc.get_attribute_definitions(db, qc.category)}
     for item in payload:
         if item.attribute_definition_id not in valid_ids:

@@ -106,7 +106,7 @@ function ProductionPageContent() {
           <h1>{MODULE_NAMES.production}</h1>
           <div className="desc">Every production record created to date.</div>
         </div>
-        <span className="auto-note">Records are created automatically from RM Consumption.</span>
+        <span className="auto-note">Records are created automatically from RM Requisition.</span>
       </div>
 
       <div className="toolbar">

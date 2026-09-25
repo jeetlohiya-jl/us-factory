@@ -43,7 +43,7 @@ from app.domain.id_counters import next_seq
 # hardcoded "US" for every pallet; it's now the 2-letter country the pallet
 # was actually packed in (see prefix_for_category below).
 CATEGORY_SUFFIX = {
-    "tray": "PLT", "fnp_tray": "PLT", "fgtray": "PLT", "pad": "PAD",
+    "tray": "PLT", "lnp_tray": "PLT", "fgtray": "PLT", "pad": "PAD",
     "polybag": "PB", "cfb": "CFB", "glue": "GLUE",
 }
 

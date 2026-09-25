@@ -7,18 +7,20 @@ import type { LocationAdmin } from "@/lib/types";
 import { MODULE_NAMES } from "@/lib/terms";
 import { T } from "@/lib/terms";
 
-// One zone per material. "FNPG" belongs only to FNP Trays -- secondary
-// materials are not FNP, so their zones are just the material. FG stays FPG.
-// (Existing locations keep their names; this is the list for new ones.)
+// One zone per material. "LNPG" belongs only to LNP Trays -- secondary
+// materials are not LNP, so their zones are just the material.
+// 2026-09-25 -- FNPG/FPG zone codes were renamed to LNPG/FG platform-wide,
+// including already-created locations (migration 0057); their physical QR
+// labels need reprinting to match.
 const ZONES: { code: string; label: string }[] = [
   { code: "TRAY", label: T.baseTray },
-  { code: "FNPGTRAY", label: T.fnpTray },
+  { code: "LNPGTRAY", label: T.lnpTray },
   { code: "FILM", label: "Film" },
   { code: "PAD", label: "Soaker Pad" },
   { code: "POLYBAG", label: "Polybag" },
   { code: "CFB", label: "CFB" },
   { code: "GLUE", label: "Glue" },
-  { code: "FPG", label: T.finishedGoods },
+  { code: "FG", label: T.finishedGoods },
 ];
 
 const two = (v: string) => (v.trim() ? v.trim().padStart(2, "0").slice(-2) : "");

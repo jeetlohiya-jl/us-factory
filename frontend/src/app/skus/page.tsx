@@ -12,8 +12,8 @@ import { MODULE_NAMES, T } from "@/lib/terms";
 // prototype's per-machine "Production Details" table exactly.
 const PROD_DETAIL_FIELDS: { key: keyof SkuVersion; label: string; numeric?: boolean }[] = [
   { key: "prod_weight", label: "Weight" },
-  { key: "prod_pcs_per_sleeve", label: "Pcs/Sleeve" },
-  { key: "prod_sleeve_per_case", label: "Sleeve/Case" },
+  { key: "prod_pcs_per_sleeve", label: "Trays/Sleeve" },
+  { key: "prod_sleeve_per_case", label: "Sleeve/Combo" },
   { key: "prod_total_pcs_per_pallet", label: "Total No. of Pcs/Pallet", numeric: true },
   { key: "prod_total_pallets", label: "Total Quantity", numeric: true },
   { key: "prod_target_shots", label: "Target Shots" },
@@ -97,10 +97,10 @@ function SkuVersionDetailsModal({
 }
 
 // An SKU belongs to a material FAMILY, not a stage (migration 0049): one
-// Tray SKU (e.g. 3P) serves Base Tray, FNP Tray and FG -- the stage is
+// Tray SKU (e.g. 3P) serves Base Tray, LNP Tray and FG -- the stage is
 // chosen on each record, never here.
 const MATERIAL_LABELS: Record<string, string> = {
-  tray: "Tray (Base Tray / FNP Tray / FG)", film: "Film", pad: "Soaker Pad", polybag: "Polybag", cfb: "CFB", glue: "Glue",
+  tray: "Tray (Base Tray / LNP Tray / FG)", film: "Film", pad: "Soaker Pad", polybag: "Polybag", cfb: "CFB", glue: "Glue",
 };
 const MANAGED_CATEGORIES: Category[] = ["tray", "film", "pad", "polybag", "cfb", "glue"];
 const MATERIAL_SHORT: Record<string, string> = { ...MATERIAL_LABELS, tray: "Tray" };
@@ -263,7 +263,7 @@ export default function SkusPage() {
       <div className="page-head2">
         <div>
           <h1>{MODULE_NAMES.skus}</h1>
-          <div className="desc">One SKU per product — a Tray SKU (e.g. 3P) is used for Base Tray, FNP Tray and FG alike.</div>
+          <div className="desc">One SKU per product — a Tray SKU (e.g. 3P) is used for Base Tray, LNP Tray and FG alike.</div>
         </div>
       </div>
 

@@ -166,7 +166,7 @@ function InwardQcPageContent() {
       <div className="page-head2">
         <div>
           <h1>Inward QC</h1>
-          <div className="desc">Every Inward QC record created to date, across FNP Tray, Soaker Pad, Polybag and CFB.</div>
+          <div className="desc">Every Inward QC record created to date, across LNP Tray, Soaker Pad, Polybag and CFB.</div>
         </div>
         <button
           className="btn btn-primary"
@@ -193,7 +193,7 @@ function InwardQcPageContent() {
               <div className="f-row"><label>Category</label>
                 <select value={fCategory} onChange={(e) => setFCategory(e.target.value)}>
                   <option value="">All</option>
-                  <option value="fnp_tray">FNP Tray</option>
+                  <option value="lnp_tray">LNP Tray</option>
                   <option value="pad">Soaker Pad</option>
                   <option value="polybag">Polybag</option>
                   <option value="cfb">CFB</option>

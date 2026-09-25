@@ -149,7 +149,7 @@ export default function InwardVehicleInspectionPage() {
                 <select value={fCategory} onChange={(e) => setFCategory(e.target.value)}>
                   <option value="">All</option>
                   <option value="tray">Base Tray</option>
-                  <option value="fnp_tray">FNP Tray</option>
+                  <option value="lnp_tray">LNP Tray</option>
                   <option value="film">Film</option>
                   <option value="pad">Soaker Pad</option>
                   <option value="polybag">Polybag</option>

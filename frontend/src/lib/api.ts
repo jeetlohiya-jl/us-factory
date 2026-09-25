@@ -6,7 +6,7 @@ import type {
   InspectionDetail, InspectionListItem, SkuCode, SkuVersion, ChecklistItemRef, MeResponse, Category, ImageType, LineItem,
   QcMeta, QcListItem, QcDetail, QcManualCategory, QcAttributeDefinition, QcFgtrayCriterion, QcSamplingPlanTier,
   Pallet, QrGenerationListItem, QrGenerationDetail, StorageRecordDetail, LocationRef, LocationAdmin, ProductionRun,
-  Vendor, Machine, Customer, MaterialConsumptionListItem, MaterialConsumptionDetail, SecondaryMaterialCategory,
+  Vendor, Machine, Customer, MaterialConsumptionListItem, MaterialConsumptionDetail, MaterialConsumptionScanPreview, SecondaryMaterialCategory,
   MaterialConsumptionPalletRow, ProductionListItem, ProductionDetail, ProductionMachineEntry, ProductionSavePayload,
   IpqcListItem, IpqcDetail, IpqcSavePayload,
   RqcListItem, RqcDetail, RqcSavePayload, RqcApprovalEntryPayload, RqcCoaEntry, RqcCoaObservation,
@@ -687,11 +687,11 @@ async function listMaterialConsumptionSb(
     .select(needsEntryJoin ? MC_LIST_SELECT_INNER : MC_LIST_SELECT, { count: "exact" });
   if (params.status) q = q.eq("status", params.status);
   if (params.date) q = q.eq("consumption_date", params.date);
-  if (params.category === "fnp_tray") {
+  if (params.category === "lnp_tray") {
     // Same legacy-value note as listQc above: older machine entries were
-    // written with category="fgtray" before FNP Tray became its own
-    // category, so filtering on "fnp_tray" alone would hide them.
-    q = q.in("material_consumption_machine_entries.category", ["fnp_tray", "fgtray"]);
+    // written with category="fgtray" before LNP Tray became its own
+    // category, so filtering on "lnp_tray" alone would hide them.
+    q = q.in("material_consumption_machine_entries.category", ["lnp_tray", "fgtray"]);
   } else if (params.category) {
     q = q.eq("material_consumption_machine_entries.category", params.category);
   }
@@ -731,7 +731,7 @@ async function listMaterialConsumptionSb(
 
 async function getMaterialConsumptionSb(id: string): Promise<MaterialConsumptionDetail> {
   const { data, error } = await supabase.from("material_consumptions").select(MC_DETAIL_SELECT).eq("id", id).single();
-  if (error || !data) throw new ApiError(404, "RM Consumption record not found");
+  if (error || !data) throw new ApiError(404, "RM Requisition record not found");
   return flattenMcDetail(data as unknown as RawMc);
 }
 
@@ -2342,15 +2342,15 @@ export const api = {
     const base = supabase
       .from("inward_qc_records")
       .select("id,shipment_number,category,coa_filename,status,created_at", { count: "exact" });
-    // Every current FNP Tray QC record is written with category="fnp_tray",
+    // Every current LNP Tray QC record is written with category="lnp_tray",
     // but records auto-created before that passthrough existed still carry
     // the old "fgtray" value (see inward_qc_service.TRAY_FAMILY_CATEGORIES)
-    // -- filtering on "fnp_tray" alone would silently hide that older data
+    // -- filtering on "lnp_tray" alone would silently hide that older data
     // from this exact same view, so match both values for that one filter.
     const categoryFilter = { ...params };
     let filtered = applyListFilters(base as unknown as PgQuery, { ...categoryFilter, category: undefined }, ["shipment_number"]);
-    if (params.category === "fnp_tray") {
-      filtered = filtered.in("category", ["fnp_tray", "fgtray"]);
+    if (params.category === "lnp_tray") {
+      filtered = filtered.in("category", ["lnp_tray", "fgtray"]);
     } else if (params.category) {
       filtered = filtered.eq("category", params.category);
     }
@@ -2525,7 +2525,7 @@ export const api = {
   deleteMachine: (id: string) =>
     sbVoid(
       () => supabase.from("machines").delete().eq("id", id),
-      { fk: "This machine is referenced by an existing RM Consumption or Production record and cannot be deleted. Deactivate it instead." }
+      { fk: "This machine is referenced by an existing RM Requisition or Production record and cannot be deleted. Deactivate it instead." }
     ).then(() => invalidateListCache("ref:machines")),
 
   // -- Setup -> Locations (migration 0048). Same pattern as machines: plain
@@ -2593,6 +2593,20 @@ export const api = {
     }),
   scanMaterialConsumptionSecondary: (id: string, entryId: string, payload: string, category: SecondaryMaterialCategory) =>
     request<MaterialConsumptionDetail>(`/api/v1/material-consumption/${id}/machine-entries/${entryId}/scan-secondary`, { method: "POST", body: JSON.stringify({ payload, category }) }),
+  // One generic scanner (2026-09-25): previewMaterialConsumptionScan
+  // resolves + validates a scan without committing it, so the UI can show
+  // an OK/Cancel confirmation with what was actually scanned (pallet or
+  // secondary material -- the pallet's own category decides which, the
+  // operator no longer picks upfront); commitMaterialConsumptionScan is
+  // the OK step, re-resolving the same payload and adding it for real.
+  previewMaterialConsumptionScan: (id: string, entryId: string, payload: string) =>
+    request<MaterialConsumptionScanPreview>(`/api/v1/material-consumption/${id}/machine-entries/${entryId}/scan-preview`, {
+      method: "POST", body: JSON.stringify({ payload }),
+    }),
+  commitMaterialConsumptionScan: (id: string, entryId: string, payload: string, clientTime?: string) =>
+    request<MaterialConsumptionDetail>(`/api/v1/material-consumption/${id}/machine-entries/${entryId}/scan-commit`, {
+      method: "POST", body: JSON.stringify({ payload, client_time: clientTime }),
+    }),
   removeMaterialConsumptionPallet: (id: string, rowId: string) =>
     request<MaterialConsumptionDetail>(`/api/v1/material-consumption/${id}/pallets/${rowId}`, { method: "DELETE" }),
   setMaterialConsumptionPalletQuantity: (id: string, rowId: string, quantity: string, opts?: { unit?: string; fullyConsumed?: boolean }) =>

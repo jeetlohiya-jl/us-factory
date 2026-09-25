@@ -4,7 +4,7 @@ import type { Category, GoodsReceiptEntryDraft, QuantityUnit, SkuCode } from "@/
 import { INWARD_CATEGORY_LABELS, QUANTITY_UNITS, skuFamily } from "@/lib/types";
 import { T } from "@/lib/terms";
 
-/** Category follows the SKU: a Tray SKU is chosen as Base Tray or FNP Tray
+/** Category follows the SKU: a Tray SKU is chosen as Base Tray or LNP Tray
  * (the same tray, two stages); any other SKU's material is its category. */
 function categoryForSku(sku: SkuCode | undefined): Category | "" {
   if (!sku) return "";
@@ -12,7 +12,7 @@ function categoryForSku(sku: SkuCode | undefined): Category | "" {
 }
 const isTraySku = (sku: SkuCode | undefined) => !!sku && skuFamily(sku.category) === "tray";
 // Stages a tray can be RECEIVED in (FG is produced here, never inwarded).
-const TRAY_STAGES: Category[] = ["tray", "fnp_tray"];
+const TRAY_STAGES: Category[] = ["tray", "lnp_tray"];
 
 function newKey() {
   return `gr-${Date.now()}-${Math.random().toString(36).slice(2)}`;

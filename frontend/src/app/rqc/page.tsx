@@ -178,13 +178,13 @@ function RqcPageContent() {
         <table className="data">
           <thead>
             <tr>
-              <th>{T.shipmentNumber}</th><th>{T.sku}</th><th>{T.skuVersion}</th>
+              <th>{T.shipmentNumber}</th><th>{T.sku}</th>
               <th>Manufacturer</th><th>Status</th><th>Date</th><th>COA</th><th></th>
             </tr>
           </thead>
           <tbody>
             {records.length === 0 ? (
-              <tr className="empty-row"><td colSpan={8}>{loading ? "Loading…" : "No records match your search/filters."}</td></tr>
+              <tr className="empty-row"><td colSpan={7}>{loading ? "Loading…" : "No records match your search/filters."}</td></tr>
             ) : (
               records.map((r) => {
                 // Same convention as IPQC/Production: while a record is
@@ -203,7 +203,6 @@ function RqcPageContent() {
                   >
                     <td className="mono">{r.shipment_number || "—"}</td>
                     <td className="mono">{r.sku_code || "—"}</td>
-                    <td>{r.sku_version || "—"}</td>
                     <td>{r.manufacturer || "—"}</td>
                     <td><span className={`badge ${r.status === "approved" ? "approved" : r.status === "hold" ? "hold" : r.status === "pending" ? "pending" : "draft"}`}>{r.status.charAt(0).toUpperCase() + r.status.slice(1)}</span></td>
                     <td>{r.date ? r.date.slice(0, 10) : "—"}</td>

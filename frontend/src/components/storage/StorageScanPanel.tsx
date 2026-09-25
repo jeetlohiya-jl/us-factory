@@ -202,7 +202,6 @@ export default function StorageScanPanel({
                       <tr><td>{T.palletNumber}</td><td>{pallet.display_id}</td></tr>
                       <tr><td>{T.shipmentNumber}</td><td>{pallet.shipment_number || "—"}</td></tr>
                       <tr><td>{T.sku}</td><td>{pallet.sku_code}</td></tr>
-                      <tr><td>{T.skuVersion}</td><td>{pallet.sku_version}</td></tr>
                       <tr><td>Location</td><td>{location.display_id}</td></tr>
                     </tbody>
                   </table>

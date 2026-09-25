@@ -117,7 +117,7 @@ def delete_machine(
         .first()
     )
     if in_use:
-        raise HTTPException(status_code=409, detail="This machine is referenced by an existing RM Consumption or Production record and cannot be deleted. Deactivate it instead.")
+        raise HTTPException(status_code=409, detail="This machine is referenced by an existing RM Requisition or Production record and cannot be deleted. Deactivate it instead.")
     try:
         db.delete(machine)
         db.commit()

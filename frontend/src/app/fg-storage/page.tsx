@@ -152,7 +152,7 @@ export default function FgStoragePage() {
       {showScan && (
         <StorageScanPanel
           title="New FG Storage Record"
-          hintSub="Scan the Pallet, then scan the Location. Zone is auto-set to FPG."
+          hintSub="Scan the Pallet, then scan the Location. Zone is auto-set to FG."
           onScanPallet={api.scanFgPallet}
           onScanLocation={api.scanFgLocation}
           onConfirm={async (p, l) => { await api.confirmFgStorage(p, l); refreshAfterMutation(); }}

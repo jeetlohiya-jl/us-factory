@@ -22,7 +22,7 @@ function Kv({ label, value }: { label: string; value: React.ReactNode }) {
 /**
  * The read-only content of a Vehicle Inspection record — used both by the
  * Vehicle Inspection module's own Record Details panel and, embedded, by the
- * Inward QC module's "Vehicle Inspection" tab for Base Tray/FNP Tray QC
+ * Inward QC module's "Vehicle Inspection" tab for Base Tray/LNP Tray QC
  * records (see inward-qc/RecordDetail.tsx). Always fetched from the real
  * linked record via the API — never duplicated/copied into QC's own data.
  */
@@ -52,10 +52,10 @@ export default function VehicleInspectionDetailContent({ detail }: { detail: Ins
           <div className="hint-text">No SKU entries recorded.</div>
         ) : (
           <table className="qc-obs-table">
-            <thead><tr><th>{T.sku}</th><th>{T.skuVersion}</th><th>Quantity</th></tr></thead>
+            <thead><tr><th>{T.sku}</th><th>Quantity</th></tr></thead>
             <tbody>
               {detail.line_items.map((li) => (
-                <tr key={li.id}><td>{li.sku_code || "—"}</td><td>{li.sku_version || "—"}</td><td>{li.quantity}</td></tr>
+                <tr key={li.id}><td>{li.sku_code || "—"}</td><td>{li.quantity}</td></tr>
               ))}
             </tbody>
           </table>

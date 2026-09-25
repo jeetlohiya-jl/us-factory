@@ -176,13 +176,13 @@ export default function GoodsReceiptPage() {
         <table className="data">
           <thead>
             <tr>
-              <th>PO Number</th><th>Categories</th><th>Vendor</th><th>SKU(s)</th><th>Containers Inwarded</th>
-              <th>Pallets Received</th><th>Status</th><th>Date</th><th></th>
+              <th>PO Number</th><th>Categories</th><th>Vendor</th><th>SKU(s)</th><th>Shipment Inwarded</th>
+              <th>Status</th><th>Date</th><th></th>
             </tr>
           </thead>
           <tbody>
             {items.length === 0 ? (
-              <tr className="empty-row"><td colSpan={9}>{loading ? "Loading…" : "No records match your search/filters."}</td></tr>
+              <tr className="empty-row"><td colSpan={8}>{loading ? "Loading…" : "No records match your search/filters."}</td></tr>
             ) : (
               items.map((r) => (
                 <tr key={r.id} className={r.status === "draft" || r.status === "pending" ? "row-pending" : ""} style={{ cursor: "pointer" }} onClick={() => openRecord(r.id)}>
@@ -195,7 +195,6 @@ export default function GoodsReceiptPage() {
                   <td>{r.vendor_name}</td>
                   <td className="mono">{r.sku_summary || "—"}</td>
                   <td>{r.inwarded_count} / {r.container_count}</td>
-                  <td>{r.pallet_total}</td>
                   <td><GoodsReceiptStatusBadge status={r.status} /></td>
                   <td>{new Date(r.created_at).toLocaleDateString()}</td>
                   <td onClick={(e) => e.stopPropagation()}>

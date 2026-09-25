@@ -1,14 +1,14 @@
 import { CATEGORY_LABELS } from "./terms";
-// "tray" displays as "Base Tray" and "fnp_tray" as "FNP Tray" -- together
+// "tray" displays as "Base Tray" and "lnp_tray" as "LNP Tray" -- together
 // these are Inward Vehicle Inspection's "tray options" (renamed/expanded
 // per the updated spec); "film" is a new material option alongside them.
 // See components/inward-vehicle-inspection/Wizard.tsx's CATEGORY_LABELS.
-export type Category = "tray" | "fnp_tray" | "film" | "pad" | "polybag" | "cfb" | "glue";
+export type Category = "tray" | "lnp_tray" | "film" | "pad" | "polybag" | "cfb" | "glue";
 export type InspectionStatus = "draft" | "hold" | "approved";
 
 // An Inward QC record auto-created from an approved Tray-family Vehicle
 // Inspection carries the SAME category the inspection used ("tray" or
-// "fnp_tray") -- it is never remapped to a different label, so the same
+// "lnp_tray") -- it is never remapped to a different label, so the same
 // category flows unchanged from Inward Vehicle Inspection all the way
 // through Inward QC, Material Consumption, Production, QR Generation and
 // Storage. "fgtray" is kept in this set only so QC records created before
@@ -16,13 +16,13 @@ export type InspectionStatus = "draft" | "hold" | "approved";
 // ever created with that value. Every place that used to special-case
 // `category === "fgtray"` should check `TRAY_FAMILY_QC_CATEGORIES.includes(category)`
 // instead, and every category label lookup should go through
-// QC_CATEGORY_LABELS so "Base Tray"/"FNP Tray" are never spelled a second,
+// QC_CATEGORY_LABELS so "Base Tray"/"LNP Tray" are never spelled a second,
 // inconsistent way (the old "FG Non-Padded Tray" / "FG NonPadded Tray" /
-// "FNPG" wording is retired).
-export const TRAY_FAMILY_QC_CATEGORIES: string[] = ["tray", "fnp_tray", "fgtray"];
+// "LNPG" wording is retired).
+export const TRAY_FAMILY_QC_CATEGORIES: string[] = ["tray", "lnp_tray", "fgtray"];
 
 /** SKUs belong to a material FAMILY, not a stage: the same tray (3P) is a
- * Base Tray when raw, an FNP Tray with film attached and FG once padded --
+ * Base Tray when raw, an LNP Tray with film attached and FG once padded --
  * one SKU. Every SKU picker matches on family (migration 0049). */
 export function skuFamily(category: string | null | undefined): string {
   return category && TRAY_FAMILY_QC_CATEGORIES.includes(category) ? "tray" : (category || "");
@@ -35,7 +35,7 @@ export function skuMatchesCategory(skuCategory: string | null | undefined, recor
 // Goods Receipt Category picker.
 // Both come from the one central list (lib/terms.ts CATEGORY_LABELS).
 export const INWARD_CATEGORY_LABELS: Record<Category, string> = {
-  tray: CATEGORY_LABELS.tray, fnp_tray: CATEGORY_LABELS.fnp_tray, film: CATEGORY_LABELS.film,
+  tray: CATEGORY_LABELS.tray, lnp_tray: CATEGORY_LABELS.lnp_tray, film: CATEGORY_LABELS.film,
   pad: CATEGORY_LABELS.pad, polybag: CATEGORY_LABELS.polybag, cfb: CATEGORY_LABELS.cfb, glue: CATEGORY_LABELS.glue,
 };
 export const QC_CATEGORY_LABELS: Record<string, string> = CATEGORY_LABELS;
@@ -307,7 +307,7 @@ export interface PortfolioAccessUpdateInput {
 // Inward QC
 // ---------------------------------------------------------------------------
 
-export type QcCategory = "tray" | "fnp_tray" | "fgtray" | "pad" | "polybag" | "cfb" | "glue";
+export type QcCategory = "tray" | "lnp_tray" | "fgtray" | "pad" | "polybag" | "cfb" | "glue";
 export type QcManualCategory = "pad" | "polybag" | "cfb" | "glue";
 export type QcStatus = "draft" | "pending" | "accepted" | "onhold";
 export type QcFieldType = "text" | "number" | "dropdown";
@@ -610,6 +610,18 @@ export interface MaterialConsumptionDetail {
   production_run_number: string | null;
   ipqc_id: string | null;
   machine_entries: MaterialConsumptionMachineEntry[];
+}
+
+// One generic scanner (2026-09-25): what scan-preview hands back for the
+// OK/Cancel confirmation, before anything is committed. `role` is "primary"
+// for the tray-family associated pallet, or the matching secondary-material
+// category otherwise -- the scanned pallet decides which, never the operator.
+export interface MaterialConsumptionScanPreview {
+  role: "primary" | SecondaryMaterialCategory;
+  category: string | null;
+  sku_code: string | null;
+  sku_version: string | null;
+  pallet_display_id: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -1588,7 +1600,7 @@ export interface GoodsReceiptEntryDraft {
   id: string | null;
   locked: boolean;
   shipment_number: string;
-  // Only chosen by hand for a Tray SKU (Base Tray / FNP Tray); any other
+  // Only chosen by hand for a Tray SKU (Base Tray / LNP Tray); any other
   // SKU's material is its category.
   category: Category | "";
   sku_code_id: string | null;
@@ -1611,6 +1623,6 @@ export interface GoodsReceiptInwardPayload {
   received_quantity: number;
   unit: QuantityUnit;
   pallet_count: number;
-  // Tray rows synced from Zoho have no stage yet: Base Tray / FNP Tray.
+  // Tray rows synced from Zoho have no stage yet: Base Tray / LNP Tray.
   category?: Category;
 }
