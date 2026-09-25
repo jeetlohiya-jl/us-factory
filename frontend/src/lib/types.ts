@@ -62,6 +62,10 @@ export interface SkuVersion {
   // Rate) reads these off the same per-SKU-Version reference data.
   prod_dimensions?: string | null;
   prod_absorption_rate?: string | null;
+  // 2026-09-25 -- Packing List packaging specs, same "entered once via the
+  // SKU Names admin screen" convention as the prod_* fields above.
+  hs_code?: string | null;
+  case_size?: string | null;
 }
 
 export interface SkuCode {
@@ -99,6 +103,9 @@ export interface Customer {
   id: string;
   name: string;
   is_active: boolean;
+  // 2026-09-25 -- Packing List's "Address" row, and the default starting
+  // value for "Ship To" on every shipment for this customer.
+  address?: string | null;
 }
 
 export interface ChecklistItemRef {
@@ -1374,6 +1381,50 @@ export interface GoodsOutwardDetail {
   created_at: string;
   line_items: GoodsOutwardLineItem[];
   status: "pending" | "partial" | "complete";
+}
+
+// ---------------------------------------------------------------------------
+// 2026-09-25 -- Goods Outward "Print Packing List". A dedicated read (not
+// folded into GoodsOutwardDetail's own Supabase select, to keep that read
+// light) joining a shipment's line items to their SKU Code/Version
+// packaging-spec reference data, plus the selected Customer's own address
+// (customer_shipments.customer is a plain text snapshot, not a foreign
+// key, so this is looked up by name). Trays/Combo and Total Quantity
+// (Trays) are computed client-side for the live preview, then recomputed
+// server-side (packing_list_service.generate_packing_list_pdf) for the
+// actual PDF -- never trusted from the client.
+// ---------------------------------------------------------------------------
+
+export interface PackingListLineItem {
+  id: string; // CustomerShipmentLineItem id
+  sku_code: string | null;
+  description: string | null;
+  hs_code: string | null;
+  case_size: string | null;
+  trays_per_sleeve: string | null;
+  sleeves_per_combo: string | null;
+  uom: string | null;
+  total_combo: number | null;
+}
+
+export interface PackingListData {
+  shipment_id: string;
+  shipment_number: string;
+  customer: string;
+  customer_address: string | null;
+  po_number: string | null;
+  po_date: string | null;
+  pi_number: string | null;
+  ship_to_address: string | null;
+  line_items: PackingListLineItem[];
+}
+
+export interface PackingListSavePayload {
+  po_number: string | null;
+  po_date: string | null;
+  pi_number: string | null;
+  ship_to_address: string | null;
+  line_items: { id: string; uom: string | null; total_combo: number | null }[];
 }
 
 // ---------------------------------------------------------------------------

@@ -20,9 +20,15 @@ export default function CustomersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [newName, setNewName] = useState("");
+  const [newAddress, setNewAddress] = useState("");
   const [showInactive, setShowInactive] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState("");
+  // 2026-09-25 -- Address feeds the Goods Outward "Print Packing List"
+  // step's Consignee Address / default Ship To, edited separately from
+  // the name (its own inline textarea per row, saved on blur).
+  const [editingAddressId, setEditingAddressId] = useState<string | null>(null);
+  const [editingAddressValue, setEditingAddressValue] = useState("");
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -43,8 +49,9 @@ export default function CustomersPage() {
     if (!name) return;
     setError(null);
     try {
-      await api.createCustomer(name);
+      await api.createCustomer(name, newAddress.trim() || null);
       setNewName("");
+      setNewAddress("");
       refresh();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Failed to add customer");
@@ -61,6 +68,21 @@ export default function CustomersPage() {
       refresh();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Failed to update customer");
+    }
+  }
+
+  async function handleSaveAddress(c: Customer) {
+    setError(null);
+    try {
+      // Always send a string (possibly empty), never null/undefined -- the
+      // backend only touches address `if payload.address is not None`, so
+      // an explicit null here would be indistinguishable from "field
+      // omitted" and clearing an existing address would silently no-op.
+      await api.updateCustomer(c.id, { address: editingAddressValue.trim() });
+      setEditingAddressId(null);
+      refresh();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Failed to update address");
     }
   }
 
@@ -109,6 +131,14 @@ export default function CustomersPage() {
                 onKeyDown={(e) => e.key === "Enter" && handleAdd()}
               />
             </div>
+            <div className="field" style={{ flex: 1, minWidth: 260 }}>
+              <label>Address (optional)</label>
+              <input
+                value={newAddress} placeholder="e.g. 305 Myles Standish Boulevard, Taunton, MA 02780"
+                onChange={(e) => setNewAddress(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleAdd()}
+              />
+            </div>
             <button className="btn btn-primary" disabled={!newName.trim()} onClick={handleAdd}>+ Add Customer</button>
           </div>
         </div>
@@ -124,10 +154,10 @@ export default function CustomersPage() {
 
       <div className="card card-flush">
         <table className="data">
-          <thead><tr><th>Customer Name</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>Customer Name</th><th>Address</th><th>Status</th><th></th></tr></thead>
           <tbody>
             {visible.length === 0 ? (
-              <tr className="empty-row"><td colSpan={3}>{loading ? "Loading…" : "No customers yet — add one above."}</td></tr>
+              <tr className="empty-row"><td colSpan={4}>{loading ? "Loading…" : "No customers yet — add one above."}</td></tr>
             ) : (
               visible.map((c) => (
                 <tr key={c.id}>
@@ -148,6 +178,26 @@ export default function CustomersPage() {
                         onClick={() => { if (canEdit) { setEditingId(c.id); setEditingValue(c.name); } }}
                       >
                         {c.name}
+                      </a>
+                    )}
+                  </td>
+                  <td>
+                    {editingAddressId === c.id ? (
+                      <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                        <input
+                          autoFocus value={editingAddressValue} placeholder="No address on file"
+                          onChange={(e) => setEditingAddressValue(e.target.value)}
+                          onKeyDown={(e) => e.key === "Enter" && handleSaveAddress(c)}
+                        />
+                        <a className="btn-tertiary" style={{ cursor: "pointer" }} onClick={() => handleSaveAddress(c)}>Save</a>
+                        <a className="btn-tertiary" style={{ cursor: "pointer" }} onClick={() => setEditingAddressId(null)}>Cancel</a>
+                      </span>
+                    ) : (
+                      <a
+                        style={{ cursor: canEdit ? "pointer" : "default", textDecoration: canEdit ? "underline" : "none", color: c.address ? undefined : "var(--ink-40, #999)" }}
+                        onClick={() => { if (canEdit) { setEditingAddressId(c.id); setEditingAddressValue(c.address || ""); } }}
+                      >
+                        {c.address || "— add address —"}
                       </a>
                     )}
                   </td>

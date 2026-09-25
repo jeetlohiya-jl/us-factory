@@ -13,6 +13,7 @@ import type {
   CustomerShipmentListItem, CustomerShipmentDetail, CustomerShipmentCreatePayload, CustomerShipmentCreateResult, CustomerShipmentUpdatePayload,
   ShipmentPickingListItem, ShipmentPickingDetail, PalletLifecycleStatus,
   GoodsOutwardListItem, GoodsOutwardDetail, GoodsOutwardLineItem, GoodsOutwardScannedPallet,
+  PackingListData, PackingListLineItem, PackingListSavePayload,
   OviListItem, OviDetail, OviSavePayload, OviImageType, OviImage,
   MachineDowntimeRecord, MachineDowntimeSavePayload,
   HoldReleaseModule, HoldReleaseRecord, HoldReleaseSavePayload,
@@ -1658,6 +1659,78 @@ async function getGoodsOutwardSb(id: string): Promise<GoodsOutwardDetail> {
   };
 }
 
+// 2026-09-25 -- Goods Outward "Print Packing List". Dedicated read, kept
+// separate from GO_LINE_ITEM_SELECT/getGoodsOutwardSb above so the
+// everyday Goods Outward detail read doesn't pay for the extra SKU Code/
+// Version joins on every open -- only the "Create Packing List" step needs
+// them. customer_shipments.customer is a plain text snapshot, not a
+// foreign key (see Customer model docstring), so the matching Customer's
+// address is looked up by name, best-effort (a renamed/deleted customer
+// simply yields no address to prefill, never an error).
+type RawPackingListLineItem = {
+  id: string;
+  sku_code_snapshot: string | null;
+  uom: string | null;
+  total_combo: number | string | null;
+  sku_code: { sku_code: string | null; description: string | null } | null;
+  sku_version: { hs_code: string | null; case_size: string | null; prod_pcs_per_sleeve: string | null; prod_sleeve_per_case: string | null } | null;
+};
+
+type RawPackingListShipment = {
+  id: string;
+  shipment_number: string;
+  customer: string;
+  po_number: string | null;
+  po_date: string | null;
+  pi_number: string | null;
+  ship_to_address: string | null;
+  line_items: RawPackingListLineItem[];
+};
+
+const PACKING_LIST_SELECT =
+  "id,shipment_number,customer,po_number,po_date,pi_number,ship_to_address," +
+  "line_items:customer_shipment_line_items(id,sku_code_snapshot,uom,total_combo," +
+  "sku_code:sku_codes(sku_code,description)," +
+  "sku_version:sku_versions(hs_code,case_size,prod_pcs_per_sleeve,prod_sleeve_per_case))";
+
+async function getPackingListDataSb(shipmentId: string): Promise<PackingListData> {
+  const { data, error } = await supabase
+    .from("customer_shipments")
+    .select(PACKING_LIST_SELECT)
+    .eq("id", shipmentId)
+    .single();
+  if (error || !data) throw new ApiError(404, "Goods Outward record not found");
+  const raw = data as unknown as RawPackingListShipment;
+
+  let customerAddress: string | null = null;
+  const { data: customerRow } = await supabase.from("customers").select("address").eq("name", raw.customer).maybeSingle();
+  if (customerRow) customerAddress = (customerRow as { address: string | null }).address;
+
+  const line_items: PackingListLineItem[] = (raw.line_items || []).map((li) => ({
+    id: li.id,
+    sku_code: li.sku_code?.sku_code || li.sku_code_snapshot,
+    description: li.sku_code?.description || li.sku_code_snapshot,
+    hs_code: li.sku_version?.hs_code || null,
+    case_size: li.sku_version?.case_size || null,
+    trays_per_sleeve: li.sku_version?.prod_pcs_per_sleeve || null,
+    sleeves_per_combo: li.sku_version?.prod_sleeve_per_case || null,
+    uom: li.uom,
+    total_combo: li.total_combo != null ? Number(li.total_combo) : null,
+  }));
+
+  return {
+    shipment_id: raw.id,
+    shipment_number: raw.shipment_number,
+    customer: raw.customer,
+    customer_address: customerAddress,
+    po_number: raw.po_number,
+    po_date: raw.po_date,
+    pi_number: raw.pi_number,
+    ship_to_address: raw.ship_to_address,
+    line_items,
+  };
+}
+
 type RawGoPalletPreview = {
   id: string; display_id: string; pallet_type: "rm" | "fg";
   sku_code_id: string | null; sku_version_id: string | null;
@@ -2179,12 +2252,12 @@ export const api = {
     cachedList(listCacheKey("ref:customers", params), () =>
       request<Customer[]>(`/api/v1/customers${params.includeInactive ? "?include_inactive=true" : ""}`)
     ),
-  createCustomer: async (name: string) => {
-    const res = await request<Customer>("/api/v1/customers", { method: "POST", body: JSON.stringify({ name }) });
+  createCustomer: async (name: string, address?: string | null) => {
+    const res = await request<Customer>("/api/v1/customers", { method: "POST", body: JSON.stringify({ name, address: address || null }) });
     invalidateListCache("ref:customers");
     return res;
   },
-  updateCustomer: async (id: string, patch: { name?: string; is_active?: boolean }) => {
+  updateCustomer: async (id: string, patch: { name?: string; is_active?: boolean; address?: string | null }) => {
     const res = await request<Customer>(`/api/v1/customers/${id}`, { method: "PUT", body: JSON.stringify(patch) });
     invalidateListCache("ref:customers");
     return res;
@@ -2908,6 +2981,47 @@ export const api = {
   // to the correct line item's picking request before calling pickPallet
   // (the real, authoritative validation). Never a substitute for it.
   previewScannedFgPallet: (raw: string) => previewScannedFgPallet(raw),
+
+  // 2026-09-25 -- "Print Packing List". getPackingListData loads the
+  // current defaults (SKU packaging specs + Customer address) the form
+  // pre-fills from; savePackingList persists the operator's edits (so a
+  // later reprint needs no re-entry) via FastAPI; downloadPackingListPdf
+  // then renders Cirkla's exact Packing List document off whatever was
+  // just saved -- same blob/anchor-download pattern as
+  // exportTraceabilityPdf above, since this is a PDF response, not JSON.
+  getPackingListData: (shipmentId: string) => getPackingListDataSb(shipmentId),
+  savePackingList: async (shipmentId: string, payload: PackingListSavePayload) => {
+    await request<void>(`/api/v1/customer-shipments/${shipmentId}/packing-list`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+  },
+  downloadPackingListPdf: async (shipmentId: string, shipmentNumber: string) => {
+    const authHeader = await getAuthHeader();
+    const res = await fetch(`${BASE}/api/v1/customer-shipments/${shipmentId}/packing-list-pdf`, {
+      headers: { Authorization: authHeader },
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      let detail = res.statusText;
+      try {
+        const data = await res.json();
+        detail = data.detail || JSON.stringify(data);
+      } catch {
+        // ignore
+      }
+      throw new ApiError(res.status, detail);
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `Packing_List_${shipmentNumber}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  },
 
   // -- Outward Vehicle Inspection ------------------------------------------
   // Auto-created from Customer Shipment -- no create call here. List/detail

@@ -1,4 +1,5 @@
 import uuid
+from datetime import date as date_type
 from decimal import Decimal
 from typing import Literal, Optional
 
@@ -67,15 +68,18 @@ class CustomerOut(BaseModel):
     id: uuid.UUID
     name: str
     is_active: bool
+    address: Optional[str] = None
 
 
 class CustomerIn(BaseModel):
     name: str
+    address: Optional[str] = None
 
 
 class CustomerUpdateIn(BaseModel):
     name: Optional[str] = None
     is_active: Optional[bool] = None
+    address: Optional[str] = None
 
 
 class ChecklistItemOut(BaseModel):
@@ -922,6 +926,23 @@ class CustomerShipmentUpdateIn(BaseModel):
     customer: str
     shipment_number: str
     line_items: list[CustomerShipmentLineItemUpdateIn] = []
+
+
+# 2026-09-25 -- Packing List (Goods Outward's "Print Packing List"). Saved
+# via PUT before the PDF is generated, so a reprint later needs no
+# re-entry (customer_shipment_service.save_packing_list_fields).
+class PackingListLineItemIn(BaseModel):
+    id: uuid.UUID
+    uom: Optional[str] = None
+    total_combo: Optional[Decimal] = None
+
+
+class PackingListSaveIn(BaseModel):
+    po_number: Optional[str] = None
+    po_date: Optional[date_type] = None
+    pi_number: Optional[str] = None
+    ship_to_address: Optional[str] = None
+    line_items: list[PackingListLineItemIn] = []
 
 
 class ShipmentPickIn(BaseModel):

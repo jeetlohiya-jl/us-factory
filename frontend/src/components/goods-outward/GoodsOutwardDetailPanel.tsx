@@ -3,6 +3,7 @@ import { useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import type { GoodsOutwardDetail } from "@/lib/types";
 import CameraQrScanner from "@/components/storage/CameraQrScanner";
+import PackingListPanel from "@/components/goods-outward/PackingListPanel";
 import { T } from "@/lib/terms";
 
 function Kv({ label, value }: { label: string; value: React.ReactNode }) {
@@ -55,6 +56,7 @@ export default function GoodsOutwardDetailPanel({
   const [cameraOpen, setCameraOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [packingListOpen, setPackingListOpen] = useState(false);
 
   const allComplete = record.status === "complete";
 
@@ -231,13 +233,21 @@ export default function GoodsOutwardDetailPanel({
         </div>
         <div className="sp-foot">
           <button className="btn btn-ghost" onClick={onClose}>Close</button>
-          {canEdit && onEdit && (
-            <div className="sp-foot-right">
+          <div className="sp-foot-right">
+            <button className="btn btn-secondary" onClick={() => setPackingListOpen(true)}>Print Packing List</button>
+            {canEdit && onEdit && (
               <button className="btn btn-primary" onClick={onEdit}>Edit</button>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
+      {packingListOpen && (
+        <PackingListPanel
+          shipmentId={record.id}
+          shipmentNumber={record.shipment_number}
+          onClose={() => setPackingListOpen(false)}
+        />
+      )}
     </>
   );
 }

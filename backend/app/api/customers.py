@@ -63,7 +63,8 @@ def create_customer(
     name = payload.name.strip()
     if not name:
         raise HTTPException(status_code=422, detail="Customer name is required.")
-    customer = models.Customer(name=name, is_active=True)
+    address = (payload.address or "").strip() or None
+    customer = models.Customer(name=name, is_active=True, address=address)
     db.add(customer)
     try:
         db.commit()
@@ -91,6 +92,8 @@ def update_customer(
         customer.name = name
     if payload.is_active is not None:
         customer.is_active = payload.is_active
+    if payload.address is not None:
+        customer.address = payload.address.strip() or None
     try:
         db.commit()
     except IntegrityError:

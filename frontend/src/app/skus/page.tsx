@@ -20,6 +20,11 @@ const PROD_DETAIL_FIELDS: { key: keyof SkuVersion; label: string; numeric?: bool
   { key: "prod_pad_type", label: "Pad Type" },
   { key: "prod_pad_color", label: "Pad Color" },
   { key: "prod_case_type", label: "Case Type" },
+  // 2026-09-25 -- Packing List packaging specs (migration 0058). Not used
+  // by Production's own table -- read only by the Goods Outward "Print
+  // Packing List" step (packing_list_service.generate_packing_list_pdf).
+  { key: "hs_code", label: "HS Code" },
+  { key: "case_size", label: "Case Size (inch)" },
   // Not used by Production's own table -- read only by IPQC's
   // autopopulation (Dimensions of Pad, Absorption Rate), off this same
   // per-SKU-Version reference data (migration 0015).
