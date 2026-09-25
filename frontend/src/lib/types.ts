@@ -1543,6 +1543,9 @@ export interface GoodsReceiptEntry {
   pallet_count: number | null;
   status: GoodsReceiptEntryStatus;
   inwarded_at: string | null;
+  // Every delivery of this container: the first inward, then any
+  // "Inward remaining" (migration 0056).
+  inward_events?: { received_quantity: number; pallet_count: number; unit: string; kind: "initial" | "remaining"; inwarded_at: string }[];
   qr_batch: { id: string; batch_display_id: string; status: "pending" | "generated"; quantity: number } | null;
 }
 

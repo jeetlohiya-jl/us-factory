@@ -1966,6 +1966,7 @@ const GR_DETAIL_SELECT =
   "entries:goods_receipt_entries(id,shipment_number,category,sku_code_id,sku_version_id," +
   "sku_code:sku_code_snapshot,sku_version:sku_version_snapshot,po_quantity,received_quantity,unit,pallet_count," +
   "status,inwarded_at,sort_order," +
+  "inward_events:goods_receipt_inward_events(received_quantity,pallet_count,unit,kind,inwarded_at)," +
   "qr_batch:qr_generation_records!qr_generation_records_source_goods_receipt_entry_id_fkey(id,batch_display_id,status,quantity))";
 
 type RawGrEntry = Omit<GoodsReceiptEntry, "qr_batch" | "po_quantity" | "received_quantity"> & {
@@ -2023,7 +2024,7 @@ async function getGoodsReceiptSb(id: string): Promise<GoodsReceiptDetail> {
  * functions map through sbRequest exactly like table writes: 42501 -> 403,
  * 23505 (duplicate PO / container) and 23503 (locked / blocked) -> 409 with
  * the function's own message; validation errors carry their message too. */
-async function goodsReceiptRpc(fn: "goods_receipt_save" | "goods_receipt_inward", args: Record<string, unknown>): Promise<GoodsReceiptDetail> {
+async function goodsReceiptRpc(fn: "goods_receipt_save" | "goods_receipt_inward" | "goods_receipt_inward_remaining", args: Record<string, unknown>): Promise<GoodsReceiptDetail> {
   const raw = await sbRequest<Parameters<typeof flattenGoodsReceipt>[0]>(() =>
     supabase.rpc(fn, args) as unknown as Promise<{ data: Parameters<typeof flattenGoodsReceipt>[0] | null; error: { message: string; code?: string } | null }>
   );
@@ -3004,6 +3005,13 @@ export const api = {
   },
   updateGoodsReceipt: async (id: string, payload: GoodsReceiptSavePayload) => {
     const res = await goodsReceiptRpc("goods_receipt_save", { _id: id, _payload: payload });
+    invalidateListCache("goods-receipt");
+    return res;
+  },
+  // A short container's later delivery (optional): adds to its totals and
+  // grows its one RM QR batch; the new pallets' QRs are generated next.
+  inwardRemainingGoodsReceiptEntry: async (entryId: string, payload: { received_quantity?: number; pallet_count: number }) => {
+    const res = await goodsReceiptRpc("goods_receipt_inward_remaining", { _entry_id: entryId, _payload: payload });
     invalidateListCache("goods-receipt");
     return res;
   },
