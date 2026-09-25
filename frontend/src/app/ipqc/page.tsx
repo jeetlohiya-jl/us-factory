@@ -115,7 +115,7 @@ function IpqcPageContent() {
         <div>
           <h1>{MODULE_NAMES.ipqc}</h1>
           <div className="desc">Every IPQC record created to date, auto-identified against the current production run.</div>
-          <span className="auto-note">Records are usually created automatically from RM Consumption -- use + New Record to start one manually.</span>
+          <span className="auto-note">Records are usually created automatically from RM Requisition -- use + New Record to start one manually.</span>
         </div>
         <button
           className="btn btn-primary"
@@ -173,13 +173,13 @@ function IpqcPageContent() {
         <table className="data">
           <thead>
             <tr>
-              <th>{T.shipmentNumber}</th><th>{T.sku}</th><th>{T.skuVersion}</th>
+              <th>{T.shipmentNumber}</th><th>{T.sku}</th>
               <th>Shift Incharge</th><th>Status</th><th>Date</th><th></th>
             </tr>
           </thead>
           <tbody>
             {records.length === 0 ? (
-              <tr className="empty-row"><td colSpan={7}>{loading ? "Loading…" : "No records match your search/filters."}</td></tr>
+              <tr className="empty-row"><td colSpan={6}>{loading ? "Loading…" : "No records match your search/filters."}</td></tr>
             ) : (
               records.map((r) => {
                 // Same convention as Inward QC/Production: while a record
@@ -198,7 +198,6 @@ function IpqcPageContent() {
                   >
                     <td className="mono">{r.shipment_number || "—"}</td>
                     <td className="mono">{r.sku_code || "—"}</td>
-                    <td>{r.sku_version || "—"}</td>
                     <td>{r.shift_incharge || "—"}</td>
                     <td><span className={`badge ${r.status === "approved" ? "approved" : r.status === "hold" ? "hold" : r.status === "pending" ? "pending" : "draft"}`}>{r.status.charAt(0).toUpperCase() + r.status.slice(1)}</span></td>
                     <td>{r.date || "—"}</td>

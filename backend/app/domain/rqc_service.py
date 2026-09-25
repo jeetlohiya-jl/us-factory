@@ -452,7 +452,7 @@ def create_approval_entry(
 def relink_to_run_for_activity(db: Session, rqc: models.RqcRecord) -> None:
     """Point the RQC record at the Production Run (and its IPQC) whose
     Shipment Number, production date and shift match this activity. Several
-    RM Consumption records -- and so several runs -- legitimately share one
+    RM Requisition records -- and so several runs -- legitimately share one
     Shipment Number while a container's pallets are consumed over several
     shifts; create_rqc can only guess (most recent). No exact match -> the
     current link is kept."""

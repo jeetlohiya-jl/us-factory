@@ -203,7 +203,6 @@ export default function RqcWizard({
                 <div className="detail-grid">
                   <Kv label={T.shipmentNumber} value={<span className="mono">{record.shipment_number}</span>} />
                   <Kv label={T.sku} value={record.sku_code ? <span className="mono">{record.sku_code}</span> : "—"} />
-                  <Kv label={T.skuVersion} value={record.sku_version} />
                 </div>
               </div>
 

@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { api, ApiError } from "@/lib/api";
-import type { MaterialConsumptionDetail, MaterialConsumptionMachineEntry, Machine, Permissions, SecondaryMaterialCategory, QuantityUnit } from "@/lib/types";
+import type { MaterialConsumptionDetail, MaterialConsumptionMachineEntry, MaterialConsumptionScanPreview, Machine, Permissions, SecondaryMaterialCategory, QuantityUnit } from "@/lib/types";
 import { QUANTITY_UNITS, QC_CATEGORY_LABELS } from "@/lib/types";
 import CameraQrScanner from "@/components/storage/CameraQrScanner";
 import { T } from "@/lib/terms";
@@ -78,48 +78,100 @@ function ScanBox({ placeholder, busy, onScan }: { placeholder: string; busy: boo
 }
 
 /**
+ * 2026-09-25: the one confirmation step every generic scan goes through.
+ * MachineEntryPanel calls scan-preview (read-only -- nothing is added yet)
+ * the instant something is scanned, and shows whatever it resolved to here
+ * -- a pallet or any secondary material, whichever it turned out to be --
+ * before the operator commits it with OK or throws it back with Cancel.
+ */
+function ScanConfirmModal({
+  preview, secondaryLabels, busy, onConfirm, onCancel,
+}: {
+  preview: MaterialConsumptionScanPreview;
+  secondaryLabels: Record<SecondaryMaterialCategory, string>;
+  busy: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const roleLabel = preview.role === "primary" ? "Associated Pallet" : secondaryLabels[preview.role];
+  return (
+    <div className="modal-overlay" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
+      <div className="card" style={{ maxWidth: 420, width: "90%", padding: 20 }}>
+        <h3 style={{ marginTop: 0 }}>Confirm Scan</h3>
+        <div className="detail-grid" style={{ marginBottom: 16 }}>
+          <div><div className="detail-kv-label">Type</div><div className="detail-kv-value">{roleLabel}</div></div>
+          <div><div className="detail-kv-label">Pallet</div><div className="detail-kv-value mono">{preview.pallet_display_id}</div></div>
+          <div><div className="detail-kv-label">Category</div><div className="detail-kv-value">{CATEGORY_LABELS[preview.category || ""] || preview.category || "—"}</div></div>
+          <div><div className="detail-kv-label">{T.sku}</div><div className="detail-kv-value">{preview.sku_code || "—"}</div></div>
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+          <button type="button" className="btn btn-ghost" disabled={busy} onClick={onCancel}>Cancel</button>
+          <button type="button" className="btn btn-primary" disabled={busy} onClick={onConfirm}>OK</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
  * Page 2's per-machine panel -- everything the spec calls out for one
  * machine entry: Machine (label, set on Page 1) -> Associated Pallet ->
- * Secondary Materials -> Start Time -> End Time. Pallet/secondary scanning,
- * validation and business logic are all unchanged from before -- only now
- * scoped to this one entry's own pallet set instead of the whole record's.
+ * Secondary Materials -> Start Time -> End Time.
+ *
+ * 2026-09-25: scanning is one generic box, not a choice between "scan a
+ * pallet" and "scan a secondary material" -- the operator scans whatever
+ * they physically picked up and the app figures out what it is from the
+ * pallet's own category (see preview_scanned_pallet/add_scanned_pallet).
+ * Every scan previews first (read-only, nothing added yet) and shows an
+ * OK/Cancel confirmation with what it resolved to; OK commits it as a
+ * primary pallet or the matching secondary-material row, whichever it is.
  */
 function MachineEntryPanel({
-  entry, index, canEdit, canRemove, busy, onScanPrimary, onScanSecondary, onRemovePallet, onQuantityChange, onPrimaryConsumptionChange, onRemoveEntry,
+  entry, index, canEdit, canRemove, busy, onPreviewScan, onCommitScan, onRemovePallet, onQuantityChange, onPrimaryConsumptionChange, onRemoveEntry,
 }: {
   entry: MaterialConsumptionMachineEntry;
   index: number;
   canEdit: boolean;
   canRemove: boolean;
   busy: boolean;
-  onScanPrimary: (payload: string, quantity: string, unit: QuantityUnit, fullyConsumed: boolean) => void;
-  onScanSecondary: (category: SecondaryMaterialCategory, payload: string) => void;
+  onPreviewScan: (payload: string) => Promise<MaterialConsumptionScanPreview | null>;
+  onCommitScan: (payload: string) => Promise<void>;
   onRemovePallet: (rowId: string) => void;
   onQuantityChange: (rowId: string, value: string, unit?: QuantityUnit) => void;
   onPrimaryConsumptionChange: (rowId: string, quantity: string, unit: QuantityUnit, fullyConsumed: boolean) => void;
   onRemoveEntry: () => void;
 }) {
-  // Redesigned scanning flow (Section 10 follow-up): scan first, ask
-  // questions after -- no upfront Quantity/Unit/Fully-Consumed form before
-  // the pallet is even known. A fresh scan is still recorded with the
-  // pre-Section-8-compatible defaults (whole pallet, fully consumed); the
-  // operator then adjusts "Fully Consumed" and, only if not fully consumed,
-  // Quantity/Unit inline on that row via onPrimaryConsumptionChange -- the
-  // same generic update path used before, just triggered from the table
-  // instead of a form ahead of the scan.
+  // Redesigned scanning flow (Section 10 follow-up, then 2026-09-25): scan
+  // first, ask questions after -- no upfront Quantity/Unit/Fully-Consumed
+  // form before the pallet is even known. A fresh scan is still recorded
+  // with the pre-Section-8-compatible defaults (whole pallet, fully
+  // consumed); the operator then adjusts "Fully Consumed" and, only if not
+  // fully consumed, Quantity/Unit inline on that row via
+  // onPrimaryConsumptionChange -- the same generic update path used before,
+  // just triggered from the table instead of a form ahead of the scan.
   const hasPrimary = entry.pallets.length > 0;
 
-  // Secondary Materials: a dropdown+table row editor (matching how SKU
-  // Code/Version line items are added elsewhere) replacing the old single
-  // "pick one category, then scan" control -- lets the operator queue up
-  // more than one category to scan into at once. Each pending row is local
-  // UI state only (not yet a real pallet); scanning it calls the existing
-  // scan-secondary endpoint and the resulting committed row then comes from
-  // entry.secondary_materials same as before. Category can't be changed
-  // after a real pallet is scanned (the backend validates the scanned
-  // pallet's own category), so it's only editable while a row is still
-  // pending.
-  const [pendingSecondary, setPendingSecondary] = useState<{ id: string; type: SecondaryMaterialCategory }[]>([]);
+  // One generic scan box per machine feeds this: a scan is previewed first
+  // (nothing added yet), and while `confirming` holds a result the modal
+  // below shows it for OK/Cancel. Cancel just clears it -- since preview
+  // never wrote anything, there's nothing to undo.
+  const [confirming, setConfirming] = useState<{ payload: string; preview: MaterialConsumptionScanPreview } | null>(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
+
+  async function handleScan(payload: string) {
+    const preview = await onPreviewScan(payload);
+    if (preview) setConfirming({ payload, preview });
+  }
+  async function handleConfirm() {
+    if (!confirming) return;
+    setConfirmBusy(true);
+    try {
+      await onCommitScan(confirming.payload);
+      setConfirming(null);
+    } finally {
+      setConfirmBusy(false);
+    }
+  }
 
   // 2026-09-24 fix -- "Fully Consumed: No" used to fire onPrimaryConsumptionChange
   // immediately on click, with whatever stale default quantity the row
@@ -159,27 +211,39 @@ function MachineEntryPanel({
         )}
       </div>
 
+      {canEdit && !entry.end_time && (
+        <div style={{ marginBottom: 14 }}>
+          <ScanBox
+            placeholder="Scan or enter pallet / material QR"
+            busy={busy || confirmBusy}
+            onScan={handleScan}
+          />
+          <div className="hint-text" style={{ marginTop: 6 }}>
+            Scan any RM pallet or secondary material -- confirm what it is before it's added.
+          </div>
+        </div>
+      )}
+      {confirming && (
+        <ScanConfirmModal
+          preview={confirming.preview}
+          secondaryLabels={SECONDARY_LABELS}
+          busy={confirmBusy}
+          onConfirm={handleConfirm}
+          onCancel={() => setConfirming(null)}
+        />
+      )}
+
       <div className="section-label">Associated Pallet</div>
-      {hasPrimary && (
+      {hasPrimary ? (
         <div className="detail-card" style={{ marginBottom: 14 }}>
           <div className="detail-grid">
             <div><div className="detail-kv-label">Category</div><div className="detail-kv-value">{CATEGORY_LABELS[entry.category || ""] || entry.category || "—"}</div></div>
             <div><div className="detail-kv-label">{T.sku}</div><div className="detail-kv-value">{entry.sku_code || "—"}</div></div>
-            <div><div className="detail-kv-label">{T.skuVersion}</div><div className="detail-kv-value">{entry.sku_version || "—"}</div></div>
           </div>
         </div>
-      )}
-
-      {canEdit && !entry.end_time && (
-        <div style={{ marginBottom: 14 }}>
-          <ScanBox
-            placeholder="Scan or enter RM pallet QR / ID"
-            busy={busy}
-            onScan={(payload) => onScanPrimary(payload, "1", "Pallets", true)}
-          />
-          <div className="hint-text" style={{ marginTop: 6 }}>
-            Once scanned, set &quot;Fully Consumed&quot; on the row below -- if not, you&apos;ll be asked for the quantity drawn.
-          </div>
+      ) : (
+        <div className="hint-text" style={{ marginBottom: 14 }}>
+          Once scanned, set &quot;Fully Consumed&quot; on the row below -- if not, you&apos;ll be asked for the quantity drawn.
         </div>
       )}
 
@@ -189,10 +253,10 @@ function MachineEntryPanel({
         </div>
       )}
       <table className="qc-obs-table" style={{ marginBottom: 20 }}>
-        <thead><tr><th>Pallet</th><th>{T.sku}</th><th>{T.skuVersion}</th><th style={{ width: 170 }}>Fully Consumed</th><th></th></tr></thead>
+        <thead><tr><th>Pallet</th><th>{T.sku}</th><th style={{ width: 170 }}>Fully Consumed</th><th></th></tr></thead>
         <tbody>
           {entry.pallets.length === 0 ? (
-            <tr><td colSpan={5} className="hint-text">No pallet scanned yet.</td></tr>
+            <tr><td colSpan={4} className="hint-text">No pallet scanned yet.</td></tr>
           ) : (
             entry.pallets.map((p) => {
               const editableRow = canEdit && !entry.end_time;
@@ -206,7 +270,6 @@ function MachineEntryPanel({
                 <tr key={p.id}>
                   <td className="mono">{p.pallet_display_id}</td>
                   <td>{p.sku_code}</td>
-                  <td>{p.sku_version}</td>
                   <td>
                     {editableRow ? (
                       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -276,7 +339,7 @@ function MachineEntryPanel({
       <div className="section-label">Secondary Materials</div>
       {(() => {
         const combined = SECONDARY_CATEGORIES.flatMap((cat) => entry.secondary_materials[cat].map((r) => ({ ...r, cat })));
-        return combined.length > 0 || pendingSecondary.length > 0 ? (
+        return combined.length > 0 ? (
           <table className="qc-obs-table" style={{ marginBottom: 14 }}>
             <thead><tr><th style={{ width: 110 }}>Type</th><th>Pallet</th><th>SKU</th><th style={{ width: 90 }}>Quantity</th><th style={{ width: 90 }}>Unit</th><th></th></tr></thead>
             <tbody>
@@ -286,7 +349,10 @@ function MachineEntryPanel({
                   record with no cap and no FIFO/auto-assignment; each scan
                   is its own explicit row, same as primary pallets. Quantity
                   and Unit are editable directly on every row -- no
-                  Fully-Consumed gate for secondary materials. */}
+                  Fully-Consumed gate for secondary materials. Rows only
+                  ever arrive here via the one generic scan box above (its
+                  category comes from the scanned pallet itself, never a
+                  dropdown the operator sets ahead of time). */}
               {combined.map((r) => (
                 <tr key={r.id}>
                   <td>{SECONDARY_LABELS[r.cat]}</td>
@@ -308,46 +374,12 @@ function MachineEntryPanel({
                   <td>{canEdit && !entry.end_time && <a className="btn-tertiary" style={{ cursor: "pointer" }} onClick={() => onRemovePallet(r.id)}>Remove</a>}</td>
                 </tr>
               ))}
-              {/* Pending rows: not yet scanned/committed. Type is editable
-                  here only -- once a real pallet is scanned into a row, its
-                  category is fixed (validated server-side against the
-                  pallet), so committed rows above show Type as read-only. */}
-              {canEdit && !entry.end_time && pendingSecondary.map((row) => (
-                <tr key={row.id}>
-                  <td>
-                    <select
-                      value={row.type}
-                      onChange={(e) => setPendingSecondary((rows) => rows.map((r) => (r.id === row.id ? { ...r, type: e.target.value as SecondaryMaterialCategory } : r)))}
-                    >
-                      {SECONDARY_CATEGORIES.map((cat) => <option key={cat} value={cat}>{SECONDARY_LABELS[cat]}</option>)}
-                    </select>
-                  </td>
-                  <td colSpan={3}>
-                    <ScanBox
-                      placeholder={`Scan or enter ${SECONDARY_LABELS[row.type]} pallet QR / ID`}
-                      busy={busy}
-                      onScan={(p) => {
-                        onScanSecondary(row.type, p);
-                        setPendingSecondary((rows) => rows.filter((r) => r.id !== row.id));
-                      }}
-                    />
-                  </td>
-                  <td><a className="btn-tertiary" style={{ cursor: "pointer" }} onClick={() => setPendingSecondary((rows) => rows.filter((r) => r.id !== row.id))}>Remove</a></td>
-                </tr>
-              ))}
             </tbody>
           </table>
         ) : (
           <div className="hint-text" style={{ marginBottom: 14 }}>No secondary materials added yet.</div>
         );
       })()}
-
-      {canEdit && !entry.end_time && (
-        <a
-          className="btn-tertiary" style={{ cursor: "pointer" }}
-          onClick={() => setPendingSecondary((rows) => [...rows, { id: `pend-${Date.now()}-${rows.length}`, type: SECONDARY_CATEGORIES[0] }])}
-        >+ Add Secondary Material</a>
-      )}
 
       {/* End Time: read-only here -- it's no longer recorded by hand. It's
           stamped automatically (this same device-clock convention as Start
@@ -393,14 +425,31 @@ export default function MaterialConsumptionWizard({
   );
   const canProceedToPage2 = !!detail.shift && detail.machine_entries.length > 0 && detail.machine_entries.every((e) => e.machine_id);
 
-  async function handlePrimaryScan(entryId: string, payload: string, quantity: string, unit: QuantityUnit, fullyConsumed: boolean) {
+  // One generic scanner (2026-09-25): preview resolves + validates a scan
+  // without committing it (nothing is added on the server yet), so the
+  // panel can show an OK/Cancel confirmation; commit is the OK step, which
+  // re-resolves the same payload and adds it as whichever kind it is.
+  async function handlePreviewScan(entryId: string, payload: string): Promise<MaterialConsumptionScanPreview | null> {
     setBusy(true);
     setError(null);
     try {
-      const updated = await api.scanMaterialConsumptionPallet(mcId, entryId, payload, nowHHMM(), { quantity, unit, fullyConsumed });
+      return await api.previewMaterialConsumptionScan(mcId, entryId, payload);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Could not resolve that scan.");
+      return null;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleCommitScan(entryId: string, payload: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      const updated = await api.commitMaterialConsumptionScan(mcId, entryId, payload, nowHHMM());
       setDetail(updated);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Could not resolve that pallet QR.");
+      setError(e instanceof ApiError ? e.message : "Could not resolve that scan.");
     } finally {
       setBusy(false);
     }
@@ -412,19 +461,6 @@ export default function MaterialConsumptionWizard({
       setDetail(updated);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to update consumption");
-    }
-  }
-
-  async function handleSecondaryScan(entryId: string, category: SecondaryMaterialCategory, payload: string) {
-    setBusy(true);
-    setError(null);
-    try {
-      const updated = await api.scanMaterialConsumptionSecondary(mcId, entryId, payload, category);
-      setDetail(updated);
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Could not resolve that pallet QR.");
-    } finally {
-      setBusy(false);
     }
   }
 
@@ -570,7 +606,7 @@ export default function MaterialConsumptionWizard({
       <div className="side-panel open">
         <div className="sp-head">
           <div>
-            <h2>{page === 1 ? "New RM Consumption — Production Details" : "New RM Consumption — Pallet & Material Scanning"}</h2>
+            <h2>{page === 1 ? "New RM Requisition — Production Details" : "New RM Requisition — Scan Materials"}</h2>
             <div className="sub">
               {detail.consumption_date} · <span className={`badge ${detail.status === "saved" ? "approved" : "draft"}`}>{detail.status === "saved" ? "Saved" : "Draft"}</span>
               {detail.production_run_number && <> · Production Run {detail.production_run_number}</>}
@@ -638,8 +674,8 @@ export default function MaterialConsumptionWizard({
                   canEdit={canEdit}
                   canRemove={detail.machine_entries.length > 1}
                   busy={busy}
-                  onScanPrimary={(payload, quantity, unit, fullyConsumed) => handlePrimaryScan(entry.id, payload, quantity, unit, fullyConsumed)}
-                  onScanSecondary={(cat, payload) => handleSecondaryScan(entry.id, cat, payload)}
+                  onPreviewScan={(payload) => handlePreviewScan(entry.id, payload)}
+                  onCommitScan={(payload) => handleCommitScan(entry.id, payload)}
                   onRemovePallet={handleRemovePallet}
                   onQuantityChange={handleQuantityChange}
                   onPrimaryConsumptionChange={handlePrimaryConsumptionChange}
@@ -654,7 +690,7 @@ export default function MaterialConsumptionWizard({
           <div className="sp-foot-right">
             {page === 1 ? (
               canEdit && (
-                <button className="btn btn-primary" disabled={!canProceedToPage2} onClick={() => setPage(2)}>Next: Scan Pallets →</button>
+                <button className="btn btn-primary" disabled={!canProceedToPage2} onClick={() => setPage(2)}>Next: Scan Materials →</button>
               )
             ) : (
               <>

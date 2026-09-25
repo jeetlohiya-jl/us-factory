@@ -13,7 +13,7 @@ const CATEGORY_LABELS: Record<Category, string> = INWARD_CATEGORY_LABELS;
 // inspection doesn't change that -- the inspection's own Vendor Name is
 // entered regardless of category), so every category needs its own vendor
 // list here too.
-const MANAGED_CATEGORIES: Category[] = ["tray", "fnp_tray", "film", "pad", "polybag", "cfb", "glue"];
+const MANAGED_CATEGORIES: Category[] = ["tray", "lnp_tray", "film", "pad", "polybag", "cfb", "glue"];
 
 /**
  * Admin screen for the per-category Vendor master list backing the Vendor

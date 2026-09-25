@@ -118,18 +118,17 @@ export default function ShipmentPickingPage() {
       <div className="card card-flush">
         <table className="data">
           <thead>
-            <tr><th>{T.shipmentNumber}</th><th>Customer</th><th>{T.sku}</th><th>{T.skuVersion}</th><th>Quantity Required</th><th>Quantity Picked</th><th>Status</th><th></th></tr>
+            <tr><th>{T.shipmentNumber}</th><th>Customer</th><th>{T.sku}</th><th>Quantity Required</th><th>Quantity Picked</th><th>Status</th><th></th></tr>
           </thead>
           <tbody>
             {items.length === 0 ? (
-              <tr className="empty-row"><td colSpan={8}>{loading ? "Loading…" : "No records match your search/filters."}</td></tr>
+              <tr className="empty-row"><td colSpan={7}>{loading ? "Loading…" : "No records match your search/filters."}</td></tr>
             ) : (
               items.map((r) => (
                 <tr key={r.id}>
                   <td className="mono">{r.shipment_number || "—"}</td>
                   <td>{r.customer || "—"}</td>
                   <td className="mono">{r.sku_code || "—"}</td>
-                  <td>{r.sku_version || "—"}</td>
                   <td>{r.pallets_required}</td>
                   <td>{r.pallets_picked}</td>
                   <td><SpStatusBadge status={r.status} /></td>

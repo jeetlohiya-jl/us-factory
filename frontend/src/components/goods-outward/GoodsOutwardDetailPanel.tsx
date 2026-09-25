@@ -147,16 +147,15 @@ export default function GoodsOutwardDetailPanel({
             <table className="qc-obs-table">
               <thead>
                 <tr>
-                  <th>{T.sku}</th><th>{T.skuVersion}</th><th style={{ width: 90 }}>Required</th>
+                  <th>{T.sku}</th><th style={{ width: 90 }}>Required</th>
                   <th style={{ width: 80 }}>Picked</th><th style={{ width: 90 }}>Remaining</th>
-                  <th>Pcs</th><th>Pcs/Sleeve</th><th style={{ width: 100 }}>Status</th>
+                  <th>Pcs</th><th>Trays/Sleeve</th><th style={{ width: 100 }}>Status</th>
                 </tr>
               </thead>
               <tbody>
                 {record.line_items.map((li) => (
                   <tr key={li.id}>
                     <td className="mono">{li.sku_code || "—"}</td>
-                    <td>{li.sku_version || "—"}</td>
                     <td>{li.pallets_required}</td>
                     <td>{li.picks.length}</td>
                     <td>{Math.max(li.pallets_required - li.picks.length, 0)}</td>
@@ -208,14 +207,13 @@ export default function GoodsOutwardDetailPanel({
               <div className="hint-text">No pallets picked yet for this shipment.</div>
             ) : (
               <table className="qc-obs-table">
-                <thead><tr><th>Pallet QR</th><th>{T.sku}</th><th>{T.skuVersion}</th><th>Batch Code</th><th>Picked At</th><th /></tr></thead>
+                <thead><tr><th>Pallet QR</th><th>{T.sku}</th><th>Batch Code</th><th>Picked At</th><th /></tr></thead>
                 <tbody>
                   {record.line_items.flatMap((li) =>
                     li.picks.map((p) => (
                       <tr key={p.id}>
                         <td className="mono">{p.pallet_display_id || "—"}</td>
                         <td className="mono">{li.sku_code || "—"}</td>
-                        <td>{li.sku_version || "—"}</td>
                         <td className="mono">{p.batch_code || "—"}</td>
                         <td>{new Date(p.picked_at).toLocaleString()}</td>
                         <td>

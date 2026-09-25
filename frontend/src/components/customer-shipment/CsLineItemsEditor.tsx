@@ -61,7 +61,7 @@ export default function CsLineItemsEditor({
     <div>
       <table className="qc-obs-table">
         <thead>
-          <tr><th>{T.sku}</th><th>{T.skuVersion}</th><th>Quantity</th><th>Pcs</th><th>Pcs/Sleeve</th><th /></tr>
+          <tr><th>{T.sku}</th><th>{T.skuVersion}</th><th>Quantity</th><th>Pcs</th><th>Trays/Sleeve</th><th /></tr>
         </thead>
         <tbody>
           {items.map((item, i) => (

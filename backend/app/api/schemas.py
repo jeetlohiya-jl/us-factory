@@ -761,6 +761,22 @@ class MaterialConsumptionSecondaryScanIn(BaseModel):
     category: str  # 'cfb' | 'pad' | 'glue' | 'polybag'
 
 
+class MaterialConsumptionScanPreviewIn(BaseModel):
+    payload: str
+
+
+class MaterialConsumptionScanPreviewOut(BaseModel):
+    """One generic scanner (2026-09-25) replaces the old up-front 'scan a
+    pallet' vs 'scan a secondary material' choice -- this is what it shows
+    the operator to confirm (OK) or discard (Cancel) before the scan is
+    actually added; see preview_scanned_pallet."""
+    role: str  # 'primary' | 'cfb' | 'pad' | 'glue' | 'polybag' -- matches MaterialConsumptionPalletOut.role once committed
+    category: Optional[str] = None
+    sku_code: Optional[str] = None
+    sku_version: Optional[str] = None
+    pallet_display_id: str
+
+
 class MaterialConsumptionBasicUpdate(BaseModel):
     shift: Optional[str] = None
     shipment_number: Optional[str] = None

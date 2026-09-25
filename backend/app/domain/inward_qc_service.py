@@ -18,13 +18,13 @@ MANUAL_CATEGORIES = {"pad", "polybag", "cfb", "glue"}
 # created manually here, and skip the sampling-plan/attribute-definition
 # flow every MANUAL_CATEGORIES record goes through in favour of the fixed
 # fgtray_answers checklist -- "fgtray" was the only member of this set
-# historically (from the Tray/"Base Tray" IVI category); "fnp_tray" (FNP
-# Tray) is the same kind of downstream QC record for the FNP Tray IVI
+# historically (from the Tray/"Base Tray" IVI category); "lnp_tray" (LNP
+# Tray) is the same kind of downstream QC record for the LNP Tray IVI
 # category, added so its category is never silently remapped to something
-# else. Base Tray and FNP Tray are genuinely different materials (today
-# only FNP Tray is an active workflow; Base Tray is wired up for future
+# else. Base Tray and LNP Tray are genuinely different materials (today
+# only LNP Tray is an active workflow; Base Tray is wired up for future
 # use), each producing its own correctly-labeled QC record.
-TRAY_FAMILY_CATEGORIES = {"tray", "fnp_tray", "fgtray"}
+TRAY_FAMILY_CATEGORIES = {"tray", "lnp_tray", "fgtray"}
 ALL_CATEGORIES = MANUAL_CATEGORIES | TRAY_FAMILY_CATEGORIES
 
 QC_ID_PREFIX = {"pad": "US-PAD", "polybag": "US-PB", "cfb": "US-CFB", "glue": "US-GLUE"}

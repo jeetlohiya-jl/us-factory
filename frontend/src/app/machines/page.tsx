@@ -85,7 +85,7 @@ export default function MachinesPage() {
       <div className="page-head2">
         <div>
           <h1>{MODULE_NAMES.machines}</h1>
-          <div className="desc">Manages the machine list used by the Machine dropdown on RM Consumption.</div>
+          <div className="desc">Manages the machine list used by the Machine dropdown on RM Requisition.</div>
         </div>
       </div>
 

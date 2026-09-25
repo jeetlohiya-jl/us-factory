@@ -4,27 +4,31 @@
  *
  *   RM                      Raw Material -- the short form is the name, never spelled out
  *   FG                      Finished Goods -- likewise
- *   FNP Tray                never "FNPG" / "FG Non-Padded Tray" / "FNP"
+ *   LNP Tray                never "LNP Tray" / "LNPG" / "LNPG"
  *   Base Tray
  *   SKU                     the product (e.g. 3P) -- never "SKU Name" / "SKU Code" for it
  *   SKU Code                only the item code (e.g. CMP0003P)
- *   SKU Version             never bare "Version"
  *   Shipment Number         never "Shipment No."
  *   Pallet Number           never "Pallet ID"
  *   Quantity                never "Qty"
- *   RM Consumption          never "Material Consumption" / "Raw Material Consumption"
+ *   RM Requisition          never "RM Consumption" / "Material Consumption"
  *   On Hold                 never "hold" / "Hold"
  *
- * Display text only: internal IDs, database values (e.g. category "fnp_tray",
- * status "hold"), routes and location zone codes (FNPGTRAY, FPG) are
- * unchanged. Plain constants -- no requests, no runtime cost.
+ * 2026-09-25 -- LNP was renamed to LNP and the FG zone code was renamed to
+ * FG platform-wide, including already-stored data (category values and
+ * location zone codes/display_ids -- see migration 0057). Unlike most of
+ * this file, that rename does reach the database and physical location QR
+ * labels, which need reprinting; see migration 0057's header for the full
+ * list of tables touched. "SKU Version" is no longer shown in the UI at all
+ * (removed, not renamed) -- the constant is kept only for any internal code
+ * that still needs the words for logic, not display.
  */
 
 export const T = {
   rawMaterial: "RM",
   finishedGoods: "FG",
   baseTray: "Base Tray",
-  fnpTray: "FNP Tray",
+  lnpTray: "LNP Tray",
   sku: "SKU",
   skus: "SKUs",
   skuCode: "SKU Code",
@@ -50,7 +54,7 @@ export const MODULE_NAMES = {
   inward_qc: "Inward QC",
   rm_qr_generation: `${T.rawMaterial} QR Generation`,
   rm_storage: `${T.rawMaterial} Storage`,
-  material_consumption: `${T.rawMaterial} Consumption`,
+  material_consumption: `${T.rawMaterial} Requisition`,
   production: "Production",
   ipqc: "IPQC",
   rqc: "RQC",
@@ -74,11 +78,11 @@ export const MODULE_NAMES = {
 } as const;
 
 /** Category labels (database value -> name). "fgtray" is the legacy value
- * for FNP Tray; "fg" appears on finished-goods pallets. */
+ * for LNP Tray; "fg" appears on finished-goods pallets. */
 export const CATEGORY_LABELS: Record<string, string> = {
   tray: T.baseTray,
-  fnp_tray: T.fnpTray,
-  fgtray: T.fnpTray,
+  lnp_tray: T.lnpTray,
+  fgtray: T.lnpTray,
   film: "Film",
   pad: "Soaker Pad",
   polybag: "Polybag",

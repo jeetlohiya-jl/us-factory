@@ -93,7 +93,6 @@ export default function ShipmentPickingPanel({
               <tr><td>{T.shipmentNumber}</td><td className="mono">{detail.shipment_number || "—"}</td></tr>
               <tr><td>Customer</td><td>{detail.customer || "—"}</td></tr>
               <tr><td>{T.sku}</td><td className="mono">{detail.sku_code || "—"}</td></tr>
-              <tr><td>{T.skuVersion}</td><td>{detail.sku_version || "—"}</td></tr>
               <tr><td>Quantity Required</td><td>{detail.pallets_required}</td></tr>
             </tbody>
           </table>

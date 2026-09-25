@@ -158,7 +158,7 @@ function MaterialConsumptionPageContent() {
                   <select value={category} onChange={(e) => setCategory(e.target.value)}>
                     <option value="">All</option>
                     <option value="tray">Base Tray</option>
-                    <option value="fnp_tray">FNP Tray</option>
+                    <option value="lnp_tray">LNP Tray</option>
                   </select>
                 </div>
                 <div className="field">
@@ -181,19 +181,18 @@ function MaterialConsumptionPageContent() {
         <table className="data compact">
           <thead>
             <tr>
-              <th>Category</th><th>{T.sku}</th><th>{T.skuVersion}</th><th>{T.palletNumbers}</th>
+              <th>Category</th><th>{T.sku}</th><th>{T.palletNumbers}</th>
               <th>Shift</th><th>{T.shipmentNumber}</th><th>Date</th><th>Machines · Start – End Time</th><th>Status</th><th></th>
             </tr>
           </thead>
           <tbody>
             {records.length === 0 ? (
-              <tr className="empty-row"><td colSpan={10}>{loading ? "Loading…" : "No RM Consumption records yet."}</td></tr>
+              <tr className="empty-row"><td colSpan={9}>{loading ? "Loading…" : "No RM Requisition records yet."}</td></tr>
             ) : (
               records.map((r) => (
                 <tr key={r.id} style={{ cursor: "pointer" }} onClick={() => openRecord(r.id)}>
                   <td>{r.category ? (CATEGORY_LABELS[r.category] || r.category) : "—"}</td>
                   <td className="mono">{r.sku_code || "—"}</td>
-                  <td>{r.sku_version || "—"}</td>
                   <td className="mono">{r.pallet_numbers}</td>
                   <td>{r.shift || "—"}</td>
                   <td className="mono">{r.shipment_number || "—"}</td>
@@ -241,7 +240,7 @@ function MaterialConsumptionPageContent() {
       {deleteTarget && !deleteError && (
         <ConfirmDialog
           title="Delete this record?"
-          message="This will permanently delete this RM Consumption record. This cannot be undone."
+          message="This will permanently delete this RM Requisition record. This cannot be undone."
           confirmLabel="Delete"
           danger
           onConfirm={confirmDelete}

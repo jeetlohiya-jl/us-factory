@@ -11,10 +11,10 @@ each machine has its own pallet set, its own Category/SKU/SKU Version, and
 its own start_time/end_time. Shift is shared across the whole record.
 
 Primary categories consumed into production: 'tray' (Base Tray) and
-'fnp_tray' (FNP Tray) -- the same tray-family RM categories the rest of the
+'lnp_tray' (LNP Tray) -- the same tray-family RM categories the rest of the
 app already treats as tray variants (see pallet_service.CATEGORY_SUFFIX,
 where both map to the "PLT" suffix; 'fgtray' is also kept here for RM
-pallets generated before the FNP Tray category existed). Pad / Polybag /
+pallets generated before the LNP Tray category existed). Pad / Polybag /
 CFB / Glue are the *secondary* materials for a machine entry even though
 they are ordinary RM pallets of their own, generated and stored exactly the
 same way -- so secondary materials are scanned and validated through this
@@ -28,7 +28,7 @@ from app.db import models
 from app.domain import pallet_service
 from app.domain.id_counters import next_seq
 
-PRIMARY_CATEGORIES = ("tray", "fnp_tray", "fgtray")
+PRIMARY_CATEGORIES = ("tray", "lnp_tray", "fgtray")
 SECONDARY_ROLES = ("cfb", "pad", "glue", "polybag")
 
 
@@ -95,7 +95,7 @@ def _assert_not_already_allocated(db: Session, pallet: models.Pallet, exclude_mc
     row = q.first()
     if row:
         raise MaterialConsumptionError(
-            f"Pallet {pallet.display_id} is already scanned into another in-progress RM Consumption record."
+            f"Pallet {pallet.display_id} is already scanned into another in-progress RM Requisition record."
         )
 
 
@@ -157,7 +157,7 @@ def machine_label(entry: models.MaterialConsumptionMachineEntry, index: int) -> 
 
 def add_machine_entry(db: Session, mc: models.MaterialConsumption, machine_id=None) -> models.MaterialConsumptionMachineEntry:
     if mc.status != "draft":
-        raise MaterialConsumptionError("This RM Consumption record has already been saved and cannot be changed.")
+        raise MaterialConsumptionError("This RM Requisition record has already been saved and cannot be changed.")
     entry = models.MaterialConsumptionMachineEntry(
         material_consumption_id=mc.id, machine_id=machine_id, sort_order=len(mc.machine_entries),
     )
@@ -168,7 +168,7 @@ def add_machine_entry(db: Session, mc: models.MaterialConsumption, machine_id=No
 
 def remove_machine_entry(db: Session, mc: models.MaterialConsumption, entry_id) -> None:
     if mc.status != "draft":
-        raise MaterialConsumptionError("This RM Consumption record has already been saved and cannot be changed.")
+        raise MaterialConsumptionError("This RM Requisition record has already been saved and cannot be changed.")
     entry = next((e for e in mc.machine_entries if e.id == entry_id), None)
     if not entry:
         raise MaterialConsumptionError("Machine entry not found on this record.")
@@ -180,7 +180,7 @@ def remove_machine_entry(db: Session, mc: models.MaterialConsumption, entry_id) 
 
 def set_machine_entry_machine(db: Session, mc: models.MaterialConsumption, entry: models.MaterialConsumptionMachineEntry, machine_id) -> None:
     if mc.status != "draft":
-        raise MaterialConsumptionError("This RM Consumption record has already been saved and cannot be changed.")
+        raise MaterialConsumptionError("This RM Requisition record has already been saved and cannot be changed.")
     entry.machine_id = machine_id
     db.flush()
 
@@ -224,7 +224,7 @@ def add_primary_pallet(
     _assert_not_already_allocated and _assert_pallet_available.
     """
     if mc.status != "draft":
-        raise MaterialConsumptionError("This RM Consumption record has already been saved and cannot be changed.")
+        raise MaterialConsumptionError("This RM Requisition record has already been saved and cannot be changed.")
 
     pallet = _resolve_scanned_pallet(db, raw_scan)
 
@@ -242,7 +242,7 @@ def add_primary_pallet(
     # it (RQC later matches IPQC by Shipment Number).
     #
     # One container (Shipment Number, e.g. HA1 = 44 pallets) is consumed
-    # over several shifts, so several RM Consumption records share it until
+    # over several shifts, so several RM Requisition records share it until
     # every pallet of that container has been scanned -- which limits itself:
     # a pallet can only be scanned while it is in storage. (Replaces the
     # 2026-09-24 "distinct Shipment Number per record" rule, which blocked
@@ -338,7 +338,7 @@ def add_secondary_pallet(
     auto-picked from RM Storage -- matching this module's own docstring.
     """
     if mc.status != "draft":
-        raise MaterialConsumptionError("This RM Consumption record has already been saved and cannot be changed.")
+        raise MaterialConsumptionError("This RM Requisition record has already been saved and cannot be changed.")
     if category not in SECONDARY_ROLES:
         raise MaterialConsumptionError(f"Unknown secondary material category '{category}'.")
 
@@ -367,9 +367,87 @@ def add_secondary_pallet(
     return row
 
 
+def _resolved_role(pallet: models.Pallet) -> str:
+    """One generic scanner replaces the old up-front 'Associated Pallet' vs
+    'Secondary Material' choice (2026-09-25): the operator no longer tells
+    the app what they're about to scan -- the scanned pallet's own category
+    says it. 'primary' for the tray-family categories add_primary_pallet
+    already accepts; the pallet's own category (one of SECONDARY_ROLES)
+    otherwise. Anything else is a pallet this module was never meant to
+    handle (an FG pallet is already rejected earlier, in
+    _resolve_scanned_pallet, with a clearer message)."""
+    if pallet.category in PRIMARY_CATEGORIES:
+        return "primary"
+    if pallet.category in SECONDARY_ROLES:
+        return pallet.category
+    raise MaterialConsumptionError(
+        f"Pallet {pallet.display_id} is category '{pallet.category or 'unknown'}', which isn't consumed here."
+    )
+
+
+def preview_scanned_pallet(db: Session, mc: models.MaterialConsumption, entry: models.MaterialConsumptionMachineEntry, raw_scan: str) -> dict:
+    """Read-only: resolve + run every check add_primary_pallet/
+    add_secondary_pallet would run, WITHOUT writing anything (no row
+    insert, no storage-location release, no Production Run/IPQC creation)
+    -- so the scan UI can show the operator what they scanned and let them
+    OK or Cancel it before it's actually added. Raises the exact same
+    MaterialConsumptionError a real add would, so cancel-worthy problems
+    (wrong category, already consumed, already scanned elsewhere, SKU
+    mismatch with this machine's other pallets) surface at preview time
+    too, not just on commit.
+    """
+    if mc.status != "draft":
+        raise MaterialConsumptionError("This RM Requisition record has already been saved and cannot be changed.")
+
+    pallet = _resolve_scanned_pallet(db, raw_scan)
+    role = _resolved_role(pallet)
+    _assert_pallet_available(pallet)
+    already_scanned = {p.pallet_id for p in _all_pallets(mc) if p.role == role}
+    if pallet.id in already_scanned:
+        raise MaterialConsumptionError(f"Pallet {pallet.display_id} has already been scanned into this record.")
+    _assert_not_already_allocated(db, pallet, exclude_mc_id=mc.id)
+
+    if role == "primary":
+        existing_primary = [p for p in entry.pallets if p.role == "primary"]
+        if existing_primary and (
+            pallet.category != entry.category
+            or pallet.sku_code_id != entry.sku_code_id
+            or pallet.sku_version_id != entry.sku_version_id
+        ):
+            raise MaterialConsumptionError(
+                "Pallet cannot be added. SKU Code / Version does not match the pallets already selected for this machine."
+            )
+
+    return {
+        "role": role,
+        "category": pallet.category,
+        "sku_code": pallet.sku_code_snapshot,
+        "sku_version": pallet.sku_version_snapshot,
+        "pallet_display_id": pallet.display_id,
+    }
+
+
+def add_scanned_pallet(
+    db: Session, mc: models.MaterialConsumption, entry: models.MaterialConsumptionMachineEntry,
+    raw_scan: str, client_time: str | None = None, actor_user_id=None,
+) -> models.MaterialConsumptionPallet:
+    """The single generic scanner's commit step (called once the operator
+    has OK'd the preview above): resolve the pallet and delegate to
+    add_primary_pallet or add_secondary_pallet based on its own category,
+    same auto-detection as preview_scanned_pallet. Re-resolves rather than
+    trusting the preview's result, so anything that changed between preview
+    and OK (another operator took the pallet, etc.) is caught here with the
+    same error either existing function would already raise."""
+    pallet = _resolve_scanned_pallet(db, raw_scan)
+    role = _resolved_role(pallet)
+    if role == "primary":
+        return add_primary_pallet(db, mc, entry, raw_scan, client_time=client_time, actor_user_id=actor_user_id)
+    return add_secondary_pallet(db, mc, entry, raw_scan, role)
+
+
 def remove_pallet(db: Session, mc: models.MaterialConsumption, row_id) -> None:
     if mc.status != "draft":
-        raise MaterialConsumptionError("This RM Consumption record has already been saved and cannot be changed.")
+        raise MaterialConsumptionError("This RM Requisition record has already been saved and cannot be changed.")
     row = next((p for p in _all_pallets(mc) if p.id == row_id), None)
     if not row:
         raise MaterialConsumptionError("Pallet not found on this record.")
@@ -453,7 +531,7 @@ def update_pallet_consumption(
                 "Quantity/Unit can only be changed while this record is still a draft."
             )
         if fully_consumed is None:
-            raise MaterialConsumptionError("This RM Consumption record has already been saved and cannot be changed.")
+            raise MaterialConsumptionError("This RM Requisition record has already been saved and cannot be changed.")
         if fully_consumed != row.fully_consumed:
             if fully_consumed:
                 pallet_service.record_lifecycle_event(
@@ -530,7 +608,7 @@ def find_dependent_summary(mc: models.MaterialConsumption) -> str | None:
     status alone is the reliable, cheap guard."""
     if mc.status == "saved":
         return (
-            "This RM Consumption record has already consumed pallets and is linked to a "
+            "This RM Requisition record has already consumed pallets and is linked to a "
             "Production Run" + (" and IPQC record" if mc.production_run and mc.production_run.ipqc_record else "")
             + "; it cannot be deleted."
         )

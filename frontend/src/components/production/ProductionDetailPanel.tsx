@@ -59,15 +59,9 @@ type AttrKey = "machine_no" | "auto_padding" | "container_order_no" | "weight" |
 // buried in this reference table.
 const PROD_DETAIL_ROWS: { label: string; attrKey?: AttrKey; get: (e: ProductionDetail["machine_entries"][number]) => React.ReactNode }[] = [
   { label: T.sku, get: (e) => e.sku_code },
-  { label: "Machine No.", attrKey: "machine_no", get: (e) => e.machine_no },
-  { label: "Auto Padding", attrKey: "auto_padding", get: (e) => e.auto_padding },
-  { label: "Container Order No.", attrKey: "container_order_no", get: (e) => e.container_order_no },
-  { label: "Weight", attrKey: "weight", get: (e) => e.production_details?.prod_weight },
-  { label: "Pcs/Sleeve", attrKey: "pcs_per_sleeve", get: (e) => e.production_details?.prod_pcs_per_sleeve },
-  { label: "Sleeve/Case", attrKey: "sleeve_per_case", get: (e) => e.production_details?.prod_sleeve_per_case },
+  { label: "Trays/Sleeve", attrKey: "pcs_per_sleeve", get: (e) => e.production_details?.prod_pcs_per_sleeve },
+  { label: "Sleeve/Combo", attrKey: "sleeve_per_case", get: (e) => e.production_details?.prod_sleeve_per_case },
   { label: "Total No. of Pcs/Pallet", attrKey: "total_pcs_per_pallet", get: (e) => e.production_details?.prod_total_pcs_per_pallet },
-  { label: "Total Quantity", get: (e) => e.production_details?.prod_total_pallets },
-  { label: "Target Shots", get: (e) => e.production_details?.prod_target_shots },
   { label: "Pad Type/Name/Code", attrKey: "pad_type", get: (e) => e.production_details?.prod_pad_type },
   { label: "Pad Color", attrKey: "pad_color", get: (e) => e.production_details?.prod_pad_color },
   { label: "Case Type (Combo/Regular)", attrKey: "case_type", get: (e) => e.production_details?.prod_case_type },
@@ -315,7 +309,6 @@ export default function ProductionDetailPanel({
                     <div className="detail-grid">
                       <Kv label="Category" value={entry.category ? (CATEGORY_LABELS[entry.category] || entry.category) : "—"} />
                       <Kv label={T.sku} value={entry.sku_code} />
-                      <Kv label={T.skuVersion} value={entry.sku_version} />
                       <Kv
                         label="Start – End Time"
                         value={entry.start_time ? `${formatTime12h(entry.start_time)}${entry.end_time ? ` – ${formatTime12h(entry.end_time)}` : " – …"}` : "—"}
@@ -323,16 +316,15 @@ export default function ProductionDetailPanel({
                     </div>
 
                     <table className="qc-obs-table" style={{ marginTop: 10 }}>
-                      <thead><tr><th>Pallet</th><th>{T.sku}</th><th>{T.skuVersion}</th><th style={{ width: 90 }}>Quantity</th></tr></thead>
+                      <thead><tr><th>Pallet</th><th>{T.sku}</th><th style={{ width: 90 }}>Quantity</th></tr></thead>
                       <tbody>
                         {entry.pallets.length === 0 ? (
-                          <tr><td colSpan={4} className="hint-text">No pallets recorded.</td></tr>
+                          <tr><td colSpan={3} className="hint-text">No pallets recorded.</td></tr>
                         ) : (
                           entry.pallets.map((p) => (
                             <tr key={p.id}>
                               <td className="mono">{p.pallet_display_id}</td>
                               <td>{p.sku_code}</td>
-                              <td>{p.sku_version}</td>
                               <td>{p.quantity}</td>
                             </tr>
                           ))
@@ -341,7 +333,7 @@ export default function ProductionDetailPanel({
                     </table>
                     <div style={{ marginTop: 8 }}>
                       <Link className="mono" href={`/material-consumption?open=${entry.material_consumption_id}`} style={{ textDecoration: "underline", fontSize: 12.5 }}>
-                        View source RM Consumption record →
+                        View source RM Requisition record →
                       </Link>
                     </div>
                   </div>

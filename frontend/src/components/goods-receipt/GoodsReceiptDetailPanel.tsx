@@ -23,9 +23,9 @@ function fmt(n: number | null | undefined) {
 // Trays are counted in pallets: inwarding asks one number, pallets received.
 // Every other material is received in its PO line's unit, plus how many
 // pallets it arrived on (one RM QR per pallet).
-type InwardForm = { quantity: string; pallets: string; stage: "" | "tray" | "fnp_tray" };
+type InwardForm = { quantity: string; pallets: string; stage: "" | "tray" | "lnp_tray" };
 // A row with no category is a tray synced from Zoho whose stage (Base Tray /
-// FNP Tray) is chosen at inward -- synced rows of any other material always
+// LNP Tray) is chosen at inward -- synced rows of any other material always
 // carry their SKU's category.
 const needsStage = (e: GoodsReceiptEntry) => !e.category;
 const isTray = (e: GoodsReceiptEntry) => needsStage(e) || TRAY_FAMILY_QC_CATEGORIES.includes(e.category as string);
@@ -62,7 +62,6 @@ export default function GoodsReceiptDetailPanel({
   const [qr, setQr] = useState<{ entry: GoodsReceiptEntry; detail: QrGenerationDetail } | null>(null);
 
   const inwarded = record.entries.filter((e) => e.status === "inwarded");
-  const palletTotal = inwarded.reduce((n, e) => n + (e.pallet_count || 0), 0);
   const isDraft = record.status === "draft";
 
   function apply(next: GoodsReceiptDetail) {
@@ -95,7 +94,7 @@ export default function GoodsReceiptDetailPanel({
 
   async function confirmInward(e: GoodsReceiptEntry) {
     if (!form) return;
-    if (inwardMode === "first" && needsStage(e) && !form.stage) { setError(`${e.shipment_number}: choose Base Tray or FNP Tray.`); return; }
+    if (inwardMode === "first" && needsStage(e) && !form.stage) { setError(`${e.shipment_number}: choose Base Tray or LNP Tray.`); return; }
     const pallets = Number(form.pallets);
     const qty = isTray(e) ? pallets : Number(form.quantity);
     if (!isTray(e) && !(qty > 0)) { setError(`${e.shipment_number}: Quantity Received must be greater than 0.`); return; }
@@ -183,8 +182,7 @@ export default function GoodsReceiptDetailPanel({
               <Kv label="PO Number" value={<span className="mono">{record.po_number}</span>} />
               <Kv label="Categories" value={Array.from(new Set(record.entries.map((e) => e.category).filter(Boolean))).map((c) => INWARD_CATEGORY_LABELS[c!]).join(", ") || "—"} />
               <Kv label="Vendor" value={record.vendor_name} />
-              <Kv label="Containers Inwarded" value={`${inwarded.length} of ${record.entries.length}`} />
-              <Kv label="Pallets Received" value={palletTotal} />
+              <Kv label="Shipment Inwarded" value={`${inwarded.length} of ${record.entries.length}`} />
               <Kv label="Created" value={new Date(record.created_at).toLocaleString()} />
             </div>
           </div>
@@ -201,13 +199,13 @@ export default function GoodsReceiptDetailPanel({
               <table className="qc-obs-table">
                 <thead>
                   <tr>
-                    <th>{T.shipmentNumber}</th><th>SKU</th><th>Category</th><th>{T.skuVersion}</th>
+                    <th>{T.shipmentNumber}</th><th>SKU</th><th>Category</th>
                     <th>PO Quantity</th><th>Received</th><th>Status</th><th />
                   </tr>
                 </thead>
                 <tbody>
                   {record.entries.length === 0 && (
-                    <tr className="empty-row"><td colSpan={8}>No containers on this receipt yet.</td></tr>
+                    <tr className="empty-row"><td colSpan={7}>No containers on this receipt yet.</td></tr>
                   )}
                   {record.entries.map((e) => (
                     <Fragment key={e.id}>
@@ -215,7 +213,6 @@ export default function GoodsReceiptDetailPanel({
                         <td className="mono">{e.shipment_number || <span className="badge partial">Missing</span>}</td>
                         <td className="mono">{e.sku_code || "—"}</td>
                         <td>{e.category ? INWARD_CATEGORY_LABELS[e.category] : <span className="hint-text" style={{ margin: 0 }}>Choose at inward</span>}</td>
-                        <td className="mono">{e.sku_version || "—"}</td>
                         <td>{fmt(e.po_quantity)} {e.unit}</td>
                         <td>
                           {/* A tray's received quantity IS its pallet count; other
@@ -291,7 +288,7 @@ export default function GoodsReceiptDetailPanel({
                                   <select value={form.stage} autoFocus onChange={(ev) => setForm({ ...form, stage: ev.target.value as InwardForm["stage"] })}>
                                     <option value="">Select</option>
                                     <option value="tray">Base Tray</option>
-                                    <option value="fnp_tray">FNP Tray</option>
+                                    <option value="lnp_tray">LNP Tray</option>
                                   </select>
                                 </div>
                               )}

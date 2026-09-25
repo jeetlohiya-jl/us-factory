@@ -104,7 +104,7 @@ def _filtered_mc_query(db: Session, search: str, category: str, date: str, statu
 def _get_or_404(db: Session, mc_id: uuid.UUID) -> models.MaterialConsumption:
     mc = _q(db).filter(models.MaterialConsumption.id == mc_id).first()
     if not mc:
-        raise HTTPException(status_code=404, detail="RM Consumption record not found")
+        raise HTTPException(status_code=404, detail="RM Requisition record not found")
     return mc
 
 
@@ -180,7 +180,7 @@ def update_basic(
 ):
     mc = _get_or_404(db, mc_id)
     if mc.status != "draft":
-        raise HTTPException(status_code=422, detail="This RM Consumption record has already been saved and cannot be changed.")
+        raise HTTPException(status_code=422, detail="This RM Requisition record has already been saved and cannot be changed.")
     if payload.shift is not None:
         mc.shift = payload.shift or None
     if payload.shipment_number is not None:
@@ -229,6 +229,46 @@ def update_machine_entry(
     entry = _get_entry_or_404(mc, entry_id)
     try:
         svc.set_machine_entry_machine(db, mc, entry, body.machine_id)
+        db.commit()
+    except svc.MaterialConsumptionError as e:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=e.message)
+    return serialize_mc_detail(_get_or_404(db, mc_id))
+
+
+@router.post("/{mc_id}/machine-entries/{entry_id}/scan-preview", response_model=schemas.MaterialConsumptionScanPreviewOut)
+def scan_preview(
+    mc_id: uuid.UUID, entry_id: uuid.UUID, body: schemas.MaterialConsumptionScanPreviewIn,
+    db: Session = Depends(get_db), _perm=Depends(require("create")),
+):
+    """One generic scan box (replaces the old 'scan pallet' / 'scan
+    secondary material' choice): resolve what was just scanned and hand
+    back its details so the UI can show an OK/Cancel confirmation, without
+    committing anything yet. OK then calls scan-commit below."""
+    mc = _get_or_404(db, mc_id)
+    entry = _get_entry_or_404(mc, entry_id)
+    try:
+        preview = svc.preview_scanned_pallet(db, mc, entry, body.payload)
+    except svc.MaterialConsumptionError as e:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=e.message)
+    db.rollback()  # read-only: nothing should have been written, but never commit a preview either way
+    return preview
+
+
+@router.post("/{mc_id}/machine-entries/{entry_id}/scan-commit", response_model=schemas.MaterialConsumptionDetailOut)
+def scan_commit(
+    mc_id: uuid.UUID, entry_id: uuid.UUID, body: schemas.MaterialConsumptionScanIn,
+    db: Session = Depends(get_db), current_user: AuthenticatedUser = Depends(get_current_user),
+    _perm=Depends(require("create")),
+):
+    """The confirm step after scan-preview's OK: re-resolves the same scan
+    and commits it as a primary or secondary pallet, whichever its own
+    category says -- see add_scanned_pallet."""
+    mc = _get_or_404(db, mc_id)
+    entry = _get_entry_or_404(mc, entry_id)
+    try:
+        svc.add_scanned_pallet(db, mc, entry, body.payload, client_time=body.client_time, actor_user_id=current_user.user_id)
         db.commit()
     except svc.MaterialConsumptionError as e:
         db.rollback()
