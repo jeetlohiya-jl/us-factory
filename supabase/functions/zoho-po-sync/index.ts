@@ -1,9 +1,14 @@
 // Supabase Edge Function: zoho-po-sync
 //
 // Zoho Books -> Factory Goods Receipt. Zoho Books calls this (a Workflow
-// Rule webhook on Purchase Orders) whenever a PO is created or edited. The
-// function fetches the full PO from the Zoho Books API and hands it to the
-// database function zoho_upsert_purchase_order (migration 0054), which
+// Rule webhook on Purchase Orders) whenever a PO is created or edited.
+//
+// The webhook's "Default Payload" already carries the WHOLE purchase order
+// (header, status, delivery location, every line), so the function uses it
+// as sent -- no Zoho API credentials needed. Only when a webhook sends just
+// an id does it fetch the PO from the Zoho Books API, and only if API
+// credentials are configured. Either way the PO goes to the database
+// function zoho_upsert_purchase_order (migration 0054), which
 // decides everything: only Approved POs delivered to Gainesville Factory,
 // only SKU lines (freight skipped), Shipment Number from "Container:",
 // trays converted to pallets, idempotent create/update, inwarded
@@ -19,11 +24,12 @@
 // Supabase JWT):  supabase functions deploy zoho-po-sync --no-verify-jwt
 //
 // Secrets (supabase secrets set ...):
+//   ZOHO_WEBHOOK_SECRET   required -- the shared secret (header on the Zoho webhook)
+//   Only for ?mode=reconcile or id-only webhooks (optional):
 //   ZOHO_CLIENT_ID, ZOHO_CLIENT_SECRET, ZOHO_REFRESH_TOKEN  (Zoho OAuth, scope ZohoBooks.purchaseorders.READ)
 //   ZOHO_ORGANIZATION_ID
 //   ZOHO_API_DOMAIN       default https://www.zohoapis.com   (.in / .eu / .com.au for other data centres)
 //   ZOHO_ACCOUNTS_DOMAIN  default https://accounts.zoho.com
-//   ZOHO_WEBHOOK_SECRET   any long random string, also put in the Zoho webhook
 //   GAINESVILLE_MATCH     default "gainesville factory" (text identifying the delivery location)
 // SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are provided by Supabase.
 
@@ -75,32 +81,68 @@ async function upsert(env: Env, f: Fetch, po: unknown): Promise<any> {
   return j;
 }
 
-async function syncOne(env: Env, f: Fetch, purchaseorderId: string) {
-  const { purchaseorder } = await zohoGet(env, f, `purchaseorders/${encodeURIComponent(purchaseorderId)}`);
-  return { purchaseorder_id: purchaseorderId, purchaseorder_number: purchaseorder?.purchaseorder_number, ...(await upsert(env, f, purchaseorder)) };
+async function syncPo(env: Env, f: Fetch, po: any, source: string) {
+  const match = env.GAINESVILLE_MATCH || "gainesville factory";
+  const result = await upsert(env, f, normaliseDelivery(po, match));
+  // One line per sync in Supabase -> Edge Functions -> zoho-po-sync -> Logs.
+  console.log(JSON.stringify({
+    source, purchaseorder_number: po?.purchaseorder_number, status: po?.status,
+    location: po?.location_name ?? po?.warehouse_name ?? null, lines: po?.line_items?.length ?? 0,
+    action: result?.action, reason: result?.reason ?? null,
+  }));
+  return { purchaseorder_id: po?.purchaseorder_id, purchaseorder_number: po?.purchaseorder_number, ...result };
 }
 
-/** purchaseorder_id from whatever shape the Zoho webhook sends (JSON or form). */
-async function readPurchaseOrderId(req: Request): Promise<string | null> {
-  const text = await req.text();
-  if (!text) return null;
-  try {
-    const j = JSON.parse(text);
-    const id = j.purchaseorder_id ?? j.purchaseorder?.purchaseorder_id ?? j.data?.purchaseorder_id;
-    if (id) return String(id);
-    if (typeof j.JSONString === "string") {
-      const inner = JSON.parse(j.JSONString);
-      return String(inner.purchaseorder_id ?? inner.purchaseorder?.purchaseorder_id ?? "") || null;
-    }
-  } catch { /* not JSON -> form below */ }
-  const form = new URLSearchParams(text);
-  const id = form.get("purchaseorder_id");
-  if (id) return id;
-  const js = form.get("JSONString");
-  if (js) {
-    try { const inner = JSON.parse(js); return String(inner.purchaseorder_id ?? inner.purchaseorder?.purchaseorder_id ?? "") || null; } catch { /* ignore */ }
-  }
+async function syncOne(env: Env, f: Fetch, purchaseorderId: string) {
+  const { purchaseorder } = await zohoGet(env, f, `purchaseorders/${encodeURIComponent(purchaseorderId)}`);
+  return syncPo(env, f, purchaseorder, "zoho-api");
+}
+
+/** What a Zoho webhook sent: the full purchase order (Default Payload,
+ * `payload=${JSONString}`, `JSONString=...`) and/or just its id. */
+type Webhook = { po: any | null; id: string | null; shape: string };
+
+function pickPo(j: any): any | null {
+  if (!j || typeof j !== "object") return null;
+  const cands = [j.purchaseorder, j.data?.purchaseorder, j];
+  for (const c of cands) if (c && typeof c === "object" && c.purchaseorder_id && Array.isArray(c.line_items)) return c;
   return null;
+}
+function pickId(j: any): string | null {
+  const id = j?.purchaseorder?.purchaseorder_id ?? j?.purchaseorder_id ?? j?.data?.purchaseorder_id;
+  return id ? String(id) : null;
+}
+function parseMaybe(t: string | null | undefined): any | null {
+  if (!t) return null;
+  try { return JSON.parse(t); } catch { return null; }
+}
+
+export async function readWebhook(req: Request): Promise<Webhook> {
+  const text = await req.text();
+  if (!text) return { po: null, id: null, shape: "empty" };
+  const j = parseMaybe(text);
+  if (j) {
+    const inner = typeof j.JSONString === "string" ? parseMaybe(j.JSONString) : typeof j.payload === "string" ? parseMaybe(j.payload) : null;
+    const src = inner ?? j;
+    return { po: pickPo(src), id: pickId(src), shape: inner ? "json+JSONString" : "json" };
+  }
+  const form = new URLSearchParams(text);
+  const inner = parseMaybe(form.get("payload")) ?? parseMaybe(form.get("JSONString"));
+  if (inner) return { po: pickPo(inner), id: pickId(inner), shape: "form+payload" };
+  return { po: null, id: form.get("purchaseorder_id"), shape: "form" };
+}
+
+/** The database looks for the delivery location in the usual Zoho fields.
+ * If Zoho put "Gainesville Factory" somewhere else in the PO (not the vendor,
+ * billing address or lines), surface it where the database looks. */
+function normaliseDelivery(po: any, match: string): any {
+  const m = match.toLowerCase();
+  const known = [po.location_name, po.warehouse_name, po.branch_name, po.delivery_address_name, JSON.stringify(po.delivery_address ?? "")]
+    .join(" ").toLowerCase();
+  if (known.includes(m)) return po;
+  const { line_items: _l, vendor_name: _v, billing_address: _b, vendor_address: _va, ...rest } = po;
+  if (JSON.stringify(rest).toLowerCase().includes(m)) return { ...po, delivery_address_name: match };
+  return po;
 }
 
 const json = (status: number, body: unknown) =>
@@ -114,6 +156,7 @@ export async function handle(req: Request, env: Env, f: Fetch = fetch): Promise<
 
   try {
     if (url.searchParams.get("mode") === "reconcile") {
+      if (!env.ZOHO_REFRESH_TOKEN) return json(400, { error: "Catch-up needs the optional Zoho API secrets (ZOHO_CLIENT_ID / ZOHO_CLIENT_SECRET / ZOHO_REFRESH_TOKEN / ZOHO_ORGANIZATION_ID)." });
       // Catch-up for any webhook Zoho failed to deliver: every PO modified in
       // the last N days, newest first. The database decides what to keep.
       const days = Math.min(Math.max(Number(url.searchParams.get("days")) || 3, 1), 60);
@@ -135,9 +178,20 @@ export async function handle(req: Request, env: Env, f: Fetch = fetch): Promise<
       return json(200, { mode: "reconcile", days, count: results.length, results });
     }
 
-    const id = await readPurchaseOrderId(req);
-    if (!id) return json(400, { error: "purchaseorder_id missing from webhook body" });
-    return json(200, await syncOne(env, f, id));
+    const hook = await readWebhook(req);
+    // Normal case: Zoho sent the whole PO -- use it, no API call.
+    if (hook.po) return json(200, await syncPo(env, f, hook.po, `webhook:${hook.shape}`));
+    if (!hook.id) {
+      console.log(JSON.stringify({ source: "webhook", error: "no purchase order in body", shape: hook.shape }));
+      return json(400, { error: "The webhook body has no purchase order. In the Zoho webhook, choose Body = Default Payload." });
+    }
+    if (!env.ZOHO_REFRESH_TOKEN) {
+      return json(400, {
+        error: "The webhook sent only a purchaseorder_id. Choose Body = Default Payload in the Zoho webhook " +
+          "(it sends the whole PO), or configure the optional Zoho API secrets.",
+      });
+    }
+    return json(200, await syncOne(env, f, hook.id));
   } catch (e) {
     return json(500, { error: e instanceof Error ? e.message : String(e) });
   }

@@ -19,46 +19,45 @@ Line removed → its pending row is removed. PO cancelled → the receipt is fla
 
 ## One-time setup
 
+The Zoho webhook's **Default Payload** sends the whole purchase order, so the
+sync needs **no Zoho API credentials** -- only a shared secret.
+
 ### 1. Run the migration
 Supabase SQL Editor → run `backend/migrations/0054_zoho_po_sync.sql`.
 
-### 2. Zoho OAuth credentials (Zoho API Console)
-1. https://api-console.zoho.com → **Add Client → Self Client**.
-2. **Generate Code**, scope `ZohoBooks.purchaseorders.READ`, duration 10 minutes.
-3. Exchange it for a refresh token (replace the three values; use `accounts.zoho.in`
-   etc. if your Zoho account is in another data centre):
-   ```
-   curl -X POST "https://accounts.zoho.com/oauth/v2/token?grant_type=authorization_code&client_id=CLIENT_ID&client_secret=CLIENT_SECRET&code=CODE"
-   ```
-   Keep the `refresh_token` from the response.
-4. Zoho Books → Settings → **Organization Profile** → copy the Organization ID.
-
-### 3. Deploy the Edge Function
+### 2. Deploy the Edge Function
 ```
-supabase link --project-ref <factory-prod project ref>
-supabase secrets set ZOHO_CLIENT_ID=... ZOHO_CLIENT_SECRET=... ZOHO_REFRESH_TOKEN=... \
-  ZOHO_ORGANIZATION_ID=... ZOHO_WEBHOOK_SECRET=<long random string>
-# only if your Zoho data centre isn't .com:
-# supabase secrets set ZOHO_API_DOMAIN=https://www.zohoapis.in ZOHO_ACCOUNTS_DOMAIN=https://accounts.zoho.in
-supabase functions deploy zoho-po-sync --no-verify-jwt
+npx supabase login
+npx supabase link --project-ref <project ref>
+npx supabase secrets set ZOHO_WEBHOOK_SECRET=<long random string>
+npx supabase functions deploy zoho-po-sync --no-verify-jwt
 ```
-URL: `https://<project-ref>.supabase.co/functions/v1/zoho-po-sync`
+URL: `https://<project ref>.supabase.co/functions/v1/zoho-po-sync`
 
-### 4. Zoho Books workflow rule
-Zoho Books → Settings → **Automation → Workflow Rules → New Rule**
-- Module **Purchase Orders**, "When a Purchase Order is **Created or Edited**".
-- Criteria: **Status is Approved** *(optional; the function also checks status
-  and Gainesville Factory itself, and must also receive later edits/cancellations
-  of already-synced POs — so leaving the criteria empty is safest)*.
-- Action → **Webhook**: Method **POST**, URL = the function URL above,
-  - Header `x-zoho-webhook-secret` = the same ZOHO_WEBHOOK_SECRET
-  - Body: **JSON**, `{"purchaseorder_id": "${purchaseorder.purchaseorder_id}"}`
-    (the function fetches the full PO itself; form-encoded and Zoho's
-    "Entity Parameters / JSONString" formats also work).
+### 3. Zoho Books webhook + workflow rule
+Zoho Books → Settings → **Automation → Webhooks → New Webhook**
+- Module **Purchase Order**, Method **POST**, URL = the function URL above
+- Header `x-zoho-webhook-secret` = the same ZOHO_WEBHOOK_SECRET
+- Body: **Default Payload** (this carries the full PO -- required)
 
-### 5. Daily catch-up (recommended)
-Re-syncs every PO modified in the last 3 days, in case a webhook was missed.
-Supabase SQL Editor (needs the `pg_cron` and `pg_net` extensions enabled):
+**Workflow Rules → New Rule**: module Purchase Orders, "Created or Edited",
+no criteria, action = that webhook. Save and make sure it is **Active**.
+
+Test: edit and save an Approved Gainesville PO in Zoho. It appears in
+Factory → Goods Receipt within seconds. Each call is logged in one line in
+Supabase → Edge Functions → zoho-po-sync → **Logs** (PO number, status,
+location, lines, and what happened -- created / updated / ignored + reason).
+
+### 4. Optional: daily catch-up via the Zoho API
+Only needed to re-sync POs whose webhook Zoho failed to deliver. This part
+does need Zoho API credentials, created by a Zoho user who is a member of
+the Books organization:
+- api-console.zoho.com (signed in as that user) → **Self Client** → Client
+  ID + Secret; **Generate Code** with scope `ZohoBooks.purchaseorders.READ`;
+  exchange it at `https://accounts.zoho.com/oauth/v2/token?grant_type=authorization_code&client_id=…&client_secret=…&code=…`
+  for a refresh token.
+- `npx supabase secrets set ZOHO_CLIENT_ID=… ZOHO_CLIENT_SECRET=… ZOHO_REFRESH_TOKEN=… ZOHO_ORGANIZATION_ID=<org id from the Books URL>`
+- Schedule it (SQL Editor, `pg_cron` + `pg_net`):
 ```sql
 select cron.schedule('zoho-po-sync-daily', '0 2 * * *', $$
   select net.http_post(
@@ -67,8 +66,6 @@ select cron.schedule('zoho-po-sync-daily', '0 2 * * *', $$
   );
 $$);
 ```
-Also useful once after setup, to import recent approved POs: call the same URL
-with `days=30`.
 
 ## Before the first sync
 In Factory → Setup: the **vendor** (e.g. MIDA, with its country — it sets the
