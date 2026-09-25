@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
-    Column, String, Text, Boolean, Numeric, DateTime, ForeignKey, Integer, UniqueConstraint
+    Column, String, Text, Boolean, Numeric, DateTime, Date, ForeignKey, Integer, UniqueConstraint
 )
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
@@ -137,6 +137,13 @@ class SkuVersion(Base):
     # the exact same per-SKU-Version reference data.
     prod_dimensions = Column(Text, nullable=True)
     prod_absorption_rate = Column(Text, nullable=True)
+    # 2026-09-25 -- Packing List packaging specs (migration 0058), same
+    # "entered once via the SKU Names admin screen" reference-data
+    # convention as the prod_* columns above. Trays/Combo on the printed
+    # packing list is derived (prod_pcs_per_sleeve x prod_sleeve_per_case)
+    # rather than stored again here.
+    hs_code = Column(Text, nullable=True)
+    case_size = Column(Text, nullable=True)
 
     sku_code = relationship("SkuCode", back_populates="versions")
 
@@ -174,6 +181,10 @@ class Customer(ProductScoped, Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
     name = Column(Text, nullable=False)
     is_active = Column(Boolean, nullable=False, default=True)
+    # 2026-09-25 -- Packing List's "Address" row, and the default starting
+    # value for "Ship To" on every shipment for this customer (migration
+    # 0058). Nullable; filled in from the Customers admin screen.
+    address = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
     __table_args__ = (UniqueConstraint("product", "name"),)
@@ -1242,6 +1253,16 @@ class CustomerShipment(ProductScoped, Base):
     customer = Column(Text, nullable=False)
     created_by = Column(UUID(as_uuid=True), ForeignKey("app_users.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    # 2026-09-25 -- Packing List fields (migration 0058). Genuinely new,
+    # shipment-specific facts with no earlier home in this schema; entered
+    # via the "Create Packing List" step on Goods Outward's detail panel,
+    # not at Customer Shipment creation time. ship_to_address defaults to
+    # the selected Customer's own `address` when the packing list form is
+    # first opened, but is independently editable/overridable per shipment.
+    po_number = Column(Text, nullable=True)
+    po_date = Column(Date, nullable=True)
+    pi_number = Column(Text, nullable=True)
+    ship_to_address = Column(Text, nullable=True)
 
     line_items = relationship(
         "CustomerShipmentLineItem", back_populates="customer_shipment",
@@ -1263,6 +1284,13 @@ class CustomerShipmentLineItem(Base):
     # SkuVersion's own (Production-facing) prod_pcs_per_sleeve reference.
     pcs = Column(Integer, nullable=True)
     pcs_per_sleeve = Column(Text, nullable=True)
+    # 2026-09-25 -- Packing List fields (migration 0058). Per-line-item,
+    # operator-entered at "Create Packing List" time -- Total Combo is the
+    # actual quantity of combo units going out on THIS shipment (not a
+    # fixed SKU constant), same "genuinely new, not derived from SkuVersion"
+    # convention as pcs/pcs_per_sleeve above (Section 13).
+    uom = Column(Text, nullable=True)
+    total_combo = Column(Numeric, nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
     customer_shipment = relationship("CustomerShipment", back_populates="line_items")

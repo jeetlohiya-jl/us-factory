@@ -1,14 +1,18 @@
 """
 Customer Shipment API -- deliberately narrow. Per spec point 15, list/detail
 reads are direct-Supabase from the frontend (see frontend/src/lib/api.ts),
-NOT FastAPI GET routes. The only two routes here are the ones that need the
-service-role connection: the one atomic multi-table create transaction
-(spec points 14/16), and delete (which must enforce the Admin-only +
-dependency-blocking rule).
+NOT FastAPI GET routes. create/update/delete need the service-role
+connection for their atomic multi-table transactions (spec points 14/16)
+and the Admin-only + dependency-blocking delete rule.
+
+2026-09-25 -- adds the Packing List pair (PUT .../packing-list, GET
+.../packing-list-pdf) for Goods Outward's "Print Packing List": the save
+route persists the operator-entered fields, the PDF route is a pure read-
+and-render off whatever's currently saved (packing_list_service).
 """
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -17,7 +21,7 @@ from app.api import schemas
 from app.api.deps import get_current_user
 from app.api import deps
 from app.adapters.auth.base import AuthenticatedUser
-from app.domain import customer_shipment_service
+from app.domain import customer_shipment_service, packing_list_service
 from sqlalchemy.exc import IntegrityError
 
 router = APIRouter(prefix="/api/v1/customer-shipments", tags=["customer-shipment"])
@@ -149,6 +153,54 @@ def update(
             )
             for li in shipment.line_items
         ],
+    )
+
+
+@router.put("/{shipment_id}/packing-list", status_code=204)
+def save_packing_list(
+    shipment_id: uuid.UUID,
+    body: schemas.PackingListSaveIn,
+    db: Session = Depends(get_db),
+    _perm=Depends(require("edit")),
+):
+    """Saves the packing-list-specific fields (PO No./PO Date/PI No./Ship
+    To + each line item's UOM/Total Combo) so a later reprint needs no
+    re-entry -- see packing_list_service.save_packing_list_fields. Called
+    right before GET .../packing-list-pdf by the "Create Packing List"
+    step on Goods Outward's detail panel."""
+    shipment = db.query(models.CustomerShipment).filter(models.CustomerShipment.id == shipment_id).first()
+    if not shipment:
+        raise HTTPException(status_code=404, detail="Customer Shipment not found")
+
+    packing_list_service.save_packing_list_fields(
+        db, shipment,
+        po_number=body.po_number, po_date=body.po_date, pi_number=body.pi_number,
+        ship_to_address=body.ship_to_address,
+        line_items=[li.model_dump() for li in body.line_items],
+    )
+    db.commit()
+    return None
+
+
+@router.get("/{shipment_id}/packing-list-pdf")
+def download_packing_list(
+    shipment_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    _perm=Depends(require("view")),
+):
+    """Renders the currently-saved packing-list fields into Cirkla's exact
+    Packing List document (packing_list_service.generate_packing_list_pdf).
+    Pure read -- call PUT .../packing-list first to persist any changes."""
+    shipment = db.query(models.CustomerShipment).filter(models.CustomerShipment.id == shipment_id).first()
+    if not shipment:
+        raise HTTPException(status_code=404, detail="Customer Shipment not found")
+
+    pdf_bytes = packing_list_service.generate_packing_list_pdf(db, shipment)
+    filename = f"Packing_List_{shipment.shipment_number}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
