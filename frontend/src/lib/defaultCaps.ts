@@ -5,7 +5,8 @@
  * (AppShell installs it), no per-field code, no requests.
  *
  * Left as typed: email / password / number / date / time / URL fields,
- * anything with an "@" placeholder, and any field marked
+ * anything with an "@" placeholder, scan boxes (placeholder mentions Scan
+ * or QR -- scanners type the QR's JSON), and any field marked
  * data-case="as-typed". Pasted text is capitalised the same way.
  *
  * React note: writing .value directly would update React's own value
@@ -21,6 +22,10 @@ function shouldCapitalise(el: EventTarget | null): el is HTMLInputElement | HTML
   if (SKIP_TYPES.has((el.type || "text").toLowerCase())) return false;
   if (el.readOnly || el.dataset.case === "as-typed") return false;
   if ((el.autocomplete || "").includes("email") || (el.placeholder || "").includes("@")) return false;
+  // Scan boxes: a hardware scanner "types" the QR's JSON ({"t":"rm_pallet",
+  // "id":...}) -- capitalising it would break it. Every scan box's
+  // placeholder mentions Scan or QR.
+  if (/\bscan\b|\bqr\b/i.test(el.placeholder || "") || el.dataset.scan !== undefined) return false;
   return true;
 }
 

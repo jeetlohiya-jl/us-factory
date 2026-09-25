@@ -26,6 +26,7 @@ that just emits keystrokes) back to the exact DB record.
 """
 import io
 import json
+import re
 from datetime import datetime, timezone
 
 import qrcode
@@ -144,19 +145,32 @@ def record_lifecycle_event(db: Session, pallet: models.Pallet, stage: str, actor
 
 
 def _parse_scan_payload(raw: str) -> dict:
+    """What a scan produced: the QR's JSON ({"t": ..., "id": ...}) or a plain
+    Pallet / Location code typed by hand or by a barcode scanner.
+
+    Tolerant of how hardware scanners and keyboards can alter the text on its
+    way in -- keys in another case ({"T":...,"ID":...}), smart quotes, stray
+    spaces -- so a scan never fails just because the JSON arrived changed.
+    Code comparison downstream is case-insensitive."""
     raw = (raw or "").strip()
     if not raw:
         return {}
+    cleaned = raw.replace("\u201c", '"').replace("\u201d", '"').replace("\u2018", "'").replace("\u2019", "'")
     try:
-        data = json.loads(raw)
-        if isinstance(data, dict) and "id" in data:
-            return data
+        data = json.loads(cleaned)
+        if isinstance(data, dict):
+            lowered = {str(k).lower(): v for k, v in data.items()}
+            if lowered.get("id"):
+                return lowered
     except (ValueError, TypeError):
         pass
-    # Plain display_id — e.g. a hardware barcode-scanner that just types the
+    # JSON that got mangled beyond parsing: still pick out its "id" value.
+    m = re.search(r'["\']?id["\']?\s*:\s*["\']([^"\']+)["\']', cleaned, re.IGNORECASE)
+    if m:
+        return {"id": m.group(1)}
+    # Plain display_id -- e.g. a hardware barcode-scanner that just types the
     # printed code as keystrokes rather than the full QR JSON payload.
     return {"id": raw}
-
 
 def resolve_pallet_from_scan(db: Session, raw: str, pallet_type: str) -> models.Pallet | None:
     data = _parse_scan_payload(raw)
