@@ -142,7 +142,7 @@ begin
     elsif not _as_draft and exists (select 1 from sku_versions where sku_code_id = _sku.id and is_active) then
       raise exception '%: select a SKU Version for %.', _label, _sku.code;
     end if;
-    _qty := nullif(_e->>'po_quantity')::numeric;
+    _qty := nullif(_e->>'po_quantity', '')::numeric;
     if _qty is null or _qty <= 0 then raise exception '%: PO Quantity must be greater than 0.', _label; end if;
     _unit := coalesce(_e->>'unit', 'Units');
     if _unit not in ('Pallets', 'Kgs', 'Units', 'Bags') then raise exception '%: unknown unit ''%''.', _label, _unit; end if;

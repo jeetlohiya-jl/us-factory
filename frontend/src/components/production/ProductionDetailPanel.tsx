@@ -45,7 +45,7 @@ type EditableWastage = { machine_id: string | null; trays: number | null; reason
 // same per-machine-entry editable-attribute mechanism (attrEdits/
 // setAttrEdit/machine_entry_attributes) instead of a separate flow -- it's
 // the exact same shape (one value per machine entry per field).
-type AttrKey = "machine_no" | "auto_padding" | "container_order_no" | "weight" | "pcs_per_sleeve" | "sleeve_per_case" | "total_pcs_per_pallet" | "pad_type" | "pad_color" | "case_type"
+type AttrKey = "machine_no" | "auto_padding" | "container_order_no" | "weight" | "pcs_per_sleeve" | "sleeve_per_case" | "total_pcs_per_pallet" | "pad_type" | "pad_color"
   | "rejection_damage" | "rejection_misplaced_glue" | "rejection_misplaced_pad" | "rejection_glue_on_pad" | "rejection_pad_placement_direction" | "rejection_adhesion_issue"
   | "pallets_produced";
 
@@ -57,14 +57,18 @@ type AttrKey = "machine_no" | "auto_padding" | "container_order_no" | "weight" |
 // Generated" card below instead of a row here -- it's the figure RQC and FG
 // QR Generation actually key off, so it's called out on its own rather than
 // buried in this reference table.
+// 2026-09-25 -- Case Type is dropped entirely (no longer tracked anywhere,
+// see skus/page.tsx). Total No. of Pcs/Pallet is no longer editable here:
+// it's mechanically derived from Trays/Sleeve x Sleeve/Combo on the SKU
+// Names admin screen now, so this row is display-only (no attrKey) to
+// avoid a per-machine-entry override drifting out of sync with that.
 const PROD_DETAIL_ROWS: { label: string; attrKey?: AttrKey; get: (e: ProductionDetail["machine_entries"][number]) => React.ReactNode }[] = [
   { label: T.sku, get: (e) => e.sku_code },
   { label: "Trays/Sleeve", attrKey: "pcs_per_sleeve", get: (e) => e.production_details?.prod_pcs_per_sleeve },
   { label: "Sleeve/Combo", attrKey: "sleeve_per_case", get: (e) => e.production_details?.prod_sleeve_per_case },
-  { label: "Total No. of Pcs/Pallet", attrKey: "total_pcs_per_pallet", get: (e) => e.production_details?.prod_total_pcs_per_pallet },
+  { label: "Total No. of Pcs/Pallet", get: (e) => e.production_details?.prod_total_pcs_per_pallet },
   { label: "Pad Type/Name/Code", attrKey: "pad_type", get: (e) => e.production_details?.prod_pad_type },
   { label: "Pad Color", attrKey: "pad_color", get: (e) => e.production_details?.prod_pad_color },
-  { label: "Case Type (Combo/Regular)", attrKey: "case_type", get: (e) => e.production_details?.prod_case_type },
 ];
 
 function sumProductionDetails(entries: ProductionDetail["machine_entries"], key: "prod_total_pcs_per_pallet"): number | null {
@@ -128,7 +132,6 @@ export default function ProductionDetailPanel({
           sleeve_per_case: e.production_details?.prod_sleeve_per_case || "",
           total_pcs_per_pallet: e.production_details?.prod_total_pcs_per_pallet != null ? String(e.production_details.prod_total_pcs_per_pallet) : "",
           pad_type: e.production_details?.prod_pad_type || "", pad_color: e.production_details?.prod_pad_color || "",
-          case_type: e.production_details?.prod_case_type || "",
           rejection_damage: e.rejection_classification.damage ? String(e.rejection_classification.damage) : "",
           rejection_misplaced_glue: e.rejection_classification.misplaced_glue ? String(e.rejection_classification.misplaced_glue) : "",
           rejection_misplaced_pad: e.rejection_classification.misplaced_pad ? String(e.rejection_classification.misplaced_pad) : "",

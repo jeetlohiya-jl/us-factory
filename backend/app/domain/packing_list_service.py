@@ -37,7 +37,9 @@ from app.db import models
 
 ASSETS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets")
 LOGO_PATH = os.path.join(ASSETS_DIR, "cirkla_logo.png")
-SEAL_PATH = os.path.join(ASSETS_DIR, "cirkla_seal_signature.png")
+# 2026-09-25 -- no seal/signature asset here by design: the corporate stamp
+# and signature are filled in by hand on the printed copy, never replicated
+# into the generated PDF. See generate_packing_list_pdf's footer.
 
 # Colors sampled directly from the supplied sample document.
 NAVY = colors.HexColor("#1F3864")
@@ -279,15 +281,13 @@ def generate_packing_list_pdf(db: Session, shipment: models.CustomerShipment) ->
         ("BOTTOMPADDING", (0, 0), (-1, -1), 3.5),
     ]))
 
-    # -- Footer: signature/seal ------------------------------------------
-    # KeepTogether so "For Cirkla Inc." never gets separated from the seal
-    # image onto the next page.
+    # -- Footer: signature line -------------------------------------------
+    # 2026-09-25 -- the corporate seal/signature are deliberately NOT
+    # rendered here: they get filled in by hand on the printed copy, not
+    # replicated onto every auto-generated PDF. Leave "For Cirkla Inc." plus
+    # blank space for that physical stamp/signature instead.
     footer_style = ParagraphStyle("footer", fontName="Times-Bold", fontSize=11, alignment=TA_RIGHT)
-    footer_inner = [Spacer(1, 10 * mm), Paragraph("For Cirkla Inc.", footer_style), Spacer(1, 2 * mm)]
-    if os.path.exists(SEAL_PATH):
-        seal = _sized_image(SEAL_PATH, 42 * mm)
-        seal.hAlign = "RIGHT"
-        footer_inner.append(seal)
+    footer_inner = [Spacer(1, 10 * mm), Paragraph("For Cirkla Inc.", footer_style), Spacer(1, 20 * mm)]
     footer_flowables = [KeepTogether(footer_inner)]
 
     story = [
