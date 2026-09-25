@@ -10,16 +10,21 @@ import { MODULE_NAMES, T } from "@/lib/terms";
 // here per SKU Version, then autopopulated (never re-entered) on every
 // Production record that uses that version. Field order/labels match the
 // prototype's per-machine "Production Details" table exactly.
+// 2026-09-25 -- "Total No. of Pcs/Pallet" is no longer manually entered
+// here: it's mechanically determined by Trays/Sleeve x Sleeve/Combo (the
+// same relationship the Packing List's own Trays/Combo column derives),
+// so typing it separately just risked drifting out of sync. It's
+// computed live in the modal below and saved automatically -- see
+// computeTotalPcsPerPallet. Case Type is dropped entirely (no longer
+// tracked anywhere).
 const PROD_DETAIL_FIELDS: { key: keyof SkuVersion; label: string; numeric?: boolean }[] = [
   { key: "prod_weight", label: "Weight" },
   { key: "prod_pcs_per_sleeve", label: "Trays/Sleeve" },
   { key: "prod_sleeve_per_case", label: "Sleeve/Combo" },
-  { key: "prod_total_pcs_per_pallet", label: "Total No. of Pcs/Pallet", numeric: true },
   { key: "prod_total_pallets", label: "Total Quantity", numeric: true },
   { key: "prod_target_shots", label: "Target Shots" },
   { key: "prod_pad_type", label: "Pad Type" },
   { key: "prod_pad_color", label: "Pad Color" },
-  { key: "prod_case_type", label: "Case Type" },
   // 2026-09-25 -- Packing List packaging specs (migration 0058). Not used
   // by Production's own table -- read only by the Goods Outward "Print
   // Packing List" step (packing_list_service.generate_packing_list_pdf).
@@ -31,6 +36,13 @@ const PROD_DETAIL_FIELDS: { key: keyof SkuVersion; label: string; numeric?: bool
   { key: "prod_dimensions", label: "Dimensions of Pad" },
   { key: "prod_absorption_rate", label: "Absorption Rate" },
 ];
+
+function computeTotalPcsPerPallet(form: ProdDetailsForm): number | null {
+  const trays = Number((form.prod_pcs_per_sleeve || "").trim());
+  const sleeves = Number((form.prod_sleeve_per_case || "").trim());
+  if (!trays || !sleeves || !Number.isFinite(trays) || !Number.isFinite(sleeves)) return null;
+  return trays * sleeves;
+}
 
 type ProdDetailsForm = Partial<Record<string, string>>;
 
@@ -59,6 +71,9 @@ function SkuVersionDetailsModal({
         const raw = (form[f.key] || "").trim();
         patch[f.key] = raw === "" ? null : (f.numeric ? Number(raw) : raw);
       }
+      // 2026-09-25 -- no longer a PROD_DETAIL_FIELDS-driven input; always
+      // derived from Trays/Sleeve x Sleeve/Combo, see computeTotalPcsPerPallet.
+      patch.prod_total_pcs_per_pallet = computeTotalPcsPerPallet(form);
       await onSave(patch);
       onClose();
     } catch (e) {
@@ -81,13 +96,23 @@ function SkuVersionDetailsModal({
         </div>
         <div className="sp-body">
           {PROD_DETAIL_FIELDS.map((f) => (
-            <div className="field" key={f.key}>
-              <label>{f.label}</label>
-              <input
-                type={f.numeric ? "number" : "text"}
-                value={form[f.key] || ""}
-                onChange={(e) => setForm((prev) => ({ ...prev, [f.key]: e.target.value }))}
-              />
+            <div key={f.key}>
+              <div className="field">
+                <label>{f.label}</label>
+                <input
+                  type={f.numeric ? "number" : "text"}
+                  value={form[f.key] || ""}
+                  onChange={(e) => setForm((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                />
+              </div>
+              {f.key === "prod_sleeve_per_case" && (
+                <div className="field">
+                  <label>Total No. of Pcs/Pallet</label>
+                  <div className="readonly-val">
+                    {computeTotalPcsPerPallet(form)?.toLocaleString() ?? "— enter Trays/Sleeve and Sleeve/Combo —"}
+                  </div>
+                </div>
+              )}
             </div>
           ))}
           {error && <div className="error-banner">{error}</div>}
