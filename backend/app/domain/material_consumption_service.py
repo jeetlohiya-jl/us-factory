@@ -306,6 +306,10 @@ def add_primary_pallet(
             run = find_or_create_production_run(db, mc, actor_user_id=actor_user_id)
             find_or_create_ipqc(db, run, mc)
             mc.production_run_id = run.id
+            # Factory: the run gets its Pending RQC record right away,
+            # linked to the run and its IPQC (idempotent).
+            from app.domain import rqc_service
+            rqc_service.ensure_pending_rqc_for_run(db, run, _derive_shipment_number(mc))
 
     row = models.MaterialConsumptionPallet(
         material_consumption_id=mc.id, machine_entry_id=entry.id, role="primary", pallet_id=pallet.id,
@@ -717,6 +721,8 @@ def finalize(db: Session, mc: models.MaterialConsumption, actor_user_id=None) ->
 
     run = find_or_create_production_run(db, mc, actor_user_id=actor_user_id)
     find_or_create_ipqc(db, run, mc)
+    from app.domain import rqc_service
+    rqc_service.ensure_pending_rqc_for_run(db, run, _derive_shipment_number(mc))
     # RQC is no longer auto-created here -- it is created manually only,
     # via "+ New Record" on the RQC screen (see app/api/rqc.py's POST route
     # / rqc_service.create_rqc), keyed on Shipment Number rather than this

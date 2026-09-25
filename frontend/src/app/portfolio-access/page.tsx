@@ -105,7 +105,7 @@ export default function PortfolioAccessPage() {
         <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
           <div className="field" style={{ flex: 1, minWidth: 240 }}>
             <label>Email</label>
-            <input value={newEmail} placeholder="name@gocirkla.com" onChange={(e) => setNewEmail(e.target.value)} />
+            <input type="email" value={newEmail} placeholder="name@gocirkla.com" onChange={(e) => setNewEmail(e.target.value)} />
           </div>
           <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, paddingBottom: 8 }}>
             <input type="checkbox" checked={newFactory} onChange={(e) => setNewFactory(e.target.checked)} />

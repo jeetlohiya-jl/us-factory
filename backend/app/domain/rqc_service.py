@@ -474,3 +474,49 @@ def relink_to_run_for_activity(db: Session, rqc: models.RqcRecord) -> None:
     ipqc = db.query(models.IpqcRecord).filter(models.IpqcRecord.production_run_id == run.id).first()
     rqc.production_run_id = run.id
     rqc.ipqc_record_id = ipqc.id if ipqc else None
+
+
+def is_untouched_auto_rqc(db: Session, rqc: models.RqcRecord) -> bool:
+    """A pending RQC record nobody has filled in yet (e.g. the one created
+    automatically for a Production Run): no inspection data, no approved
+    pallets, no approval entries."""
+    if rqc.status != "pending" or rqc.pallets_tested is not None or rqc.fg_pallets_generated:
+        return False
+    if db.query(models.RqcDefectResult.id).filter(models.RqcDefectResult.rqc_record_id == rqc.id).first():
+        return False
+    if db.query(models.RqcApprovalEntry.id).filter(models.RqcApprovalEntry.rqc_record_id == rqc.id).first():
+        return False
+    return True
+
+
+def ensure_pending_rqc_for_run(db: Session, run: models.ProductionRun, shipment_number: str | None) -> models.RqcRecord | None:
+    """Factory: every Production Run gets a Pending RQC record as soon as it
+    exists, linked to it -- same Shipment Number, production date and shift,
+    its IPQC, SKU, and its machine when the run has exactly one -- so RQC is
+    ready to fill in instead of being created by hand. Idempotent: a run that
+    already has any RQC record (auto or manual) gets nothing new. US Factory
+    keeps creating RQC records manually."""
+    from app.core.product import FACTORY, current_unit  # local: avoids an import cycle at module load
+    if current_unit() != FACTORY or not shipment_number:
+        return None
+    if db.query(models.RqcRecord.id).filter(models.RqcRecord.production_run_id == run.id).first():
+        return None
+    ipqc = db.query(models.IpqcRecord).filter(models.IpqcRecord.production_run_id == run.id).first()
+    machine_ids = [m.machine_id for m in db.query(models.ProductionRunMachine.machine_id).filter(models.ProductionRunMachine.production_run_id == run.id)]
+    rec = models.RqcRecord(
+        shipment_number=shipment_number,
+        production_run_id=run.id,
+        ipqc_record_id=ipqc.id if ipqc else None,
+        sku_code_id=(ipqc.sku_code_id if ipqc else run.sku_code_id),
+        sku_version_id=(ipqc.sku_version_id if ipqc else run.sku_version_id),
+        sku_code_snapshot=(ipqc.sku_code_snapshot if ipqc else (run.sku_code.code if run.sku_code else None)),
+        sku_version_snapshot=(ipqc.sku_version_snapshot if ipqc else (run.sku_version.version if run.sku_version else None)),
+        manufacturer=RQC_MANUFACTURER_PLACEHOLDER,
+        activity_date=run.production_date,
+        shift=run.shift,
+        machine_id=machine_ids[0] if len(machine_ids) == 1 else None,
+        status="pending",
+    )
+    db.add(rec)
+    db.flush()
+    return rec
