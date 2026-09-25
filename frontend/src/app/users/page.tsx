@@ -280,7 +280,7 @@ export default function UsersPage() {
             </div>
             <div className="field" style={{ flex: 1, minWidth: 240 }}>
               <label>Email</label>
-              <input value={newEmail} placeholder="name@gocirkla.com" onChange={(e) => setNewEmail(e.target.value)} />
+              <input type="email" value={newEmail} placeholder="name@gocirkla.com" onChange={(e) => setNewEmail(e.target.value)} />
             </div>
             <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, paddingBottom: 8 }}>
               <input type="checkbox" checked={newIsAdmin} onChange={(e) => setNewIsAdmin(e.target.checked)} />

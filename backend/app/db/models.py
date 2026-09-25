@@ -842,7 +842,7 @@ class RqcDefectResult(Base):
     __table_args__ = (UniqueConstraint("rqc_record_id", "defect_sr"),)
 
 
-class RqcCoaEntry(Base):
+class RqcCoaEntry(ProductScoped, Base):
     """
     2026-09-17 -- COA moved out of the main RQC form into its own flow, one
     COA record per SHIPMENT (never per RQC activity record, and never more
@@ -854,7 +854,8 @@ class RqcCoaEntry(Base):
     """
     __tablename__ = "rqc_coa_entries"
     id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
-    shipment_number = Column(Text, nullable=False, unique=True)
+    # Unique per unit (product, shipment_number) -- migration 0055.
+    shipment_number = Column(Text, nullable=False)
     created_by = Column(UUID(as_uuid=True), ForeignKey("app_users.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)

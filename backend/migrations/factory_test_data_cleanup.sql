@@ -54,6 +54,12 @@ delete from material_consumption_machine_entries where material_consumption_id i
 delete from material_consumptions where id in (select id from _mc);
 
 -- Production Runs / IPQC / RQC that only those created (plus anything tagged factory)
+-- RQC records point at these runs / IPQCs (e.g. the Pending RQC created
+-- automatically for every Factory Production Run): unlink them first; the
+-- Factory ones themselves are deleted further down.
+update rqc_records set ipqc_record_id = null
+  where ipqc_record_id in (select id from ipqc_records where production_run_id in (select id from _run) or product = 'factory');
+update rqc_records set production_run_id = null where production_run_id in (select id from _run);
 delete from hold_release_records where module = 'ipqc' and record_id in (select id from ipqc_records where production_run_id in (select id from _run) or product = 'factory');
 delete from ipqc_block_defects where block_id in (select id from ipqc_check_blocks where ipqc_record_id in (select id from ipqc_records where production_run_id in (select id from _run) or product = 'factory'));
 delete from ipqc_check_blocks where ipqc_record_id in (select id from ipqc_records where production_run_id in (select id from _run) or product = 'factory');

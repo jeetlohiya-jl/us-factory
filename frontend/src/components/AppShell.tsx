@@ -8,6 +8,7 @@ import { signInWithGoogle, signOut } from "@/lib/session";
 import { useMe } from "@/lib/useMe";
 import type { PortfolioAccessMe } from "@/lib/types";
 import { ProductProvider } from "@/lib/productContext";
+import { installDefaultCaps } from "@/lib/defaultCaps";
 import { clearBootstrap, loadBootstrap, primeBootstrap, readCachedBootstrap, readRememberedProduct, rememberProduct } from "@/lib/bootstrap";
 import { setCurrentProduct } from "@/lib/currentProduct";
 import { MODULE_NAMES } from "@/lib/terms";
@@ -399,6 +400,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         }
       });
   }
+
+  // Capitals by default in every text field (lib/defaultCaps.ts).
+  useEffect(() => installDefaultCaps(), []);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => startFor(data.session));

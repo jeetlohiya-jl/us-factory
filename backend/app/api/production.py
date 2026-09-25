@@ -21,6 +21,7 @@ from app.api.deps import get_current_user
 from app.api import deps
 from app.adapters.auth.base import AuthenticatedUser
 from app.domain import material_consumption_service as mc_svc
+from app.domain import rqc_service
 from app.domain.material_consumption_service import MaterialConsumptionError
 
 router = APIRouter(prefix="/api/v1/production-runs", tags=["production-runs"])
@@ -278,6 +279,11 @@ def save_production_run(
     # save (not just the pending->saved transition) so a machine that
     # started after the run was first saved still gets its end_time.
     mc_svc.stamp_end_times_for_production_run(db, run, client_time=payload.client_time)
+    # Filling in Production also makes sure its Pending RQC exists (runs
+    # created before RQC was auto-created get theirs here).
+    for linked_mc in db.query(models.MaterialConsumption).filter(models.MaterialConsumption.production_run_id == run.id):
+        if rqc_service.ensure_pending_rqc_for_run(db, run, mc_svc._derive_shipment_number(linked_mc)) is not None:
+            break
 
     # 2026-09-24 -- item 7 of the operator feedback batch: saving Production
     # (which is what asks, via ConsumptionConfirmModal, whether each picked
@@ -344,8 +350,13 @@ def delete_production_run(run_id: uuid.UUID, db: Session = Depends(get_db), _per
             detail=f"{run.run_number} is used by {mcs} RM Consumption record{'s' if mcs != 1 else ''}. "
                    "Delete or correct those first, then delete this Production record.",
         )
-    if db.query(models.RqcRecord.id).filter(models.RqcRecord.production_run_id == run.id).first():
-        raise HTTPException(status_code=409, detail=f"{run.run_number} has RQC records. Delete them first, then delete this Production record.")
+    rqcs = db.query(models.RqcRecord).filter(models.RqcRecord.production_run_id == run.id).all()
+    if any(not rqc_service.is_untouched_auto_rqc(db, r) for r in rqcs):
+        raise HTTPException(status_code=409, detail=f"{run.run_number} has RQC records with inspection data. Delete them first, then delete this Production record.")
+    for r in rqcs:  # its untouched Pending RQC goes with it
+        db.query(models.HoldReleaseRecord).filter(models.HoldReleaseRecord.module == "rqc", models.HoldReleaseRecord.record_id == r.id).delete(synchronize_session=False)
+        db.delete(r)
+    db.flush()  # the RQC rows reference the IPQC removed below
     if (
         db.query(models.QrGenerationRecord.id).filter(models.QrGenerationRecord.source_production_run_id == run.id).first()
         or db.query(models.Pallet.id).filter(models.Pallet.source_production_run_id == run.id).first()
