@@ -106,7 +106,7 @@ export default function VendorsPage() {
           <h1>{MODULE_NAMES.vendors}</h1>
           <div className="desc">
             Manages the per-category vendor list used by the Vendor Name dropdown on Inward Vehicle Inspection.
-            A vendor&apos;s Country sets the country prefix on every Raw Material pallet number generated from its shipments
+            A vendor&apos;s Country sets the country prefix on every RM pallet number generated from its shipments
             (e.g. a China vendor produces CN-PLT-... pallet numbers).
           </div>
         </div>

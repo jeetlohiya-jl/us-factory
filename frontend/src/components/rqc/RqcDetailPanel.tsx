@@ -149,7 +149,7 @@ export default function RqcDetailPanel({
       setFgPalletsGeneratedTotal(fresh.fg_pallets_generated);
       onSaved();
     } catch (e) {
-      setEntryError(e instanceof Error ? e.message : "Failed to generate Finished Goods QR for this entry");
+      setEntryError(e instanceof Error ? e.message : "Failed to generate FG QR for this entry");
     } finally {
       setGeneratingEntryId(null);
     }
@@ -313,7 +313,7 @@ export default function RqcDetailPanel({
               <thead>
                 <tr>
                   <th>Date</th><th>Operator</th><th style={{ width: 120 }}>Approved Pallets</th>
-                  <th>Table/Person Number</th><th>Finished Goods QR Status</th>
+                  <th>Table/Person Number</th><th>FG QR Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -389,7 +389,7 @@ export default function RqcDetailPanel({
                       actually produced it.
                     </div>
                     <table className="qc-obs-table" style={{ marginBottom: 6 }}>
-                      <thead><tr><th>Machine</th><th style={{ width: 130 }}>Finished Goods Pallets</th></tr></thead>
+                      <thead><tr><th>Machine</th><th style={{ width: 130 }}>FG Pallets</th></tr></thead>
                       <tbody>
                         {record.production_run_machines.map((m) => (
                           <tr key={m.id}>

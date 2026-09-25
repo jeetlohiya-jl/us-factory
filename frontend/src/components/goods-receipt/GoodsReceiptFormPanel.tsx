@@ -129,7 +129,7 @@ export default function GoodsReceiptFormPanel({
           </div>
           {anyInwarded && (
             <div className="hint-text" style={{ marginBottom: 12 }}>
-              PO Number, Vendor and inwarded containers are locked — their Raw Material pallet QRs already reference them.
+              PO Number, Vendor and inwarded containers are locked — their RM pallet QRs already reference them.
             </div>
           )}
           <div className="section-label" style={{ marginTop: 0 }}>Containers</div>

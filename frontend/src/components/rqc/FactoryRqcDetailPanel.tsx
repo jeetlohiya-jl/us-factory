@@ -291,7 +291,7 @@ export default function FactoryRqcDetailPanel({
                 ) : "—"}
               />
               <Kv
-                label="Finished Goods QR"
+                label="FG QR"
                 value={
                   hasFgQr ? (
                     <a style={{ cursor: "pointer", textDecoration: "underline" }} onClick={onViewFgQr}>View / Print →</a>

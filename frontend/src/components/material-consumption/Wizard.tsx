@@ -173,7 +173,7 @@ function MachineEntryPanel({
       {canEdit && !entry.end_time && (
         <div style={{ marginBottom: 14 }}>
           <ScanBox
-            placeholder="Scan or enter Raw Material pallet QR / ID"
+            placeholder="Scan or enter RM pallet QR / ID"
             busy={busy}
             onScan={(payload) => onScanPrimary(payload, "1", "Pallets", true)}
           />
@@ -570,7 +570,7 @@ export default function MaterialConsumptionWizard({
       <div className="side-panel open">
         <div className="sp-head">
           <div>
-            <h2>{page === 1 ? "New Raw Material Consumption — Production Details" : "New Raw Material Consumption — Pallet & Material Scanning"}</h2>
+            <h2>{page === 1 ? "New RM Consumption — Production Details" : "New RM Consumption — Pallet & Material Scanning"}</h2>
             <div className="sub">
               {detail.consumption_date} · <span className={`badge ${detail.status === "saved" ? "approved" : "draft"}`}>{detail.status === "saved" ? "Saved" : "Draft"}</span>
               {detail.production_run_number && <> · Production Run {detail.production_run_number}</>}

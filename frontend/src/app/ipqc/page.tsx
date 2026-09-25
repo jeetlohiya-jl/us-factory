@@ -115,7 +115,7 @@ function IpqcPageContent() {
         <div>
           <h1>{MODULE_NAMES.ipqc}</h1>
           <div className="desc">Every IPQC record created to date, auto-identified against the current production run.</div>
-          <span className="auto-note">Records are usually created automatically from Raw Material Consumption -- use + New Record to start one manually.</span>
+          <span className="auto-note">Records are usually created automatically from RM Consumption -- use + New Record to start one manually.</span>
         </div>
         <button
           className="btn btn-primary"

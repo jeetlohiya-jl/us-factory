@@ -341,7 +341,7 @@ export default function ProductionDetailPanel({
                     </table>
                     <div style={{ marginTop: 8 }}>
                       <Link className="mono" href={`/material-consumption?open=${entry.material_consumption_id}`} style={{ textDecoration: "underline", fontSize: 12.5 }}>
-                        View source Raw Material Consumption record →
+                        View source RM Consumption record →
                       </Link>
                     </div>
                   </div>
@@ -516,7 +516,7 @@ export default function ProductionDetailPanel({
                   ) : "Not yet created"}
                 />
                 <Kv
-                  label="Finished Goods QR Generation"
+                  label="FG QR Generation"
                   value={record.fg_qr_batches.length === 0 ? "Not yet created" : (
                     <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                       {record.fg_qr_batches.map((b) => (

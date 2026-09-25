@@ -106,7 +106,7 @@ function FgQrGenerationPageContent() {
       <div className="page-head2">
         <div>
           <h1>{MODULE_NAMES.fg_qr_generation}</h1>
-          <div className="desc">Every Finished Goods QR generation record created to date. Records auto-appear here once RQC (Final Quality Control) approves a Production Run — the same fundamental design as Raw Material QR Generation.</div>
+          <div className="desc">Every FG QR generation record created to date. Records auto-appear here once RQC (Final Quality Control) approves a Production Run — the same fundamental design as RM QR Generation.</div>
         </div>
         <span className="auto-note">Records are created automatically from an Approved RQC record.</span>
       </div>
@@ -151,7 +151,7 @@ function FgQrGenerationPageContent() {
 
       {detail && (
         <QrGenerationPanel
-          title="Finished Goods QR Generation"
+          title="FG QR Generation"
           detail={detail}
           canGenerate={!!perms?.can_edit}
           onGenerate={handleGenerate}
@@ -161,8 +161,8 @@ function FgQrGenerationPageContent() {
 
       {deleteTarget && !deleteBlockedMsg && (
         <ConfirmDialog
-          title="Delete this Finished Goods QR record?"
-          message={`This will permanently delete the Finished Goods QR Generation record for shipment "${deleteTarget.shipment_number}". This cannot be undone.`}
+          title="Delete this FG QR record?"
+          message={`This will permanently delete the FG QR Generation record for shipment "${deleteTarget.shipment_number}". This cannot be undone.`}
           confirmLabel="Delete"
           danger
           onConfirm={confirmDelete}

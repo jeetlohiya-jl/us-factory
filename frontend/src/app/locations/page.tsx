@@ -114,7 +114,7 @@ export default function LocationsPage() {
         <div className="page-head2">
           <div>
             <h1>{MODULE_NAMES.locations}</h1>
-            <div className="desc">Storage locations scanned in Raw Material Storage and Finished Goods Storage, with their QR labels.</div>
+            <div className="desc">Storage locations scanned in RM Storage and FG Storage, with their QR labels.</div>
           </div>
           <button className="btn btn-secondary" disabled={toPrint.length === 0} onClick={() => window.print()}>
             Print {toPrint.length || ""} QR Label{toPrint.length === 1 ? "" : "s"}

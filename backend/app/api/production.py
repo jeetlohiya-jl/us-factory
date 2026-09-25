@@ -320,3 +320,44 @@ def save_production_run(
     db.commit()
     db.refresh(run)
     return _serialize_save(run)
+
+
+@router.delete("/{run_id}", status_code=204)
+def delete_production_run(run_id: uuid.UUID, db: Session = Depends(get_db), _perm=Depends(require("delete"))):
+    """Delete a Production Run nothing depends on any more.
+
+    A run is created automatically by Raw Material Consumption (the first
+    scanned pallet), so it can only go once:
+      - no RM Consumption record uses it (its scanned pallets ARE this run's
+        consumption -- delete / correct that record first), and
+      - no RQC record, FG QR batch or FG pallet comes from it.
+    Its IPQC record (and that IPQC's inspection data / Hold & Release) is
+    part of the run and is removed with it."""
+    run = db.query(models.ProductionRun).filter(models.ProductionRun.id == run_id).first()
+    if not run:
+        raise HTTPException(status_code=404, detail="Production Run not found")
+
+    mcs = db.query(models.MaterialConsumption.id).filter(models.MaterialConsumption.production_run_id == run.id).count()
+    if mcs:
+        raise HTTPException(
+            status_code=409,
+            detail=f"{run.run_number} is used by {mcs} RM Consumption record{'s' if mcs != 1 else ''}. "
+                   "Delete or correct those first, then delete this Production record.",
+        )
+    if db.query(models.RqcRecord.id).filter(models.RqcRecord.production_run_id == run.id).first():
+        raise HTTPException(status_code=409, detail=f"{run.run_number} has RQC records. Delete them first, then delete this Production record.")
+    if (
+        db.query(models.QrGenerationRecord.id).filter(models.QrGenerationRecord.source_production_run_id == run.id).first()
+        or db.query(models.Pallet.id).filter(models.Pallet.source_production_run_id == run.id).first()
+    ):
+        raise HTTPException(status_code=409, detail=f"FG QR codes already exist for {run.run_number}, so it can't be deleted.")
+
+    ipqc_ids = [i.id for i in db.query(models.IpqcRecord.id).filter(models.IpqcRecord.production_run_id == run.id)]
+    if ipqc_ids:
+        db.query(models.HoldReleaseRecord).filter(
+            models.HoldReleaseRecord.module == "ipqc", models.HoldReleaseRecord.record_id.in_(ipqc_ids)
+        ).delete(synchronize_session=False)
+        db.query(models.IpqcRecord).filter(models.IpqcRecord.id.in_(ipqc_ids)).delete(synchronize_session=False)
+    db.delete(run)  # machines / wastage rows cascade (ON DELETE CASCADE)
+    db.commit()
+    return None

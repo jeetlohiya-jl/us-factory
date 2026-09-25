@@ -166,5 +166,5 @@ def delete(
     if reason:
         raise HTTPException(status_code=409, detail=reason)
 
-    db.delete(shipment)
+    customer_shipment_service.delete_customer_shipment(db, shipment)
     db.commit()

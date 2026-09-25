@@ -263,7 +263,7 @@ export default function GoodsReceiptDetailPanel({
                               </div>
                             </div>
                             <div className="hint-text" style={{ marginBottom: 8 }}>
-                              PO: {fmt(e.po_quantity)} {e.unit}. One Raw Material pallet QR per pallet received. Only {e.shipment_number} is marked Inwarded — other containers are unchanged.
+                              PO: {fmt(e.po_quantity)} {e.unit}. One RM pallet QR per pallet received. Only {e.shipment_number} is marked Inwarded — other containers are unchanged.
                             </div>
                             <div style={{ display: "flex", gap: 10, marginBottom: 8 }}>
                               <button className="btn btn-primary" disabled={busy === e.id} onClick={() => confirmInward(e)}>
@@ -293,7 +293,7 @@ export default function GoodsReceiptDetailPanel({
 
       {qr && (
         <QrGenerationPanel
-          title={`Raw Material QR · ${record.po_number} / ${qr.entry.shipment_number}`}
+          title={`RM QR · ${record.po_number} / ${qr.entry.shipment_number}`}
           detail={qr.detail}
           canGenerate={canReceive}
           onGenerate={async () => { await openOrGenerateQr(qr.entry); }}

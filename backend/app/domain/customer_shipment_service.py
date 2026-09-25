@@ -163,7 +163,7 @@ def create_customer_shipment(
 
 
 BLOCKED_LINE_ITEM_EDIT_MESSAGE = (
-    "This line item already has picked Finished Goods pallets against it and can't have its "
+    "This line item already has picked FG pallets against it and can't have its "
     "SKU, Version, or Quantity changed, or be removed. Remove the existing picks first."
 )
 
@@ -371,16 +371,41 @@ class CustomerShipmentEditBlocked(ValueError):
 
 
 def blocked_delete_reason(db: Session, shipment: models.CustomerShipment) -> str | None:
-    """Returns the exact prototype delete-block wording if any Shipment
-    Picking request references this shipment, else None. The DB's own FK
-    (default RESTRICT, no cascade -- see migration 0020) backstops this at
-    the schema level; this check exists purely to surface the friendly
-    message before that constraint would otherwise raise an IntegrityError."""
-    exists = (
-        db.query(models.ShipmentPickingRequest.id)
+    """A shipment can be deleted until work has started on it.
+
+    Every shipment gets one Shipment Picking request per line item the moment
+    it is created (create_customer_shipment), so "has a picking request" is
+    true of EVERY shipment and cannot be the rule -- it made every Goods
+    Outward record undeletable. What must block deletion is real work: a
+    pallet already picked, or an Outward Vehicle Inspection that has been
+    filled in (anything past Pending)."""
+    picked = (
+        db.query(models.ShipmentPickingPick.id)
+        .join(models.ShipmentPickingRequest, models.ShipmentPickingRequest.id == models.ShipmentPickingPick.shipment_picking_request_id)
         .filter(models.ShipmentPickingRequest.customer_shipment_id == shipment.id)
         .first()
     )
-    if exists:
-        return BLOCKED_DELETE_MESSAGE
+    if picked:
+        return "Pallets have already been picked for this shipment, so it can't be deleted."
+    inspected = (
+        db.query(models.OutwardVehicleInspection.id)
+        .filter(models.OutwardVehicleInspection.customer_shipment_id == shipment.id, models.OutwardVehicleInspection.status != "pending")
+        .first()
+    )
+    if inspected:
+        return "Its Outward Vehicle Inspection has already been filled in, so this shipment can't be deleted."
     return None
+
+
+def delete_customer_shipment(db: Session, shipment: models.CustomerShipment) -> None:
+    """Delete a shipment nobody has worked on yet, together with what was
+    created automatically for it: its (unpicked) picking requests, its line
+    items and its still-Pending Outward Vehicle Inspection."""
+    ovi_ids = [o.id for o in db.query(models.OutwardVehicleInspection.id).filter(models.OutwardVehicleInspection.customer_shipment_id == shipment.id)]
+    if ovi_ids:
+        db.query(models.OutwardVehicleInspectionImage).filter(models.OutwardVehicleInspectionImage.inspection_id.in_(ovi_ids)).delete(synchronize_session=False)
+        db.query(models.OutwardVehicleInspection).filter(models.OutwardVehicleInspection.id.in_(ovi_ids)).delete(synchronize_session=False)
+    db.query(models.ShipmentPickingRequest).filter(models.ShipmentPickingRequest.customer_shipment_id == shipment.id).delete(synchronize_session=False)
+    db.query(models.CustomerShipmentLineItem).filter(models.CustomerShipmentLineItem.customer_shipment_id == shipment.id).delete(synchronize_session=False)
+    db.flush()
+    db.delete(shipment)

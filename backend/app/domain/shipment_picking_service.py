@@ -64,7 +64,7 @@ def pick_pallet_for_request(
         raise PickError("Pallet not found for this scan.")
 
     if pallet.lifecycle_status != "stored":
-        raise PickError(f"Pallet {pallet.display_id} is not currently in Finished Goods Storage.")
+        raise PickError(f"Pallet {pallet.display_id} is not currently in FG Storage.")
 
     if pallet.sku_code_id != request.sku_code_id or pallet.sku_version_id != request.sku_version_id:
         raise PickError(

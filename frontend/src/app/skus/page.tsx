@@ -100,7 +100,7 @@ function SkuVersionDetailsModal({
 // Tray SKU (e.g. 3P) serves Base Tray, FNP Tray and FG -- the stage is
 // chosen on each record, never here.
 const MATERIAL_LABELS: Record<string, string> = {
-  tray: "Tray (Base Tray / FNP Tray / Finished Goods)", film: "Film", pad: "Soaker Pad", polybag: "Polybag", cfb: "CFB", glue: "Glue",
+  tray: "Tray (Base Tray / FNP Tray / FG)", film: "Film", pad: "Soaker Pad", polybag: "Polybag", cfb: "CFB", glue: "Glue",
 };
 const MANAGED_CATEGORIES: Category[] = ["tray", "film", "pad", "polybag", "cfb", "glue"];
 const MATERIAL_SHORT: Record<string, string> = { ...MATERIAL_LABELS, tray: "Tray" };
@@ -263,7 +263,7 @@ export default function SkusPage() {
       <div className="page-head2">
         <div>
           <h1>{MODULE_NAMES.skus}</h1>
-          <div className="desc">One SKU per product — a Tray SKU (e.g. 3P) is used for Base Tray, FNP Tray and Finished Goods alike.</div>
+          <div className="desc">One SKU per product — a Tray SKU (e.g. 3P) is used for Base Tray, FNP Tray and FG alike.</div>
         </div>
       </div>
 

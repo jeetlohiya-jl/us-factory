@@ -25,7 +25,7 @@ export default function StorageRecordDetailPanel({ record, onClose }: { record: 
       <div className="side-panel open">
         <div className="sp-head">
           <div>
-            <h2>{record.storage_type === "rm" ? "Raw Material" : "Finished Goods"} Storage Record</h2>
+            <h2>{record.storage_type === "rm" ? "RM" : "FG"} Storage Record</h2>
             <div className="sub">Pallet {record.pallet_display_id}</div>
           </div>
           <button className="sp-close" onClick={onClose}>×</button>
@@ -46,7 +46,7 @@ export default function StorageRecordDetailPanel({ record, onClose }: { record: 
           <div className="detail-card">
             <h3>Source &amp; Traceability</h3>
             <div className="detail-grid">
-              <Kv label={record.storage_type === "rm" ? "Source Raw Material QR Generation Batch" : "Source Finished Goods QR Generation Batch"} value={<span className="mono">{record.source_batch_display_id}</span>} />
+              <Kv label={record.storage_type === "rm" ? "Source RM QR Generation Batch" : "Source FG QR Generation Batch"} value={<span className="mono">{record.source_batch_display_id}</span>} />
               {record.source_inward_qc_id && (
                 <Kv
                   label="Source Inward QC"

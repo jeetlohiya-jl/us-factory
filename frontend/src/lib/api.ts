@@ -731,7 +731,7 @@ async function listMaterialConsumptionSb(
 
 async function getMaterialConsumptionSb(id: string): Promise<MaterialConsumptionDetail> {
   const { data, error } = await supabase.from("material_consumptions").select(MC_DETAIL_SELECT).eq("id", id).single();
-  if (error || !data) throw new ApiError(404, "Raw Material Consumption record not found");
+  if (error || !data) throw new ApiError(404, "RM Consumption record not found");
   return flattenMcDetail(data as unknown as RawMc);
 }
 
@@ -2524,7 +2524,7 @@ export const api = {
   deleteMachine: (id: string) =>
     sbVoid(
       () => supabase.from("machines").delete().eq("id", id),
-      { fk: "This machine is referenced by an existing Raw Material Consumption or Production record and cannot be deleted. Deactivate it instead." }
+      { fk: "This machine is referenced by an existing RM Consumption or Production record and cannot be deleted. Deactivate it instead." }
     ).then(() => invalidateListCache("ref:machines")),
 
   // -- Setup -> Locations (migration 0048). Same pattern as machines: plain
@@ -2548,7 +2548,7 @@ export const api = {
         display_id: displayId, zone, is_active: true,
         qr_payload: JSON.stringify({ t: "location", id: displayId, zone }),
       }),
-      { conflict: `"${displayId}" already exists.`, denied: "You need Raw Material Storage edit permission to add locations." }
+      { conflict: `"${displayId}" already exists.`, denied: "You need RM Storage edit permission to add locations." }
     ).then(() => invalidateListCache("ref:locations")),
   updateLocation: (id: string, patch: { is_active?: boolean }) =>
     sbVoid(() => supabase.from("locations").update(patch).eq("id", id))
@@ -2680,6 +2680,13 @@ export const api = {
     URL.revokeObjectURL(url);
   },
 
+  // Blocked (409, with the reason) while an RM Consumption record, RQC
+  // record or FG QR batch still depends on the run.
+  deleteProductionRun: async (id: string) => {
+    await request<void>(`/api/v1/production-runs/${id}`, { method: "DELETE" });
+    invalidateListCache("production");
+    invalidateListCache("ipqc");
+  },
   saveProduction: async (id: string, payload: ProductionSavePayload) => {
     const res = await request<{ id: string; status: string }>(`/api/v1/production-runs/${id}`, {
       method: "PUT",

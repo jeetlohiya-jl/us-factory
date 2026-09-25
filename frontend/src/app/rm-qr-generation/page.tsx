@@ -89,7 +89,7 @@ export default function RmQrGenerationPage() {
       <div className="page-head2">
         <div>
           <h1>{MODULE_NAMES.rm_qr_generation}</h1>
-          <div className="desc">Every Raw Material QR generation record created to date. Records auto-appear here as Pending once the linked Inward QC is approved.</div>
+          <div className="desc">Every RM QR generation record created to date. Records auto-appear here as Pending once the linked Inward QC is approved.</div>
         </div>
         <span className="auto-note">Records are created automatically from approved Inward QC.</span>
       </div>
@@ -145,7 +145,7 @@ export default function RmQrGenerationPage() {
 
       {detail && (
         <QrGenerationPanel
-          title="Raw Material QR Generation"
+          title="RM QR Generation"
           detail={detail}
           canGenerate={!!perms?.can_edit}
           onGenerate={handleGenerate}
@@ -155,8 +155,8 @@ export default function RmQrGenerationPage() {
 
       {deleteTarget && !deleteBlockedMsg && (
         <ConfirmDialog
-          title="Delete this Raw Material QR record?"
-          message={`This will permanently delete the Raw Material QR Generation record for shipment "${deleteTarget.shipment_number}". This cannot be undone.`}
+          title="Delete this RM QR record?"
+          message={`This will permanently delete the RM QR Generation record for shipment "${deleteTarget.shipment_number}". This cannot be undone.`}
           confirmLabel="Delete"
           danger
           onConfirm={confirmDelete}

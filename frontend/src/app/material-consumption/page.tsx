@@ -187,7 +187,7 @@ function MaterialConsumptionPageContent() {
           </thead>
           <tbody>
             {records.length === 0 ? (
-              <tr className="empty-row"><td colSpan={10}>{loading ? "Loading…" : "No Raw Material Consumption records yet."}</td></tr>
+              <tr className="empty-row"><td colSpan={10}>{loading ? "Loading…" : "No RM Consumption records yet."}</td></tr>
             ) : (
               records.map((r) => (
                 <tr key={r.id} style={{ cursor: "pointer" }} onClick={() => openRecord(r.id)}>
@@ -241,7 +241,7 @@ function MaterialConsumptionPageContent() {
       {deleteTarget && !deleteError && (
         <ConfirmDialog
           title="Delete this record?"
-          message="This will permanently delete this Raw Material Consumption record. This cannot be undone."
+          message="This will permanently delete this RM Consumption record. This cannot be undone."
           confirmLabel="Delete"
           danger
           onConfirm={confirmDelete}
