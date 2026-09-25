@@ -112,13 +112,42 @@ function pickId(j: any): string | null {
   const id = j?.purchaseorder?.purchaseorder_id ?? j?.purchaseorder_id ?? j?.data?.purchaseorder_id;
   return id ? String(id) : null;
 }
+/** Escape raw control characters (line breaks, tabs) INSIDE JSON strings.
+ * Zoho can send multi-line fields (a PO line's description: "Product: 3P
+ * <newline> Container: HA1 ...") unescaped, which strict JSON.parse
+ * rejects. Outside strings they are just whitespace and are left alone. */
+function escapeRawControlChars(t: string): string {
+  let out = "", inStr = false, esc = false;
+  for (const ch of t) {
+    if (inStr) {
+      if (esc) { out += ch; esc = false; continue; }
+      if (ch === "\\") { out += ch; esc = true; continue; }
+      if (ch === '"') { inStr = false; out += ch; continue; }
+      const c = ch.charCodeAt(0);
+      if (c < 0x20) { out += ch === "\n" ? "\\n" : ch === "\r" ? "\\r" : ch === "\t" ? "\\t" : "\\u" + c.toString(16).padStart(4, "0"); continue; }
+      out += ch;
+    } else {
+      if (ch === '"') inStr = true;
+      out += ch;
+    }
+  }
+  return out;
+}
+
 function parseMaybe(t: string | null | undefined): any | null {
   if (!t) return null;
-  try { return JSON.parse(t); } catch { return null; }
+  try { return JSON.parse(t); } catch { /* try the lenient form below */ }
+  try { return JSON.parse(escapeRawControlChars(t)); } catch { return null; }
 }
 
 export async function readWebhook(req: Request): Promise<Webhook> {
   const text = await req.text();
+  // What Zoho actually sent -- visible in Supabase -> Edge Functions -> Logs.
+  console.log(JSON.stringify({
+    received: { content_type: req.headers.get("content-type"), length: text.length,
+      form_fields: (() => { try { return [...new URLSearchParams(text).keys()].slice(0, 10); } catch { return []; } })(),
+      start: text.slice(0, 300) },
+  }));
   if (!text) return { po: null, id: null, shape: "empty" };
   const j = parseMaybe(text);
   if (j) {
@@ -126,9 +155,16 @@ export async function readWebhook(req: Request): Promise<Webhook> {
     const src = inner ?? j;
     return { po: pickPo(src), id: pickId(src), shape: inner ? "json+JSONString" : "json" };
   }
+  // Form-encoded: Zoho may name the field payload / JSONString /
+  // purchaseorder / anything -- try every field's value as JSON.
   const form = new URLSearchParams(text);
-  const inner = parseMaybe(form.get("payload")) ?? parseMaybe(form.get("JSONString"));
-  if (inner) return { po: pickPo(inner), id: pickId(inner), shape: "form+payload" };
+  for (const [key, value] of form.entries()) {
+    const inner = parseMaybe(value);
+    if (inner) {
+      const po = pickPo(inner) ?? pickPo({ purchaseorder: inner });
+      if (po || pickId(inner)) return { po, id: pickId(inner) ?? po?.purchaseorder_id ?? null, shape: `form:${key}` };
+    }
+  }
   return { po: null, id: form.get("purchaseorder_id"), shape: "form" };
 }
 
