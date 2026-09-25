@@ -53,6 +53,9 @@ export default function GoodsReceiptDetailPanel({
 }) {
   const [record, setRecord] = useState(detail);
   const [inwardingId, setInwardingId] = useState<string | null>(null);
+  // "first" = the container's first inward; "remaining" = a later delivery
+  // of a container that arrived short (optional -- it may never come).
+  const [inwardMode, setInwardMode] = useState<"first" | "remaining">("first");
   const [form, setForm] = useState<InwardForm | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -67,8 +70,19 @@ export default function GoodsReceiptDetailPanel({
     onChanged(next);
   }
 
+  const leftToReceive = (e: GoodsReceiptEntry) => Math.max(0, e.po_quantity - (e.received_quantity ?? 0));
+
+  function startInwardRemaining(e: GoodsReceiptEntry) {
+    setError(null);
+    setInwardMode("remaining");
+    setInwardingId(e.id);
+    const left = leftToReceive(e);
+    setForm({ quantity: isTray(e) ? "" : String(left), pallets: isTray(e) ? String(left) : "", stage: "" });
+  }
+
   function startInward(e: GoodsReceiptEntry) {
     setError(null);
+    setInwardMode("first");
     setInwardingId(e.id);
     setForm({
       // Default to the ordered quantity -- the common case is a full
@@ -81,7 +95,7 @@ export default function GoodsReceiptDetailPanel({
 
   async function confirmInward(e: GoodsReceiptEntry) {
     if (!form) return;
-    if (needsStage(e) && !form.stage) { setError(`${e.shipment_number}: choose Base Tray or FNP Tray.`); return; }
+    if (inwardMode === "first" && needsStage(e) && !form.stage) { setError(`${e.shipment_number}: choose Base Tray or FNP Tray.`); return; }
     const pallets = Number(form.pallets);
     const qty = isTray(e) ? pallets : Number(form.quantity);
     if (!isTray(e) && !(qty > 0)) { setError(`${e.shipment_number}: Quantity Received must be greater than 0.`); return; }
@@ -92,10 +106,17 @@ export default function GoodsReceiptDetailPanel({
     setBusy(e.id);
     setError(null);
     try {
-      const next = await api.inwardGoodsReceiptEntry(record.id, e.id, {
-        received_quantity: qty, unit: isTray(e) ? "Pallets" : e.unit, pallet_count: pallets,
-        ...(needsStage(e) && form.stage ? { category: form.stage } : {}),
-      });
+      if (inwardMode === "remaining" && qty > leftToReceive(e)) {
+        setError(`${e.shipment_number}: only ${fmt(leftToReceive(e))} ${e.unit} left to receive on this PO.`);
+        setBusy(null);
+        return;
+      }
+      const next = inwardMode === "remaining"
+        ? await api.inwardRemainingGoodsReceiptEntry(e.id, { received_quantity: qty, pallet_count: pallets })
+        : await api.inwardGoodsReceiptEntry(record.id, e.id, {
+            received_quantity: qty, unit: isTray(e) ? "Pallets" : e.unit, pallet_count: pallets,
+            ...(needsStage(e) && form.stage ? { category: form.stage } : {}),
+          });
       apply(next);
       setInwardingId(null);
       setForm(null);
@@ -205,6 +226,11 @@ export default function GoodsReceiptDetailPanel({
                           {e.received_quantity != null && e.received_quantity < e.po_quantity && (
                             <span className="badge partial" style={{ marginLeft: 6 }}>Short</span>
                           )}
+                          {(e.inward_events?.length ?? 0) > 1 && (
+                            <div className="hint-text" style={{ margin: "2px 0 0" }} title={(e.inward_events || []).map((ev) => `${fmt(ev.received_quantity)} ${ev.unit} on ${new Date(ev.inwarded_at).toLocaleDateString()}`).join(" + ")}>
+                              ({(e.inward_events || []).map((ev) => fmt(ev.received_quantity)).join(" + ")})
+                            </div>
+                          )}
                         </td>
                         <td>
                           {e.status === "inwarded"
@@ -226,7 +252,14 @@ export default function GoodsReceiptDetailPanel({
                             >
                               {e.qr_batch?.status === "generated"
                                 ? `View QRs · ${e.qr_batch.batch_display_id}`
-                                : busy === e.id ? "Generating…" : `Generate ${e.pallet_count} QRs`}
+                                : busy === e.id ? "Generating…"
+                                : e.qr_batch ? "Generate remaining QRs"   // batch grew after an "Inward remaining"
+                                : `Generate ${e.pallet_count} QRs`}
+                            </button>
+                          )}
+                          {e.status === "inwarded" && canReceive && !record.zoho_cancelled && leftToReceive(e) > 0 && inwardingId !== e.id && (
+                            <button className="btn btn-secondary" style={{ marginLeft: 8 }} onClick={() => startInwardRemaining(e)}>
+                              Inward remaining
                             </button>
                           )}
                         </td>
@@ -246,7 +279,13 @@ export default function GoodsReceiptDetailPanel({
                                   </div>
                                 </>
                               )}
-                              {needsStage(e) && (
+                              {inwardMode === "remaining" && (
+                                <div className="field">
+                                  <label>Still to receive</label>
+                                  <div className="readonly-val">{fmt(leftToReceive(e))} {e.unit} of {fmt(e.po_quantity)} {e.unit}</div>
+                                </div>
+                              )}
+                              {inwardMode === "first" && needsStage(e) && (
                                 <div className="field">
                                   <label>Category</label>
                                   <select value={form.stage} autoFocus onChange={(ev) => setForm({ ...form, stage: ev.target.value as InwardForm["stage"] })}>
@@ -267,7 +306,7 @@ export default function GoodsReceiptDetailPanel({
                             </div>
                             <div style={{ display: "flex", gap: 10, marginBottom: 8 }}>
                               <button className="btn btn-primary" disabled={busy === e.id} onClick={() => confirmInward(e)}>
-                                {busy === e.id ? "Inwarding…" : `Confirm Inward · ${e.shipment_number}`}
+                                {busy === e.id ? "Inwarding…" : inwardMode === "remaining" ? `Confirm Remaining · ${e.shipment_number}` : `Confirm Inward · ${e.shipment_number}`}
                               </button>
                               <button className="btn btn-ghost" disabled={busy === e.id} onClick={() => { setInwardingId(null); setForm(null); }}>Cancel</button>
                             </div>
