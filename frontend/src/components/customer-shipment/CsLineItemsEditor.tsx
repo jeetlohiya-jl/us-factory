@@ -37,6 +37,20 @@ export default function CsLineItemsEditor({
       const versions = versionsFor(patch.sku_code_id);
       next[idx].sku_version_id = versions[0]?.id || null;
     }
+    // Trays per Sleeve pre-fills from the selected SKU Version's own
+    // Production Details (prod_pcs_per_sleeve -- the same "Trays/Sleeve"
+    // reference data Production/Packing List already use) whenever the
+    // operator hasn't already typed something else in for this line --
+    // still editable here after, same pre-fill-not-override convention as
+    // the Packing List panel.
+    if (patch.sku_code_id !== undefined || patch.sku_version_id !== undefined) {
+      const versionId = next[idx].sku_version_id;
+      const versions = versionsFor(next[idx].sku_code_id);
+      const version = versions.find((v) => v.id === versionId);
+      if (version?.prod_pcs_per_sleeve && !next[idx].pcs_per_sleeve) {
+        next[idx].pcs_per_sleeve = version.prod_pcs_per_sleeve;
+      }
+    }
     onChange(next);
   }
 
@@ -61,7 +75,7 @@ export default function CsLineItemsEditor({
     <div>
       <table className="qc-obs-table">
         <thead>
-          <tr><th>{T.sku}</th><th>{T.skuVersion}</th><th>Quantity</th><th>Pcs</th><th>Trays/Sleeve</th><th /></tr>
+          <tr><th>{T.sku}</th><th>{T.skuVersion}</th><th>Quantity</th><th>Trays</th><th>Trays per Sleeve</th><th /></tr>
         </thead>
         <tbody>
           {items.map((item, i) => (

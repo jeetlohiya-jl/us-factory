@@ -83,6 +83,11 @@ export default function FactoryRqcDetailPanel({
   const machineOptions: { id: string; code: string }[] =
     record.production_run_machines.length > 0 ? record.production_run_machines : allMachines;
 
+  // Same gate as FactoryRqcWizard's Page 2 -> Page 3 requirement: approval
+  // (approved pallets, machine, etc.) isn't recorded until Number of
+  // Pallets (the inspection) is actually filled in.
+  const inspectionStarted = palletsTested !== "" && Number(palletsTested) > 0;
+
   useEffect(() => {
     if (editable && record.production_run_machines.length === 0 && allMachines.length === 0) {
       api.machines().then(setAllMachines).catch(() => setAllMachines([]));
@@ -163,55 +168,6 @@ export default function FactoryRqcDetailPanel({
           </div>
 
           <div className="detail-card">
-            <h3>Approval</h3>
-            {editable ? (
-              <div className="detail-grid">
-                <div className="field">
-                  <label>Date <span style={{ color: "var(--red)" }}>*</span></label>
-                  <input type="date" value={activityDate} onChange={(e) => setActivityDate(e.target.value)} />
-                </div>
-                <div className="field">
-                  <label>Machine <span style={{ color: "var(--red)" }}>*</span></label>
-                  <select value={machineId} onChange={(e) => setMachineId(e.target.value)}>
-                    <option value="">Select a machine…</option>
-                    {machineOptions.map((m) => (
-                      <option key={m.id} value={m.id}>{m.code}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="field">
-                  <label>Shift</label>
-                  <input type="text" placeholder="e.g. A" value={activityShift} onChange={(e) => setActivityShift(e.target.value)} />
-                </div>
-                <div className="field">
-                  <label>Number of Pallets (Tested)</label>
-                  <input type="number" min={0} placeholder="0" value={palletsTested} onChange={(e) => setPalletsTested(e.target.value)} />
-                </div>
-                <div className="field">
-                  <label>Approved Pallets{palletsTested !== "" && ` (max ${palletsTested})`}</label>
-                  <input
-                    type="number" min={0} max={palletsTested === "" ? undefined : Number(palletsTested)} placeholder="0"
-                    value={approvedPallets} onChange={(e) => setApprovedPallets(e.target.value)}
-                  />
-                </div>
-                <div className="field">
-                  <label>RQC Table/Person Number</label>
-                  <input type="text" placeholder="e.g. 1" value={tablePersonNumber} onChange={(e) => setTablePersonNumber(e.target.value)} />
-                </div>
-              </div>
-            ) : (
-              <div className="detail-grid">
-                <Kv label="Date" value={record.activity_date} />
-                <Kv label="Machine" value={machineCode ? <span className="mono">{machineCode}</span> : "—"} />
-                <Kv label="Shift" value={record.activity_shift} />
-                <Kv label="Number of Pallets (Tested)" value={record.pallets_tested} />
-                <Kv label="Approved Pallets" value={record.fg_pallets_generated} />
-                <Kv label="RQC Table/Person Number" value={record.table_person_number} />
-              </div>
-            )}
-          </div>
-
-          <div className="detail-card">
             <h3>Sampling Plan (QMP05)</h3>
             <table className="qc-obs-table">
               <thead>
@@ -230,11 +186,26 @@ export default function FactoryRqcDetailPanel({
             </table>
           </div>
 
+          {/* RQC Inspection Records comes before Approval -- same order as
+              FactoryRqcWizard's own Page 2 (Inspection) then Page 3
+              (Approval): approved pallets should only ever be recorded
+              once the inspection grid is actually filled in, not before. */}
           <div className="detail-card">
             <h3>RQC Inspection Records</h3>
             <div className="hint-text" style={{ marginBottom: 10, fontWeight: 700, color: "var(--ink-70)" }}>
               Sample Size: {RQC_DEFECT_GROUPS_QMP05[0].sampleSize}
             </div>
+            {editable ? (
+              <div className="field" style={{ maxWidth: 260, marginBottom: 16 }}>
+                <label>Number of Pallets <span style={{ color: "var(--red)" }}>*</span></label>
+                <input type="number" min={0} placeholder="0" value={palletsTested} onChange={(e) => setPalletsTested(e.target.value)} />
+                <div className="hint-text">How many pallets were tested in this activity -- not how many passed (Approved Pallets, below).</div>
+              </div>
+            ) : (
+              <div className="detail-grid" style={{ marginBottom: 16 }}>
+                <Kv label="Number of Pallets (Tested)" value={record.pallets_tested} />
+              </div>
+            )}
             <table className="qc-obs-table">
               <thead>
                 <tr>
@@ -276,6 +247,52 @@ export default function FactoryRqcDetailPanel({
                 <div className="detail-kv-value">{record.overall_result || "—"}</div>
               )}
             </div>
+          </div>
+
+          <div className="detail-card">
+            <h3>Approval</h3>
+            {editable && !inspectionStarted ? (
+              <div className="hint-text">Fill in Number of Pallets and the RQC Inspection Records above first -- approval is recorded once the inspection is filled in.</div>
+            ) : editable ? (
+              <div className="detail-grid">
+                <div className="field">
+                  <label>Date <span style={{ color: "var(--red)" }}>*</span></label>
+                  <input type="date" value={activityDate} onChange={(e) => setActivityDate(e.target.value)} />
+                </div>
+                <div className="field">
+                  <label>Machine <span style={{ color: "var(--red)" }}>*</span></label>
+                  <select value={machineId} onChange={(e) => setMachineId(e.target.value)}>
+                    <option value="">Select a machine…</option>
+                    {machineOptions.map((m) => (
+                      <option key={m.id} value={m.id}>{m.code}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="field">
+                  <label>Shift</label>
+                  <input type="text" placeholder="e.g. A" value={activityShift} onChange={(e) => setActivityShift(e.target.value)} />
+                </div>
+                <div className="field">
+                  <label>Approved Pallets{palletsTested !== "" && ` (max ${palletsTested})`}</label>
+                  <input
+                    type="number" min={0} max={palletsTested === "" ? undefined : Number(palletsTested)} placeholder="0"
+                    value={approvedPallets} onChange={(e) => setApprovedPallets(e.target.value)}
+                  />
+                </div>
+                <div className="field">
+                  <label>RQC Table/Person Number</label>
+                  <input type="text" placeholder="e.g. 1" value={tablePersonNumber} onChange={(e) => setTablePersonNumber(e.target.value)} />
+                </div>
+              </div>
+            ) : (
+              <div className="detail-grid">
+                <Kv label="Date" value={record.activity_date} />
+                <Kv label="Machine" value={machineCode ? <span className="mono">{machineCode}</span> : "—"} />
+                <Kv label="Shift" value={record.activity_shift} />
+                <Kv label="Approved Pallets" value={record.fg_pallets_generated} />
+                <Kv label="RQC Table/Person Number" value={record.table_person_number} />
+              </div>
+            )}
           </div>
 
           <div className="detail-card">

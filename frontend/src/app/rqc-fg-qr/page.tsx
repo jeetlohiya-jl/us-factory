@@ -61,6 +61,12 @@ function FactoryRqcFgQrPageContent() {
   const [deleteTarget, setDeleteTarget] = useState<RqcListItem | null>(null);
   const [deleteBlockedMsg, setDeleteBlockedMsg] = useState<string | null>(null);
 
+  // Same convention as the non-Factory /rqc page and IPQC/Production:
+  // Draft/Pending has nothing finished to review yet, so tapping the row
+  // should jump straight into the fill-in form -- the dominant action.
+  // Once it's Hold/Approved, tapping opens the read-only view instead.
+  const canView = (s: string) => s === "hold" || s === "approved";
+
   const refresh = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -132,6 +138,7 @@ function FactoryRqcFgQrPageContent() {
           const [rec, batch] = await Promise.all([api.getRqc(openId), api.getFgQrForRqcRecord(openId)]);
           setDetailRecord(rec);
           setDetailMachine(null);
+          setDetailMode(canView(rec.status) || !perms?.can_fill_section ? "view" : "edit");
           setFgQr(batch);
         } catch (e) {
           setError(e instanceof Error ? e.message : "Failed to load record");
@@ -208,7 +215,12 @@ function FactoryRqcFgQrPageContent() {
               <tr className="empty-row"><td colSpan={10}>{loading ? "Loading…" : "No RQC records yet."}</td></tr>
             ) : (
               items.map((r) => (
-                <tr key={r.id} style={{ cursor: "pointer" }} onClick={() => openRecord(r)}>
+                <tr
+                  key={r.id}
+                  className={r.status === "pending" ? "row-pending" : ""}
+                  style={{ cursor: "pointer" }}
+                  onClick={() => openRecord(r, canView(r.status) || !perms?.can_fill_section ? "view" : "edit")}
+                >
                   <td className="mono">{r.shipment_number || "—"}</td>
                   <td className="mono">{r.sku_code || "—"}</td>
                   <td>{r.activity_date || "—"}</td>

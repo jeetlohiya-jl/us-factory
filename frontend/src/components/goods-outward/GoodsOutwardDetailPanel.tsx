@@ -151,7 +151,7 @@ export default function GoodsOutwardDetailPanel({
                 <tr>
                   <th>{T.sku}</th><th style={{ width: 90 }}>Required</th>
                   <th style={{ width: 80 }}>Picked</th><th style={{ width: 90 }}>Remaining</th>
-                  <th>Pcs</th><th>Trays/Sleeve</th><th style={{ width: 100 }}>Status</th>
+                  <th>Trays</th><th>Trays per Sleeve</th><th style={{ width: 100 }}>Status</th>
                 </tr>
               </thead>
               <tbody>
