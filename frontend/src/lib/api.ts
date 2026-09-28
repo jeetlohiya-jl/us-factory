@@ -1641,7 +1641,12 @@ type RawGoLineItem = {
 type RawGoShipment = {
   id: string; shipment_number: string; container_number: string; customer: string; created_at: string;
   line_items: RawGoLineItem[];
+  outward_inspection?: { id: string; status: string } | { id: string; status: string }[] | null;
 };
+
+function flattenOutwardInspection(raw: RawGoShipment["outward_inspection"]): { id: string; status: string } | null {
+  return Array.isArray(raw) ? raw[0] ?? null : raw ?? null;
+}
 
 const GO_LINE_ITEM_SELECT =
   "id,sku_code_id,sku_version_id,sku_code_snapshot,sku_version_snapshot,pallets_required,pcs,pcs_per_sleeve," +
@@ -1714,7 +1719,14 @@ async function listGoodsOutwardSb(
 async function getGoodsOutwardSb(id: string): Promise<GoodsOutwardDetail> {
   const { data, error } = await supabase
     .from("customer_shipments")
-    .select(`id,shipment_number,container_number,customer,created_at,line_items:customer_shipment_line_items(${GO_LINE_ITEM_SELECT})`)
+    .select(
+      `id,shipment_number,container_number,customer,created_at,line_items:customer_shipment_line_items(${GO_LINE_ITEM_SELECT}),` +
+      // Only the detail read embeds this (not GO_LIST_SELECT) -- the list
+      // rows don't need per-shipment inspection status, only this panel
+      // does, same minimal-footprint choice Goods Receipt's own
+      // inward_inspection embed made.
+      `outward_inspection:outward_vehicle_inspections(id,status)`
+    )
     .eq("id", id)
     .single();
   if (error || !data) throw new ApiError(404, "Goods Outward record not found");
@@ -1723,6 +1735,7 @@ async function getGoodsOutwardSb(id: string): Promise<GoodsOutwardDetail> {
   return {
     id: raw.id, shipment_number: raw.shipment_number, container_number: raw.container_number, customer: raw.customer,
     created_at: raw.created_at, line_items: lineItems, status: aggregateGoStatus(lineItems),
+    outward_inspection: flattenOutwardInspection(raw.outward_inspection),
   };
 }
 

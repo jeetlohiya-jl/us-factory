@@ -1405,7 +1405,7 @@ class ShipmentPickingPick(Base):
     location = relationship("Location")
 
 
-class OutwardVehicleInspection(Base):
+class OutwardVehicleInspection(ProductScoped, Base):
     """
     Auto-created (never manually) the instant a Customer Shipment is
     recorded -- one per Customer Shipment (unique constraint on
@@ -1414,6 +1414,14 @@ class OutwardVehicleInspection(Base):
     -> Shipment Picking -> Outward Vehicle Inspection, not RQC. Starts
     'pending'; only its own save route (api/outward_vehicle_inspection.py)
     moves it to draft/hold/approved.
+
+    2026-09-28 -- made ProductScoped (migration 0067): Factory's own
+    Customer Shipment/Goods Outward flow now routes into this same table
+    once pallet picking finishes, and CustomerShipment (the parent this
+    table is auto-created from) is already ProductScoped -- without this,
+    a Factory-created OVI record would have been readable/writable by
+    every unit, the same gap migration 0066 closed for Inward Vehicle
+    Inspection.
     """
     __tablename__ = "outward_vehicle_inspections"
     id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)

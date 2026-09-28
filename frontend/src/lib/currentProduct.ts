@@ -40,6 +40,9 @@ export const FACTORY_PERMISSION_MAP: Partial<Record<ModuleKey, ModuleKey>> = {
   fg_storage: "factory_fg_storage",
   customer_shipment: "factory_goods_outward",
   shipment_picking: "factory_goods_outward",
+  // 2026-09-28 -- Goods Outward's "pick pallets -> Outward Vehicle
+  // Inspection" flow (migration 0067) reuses this same US Factory module.
+  outward_vehicle_inspection: "factory_goods_outward",
 };
 
 /** In Factory, every shared screen reading e.g. permissions.rm_storage

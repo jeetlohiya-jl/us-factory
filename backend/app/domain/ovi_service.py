@@ -11,11 +11,21 @@ itself create-once (no retry path creates a second CS row), and the unique
 constraint on outward_vehicle_inspections.customer_shipment_id (migration
 0021) is the hard backstop against ever having two OVI rows for one CS.
 
-The 7 vehicle-condition checks are fixed reference data, transcribed
-verbatim from the prototype's VEHICLE_QUESTIONS array (the same list used
-by Inward Vehicle Inspection's own inspection step in the prototype) --
-hardcoded here exactly like RQC_DEFECT_GROUPS/IPQC's 8-item grid, not
-stored in a checklist_items table (see migration 0021's header notes).
+The 7 vehicle-condition checks are fixed reference data -- hardcoded here
+exactly like RQC_DEFECT_GROUPS/IPQC's 8-item grid, not stored in a
+checklist_items table (see migration 0021's header notes). Answers are
+keyed by this plain integer `sr`, never by the label text, so the wording
+below can be edited freely without touching any stored per-record answer.
+
+2026-09-28 -- reworded to match the "Vehicle is clean & dry / No
+objectionable odour / ..." reference checklist (the same 7-item list
+Factory's own Inward Vehicle Inspection checklist was seeded with in
+migration 0066), at the user's request for Goods Outward's new
+"pick pallets -> Outward Vehicle Inspection" flow. This list is shared by
+both products (OVI has no per-unit checklist mechanism, unlike Inward
+Vehicle Inspection's real `inward_vehicle_inspection_checklist_items`
+table) -- US Factory's existing OVI records are unaffected since only the
+label text changed, not the `sr` values their answers are keyed by.
 """
 from __future__ import annotations
 
@@ -24,13 +34,13 @@ from sqlalchemy.orm import Session
 from app.db import models
 
 OVI_QUESTIONS = [
-    {"sr": 1, "label": "Clean, dry & dust free"},
+    {"sr": 1, "label": "Vehicle is clean & dry"},
     {"sr": 2, "label": "No objectionable odour"},
-    {"sr": 3, "label": "No insects/rodents"},
+    {"sr": 3, "label": "No insects, rodents or signs of pest activity"},
     {"sr": 4, "label": "No floor damage or contamination risk"},
     {"sr": 5, "label": "No water leakage"},
-    {"sr": 6, "label": "No rust inside the container"},
-    {"sr": 7, "label": "Boxes are in intact condition (no damages)"},
+    {"sr": 6, "label": "No rust inside the container / trailer"},
+    {"sr": 7, "label": "No damaged boxes/packages observed"},
 ]
 
 _REQUIRED_SRS = {q["sr"] for q in OVI_QUESTIONS}
