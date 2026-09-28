@@ -75,6 +75,17 @@ export default function GrInwardWizard({
   // wasted trip without changing behavior when there IS unsaved data.
   const dirty = useRef(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Confirmed via a screen recording: clicking OK/NOT OK on one item, then
+  // quickly correcting an earlier mistake on a DIFFERENT item, could show
+  // the wrong item flip back to the wrong answer a second or two later, then
+  // self-correct again -- classic out-of-order network responses. Each
+  // click fires its own PUT and applies whatever full record comes back;
+  // nothing stopped an older click's response (delayed by the backend, or
+  // just network jitter) from landing after a newer click's response and
+  // clobbering it with stale data. This counter makes only the MOST
+  // RECENTLY FIRED checklist save "win": every earlier response is dropped
+  // on arrival, so the applied state can never regress to an older answer.
+  const checklistReqSeq = useRef(0);
 
   const stagePickerNeeded = needsStage(entry);
   const isFinalized = detail.status === "approved" || detail.status === "hold";
@@ -168,15 +179,20 @@ export default function GrInwardWizard({
   }
 
   async function handleSetAnswer(checklistItemId: string, val: "ok" | "not_ok") {
-    const optimistic = {
-      ...detail,
-      checklist_answers: detail.checklist_answers.map((a) => a.checklist_item_id === checklistItemId ? { ...a, answer: val } : a),
-    };
-    setDetail(optimistic);
+    const seq = ++checklistReqSeq.current;
+    setDetail((prev) => ({
+      ...prev,
+      checklist_answers: prev.checklist_answers.map((a) => a.checklist_item_id === checklistItemId ? { ...a, answer: val } : a),
+    }));
     try {
       const updated = await api.saveChecklist(inspectionId, { [checklistItemId]: val });
+      // A newer click already fired since this one -- its own response
+      // (or the optimistic state it applied) is the current truth. Applying
+      // this older response now would silently revert that newer answer.
+      if (seq !== checklistReqSeq.current) return;
       setDetail(updated);
     } catch (e) {
+      if (seq !== checklistReqSeq.current) return;
       setError(e instanceof Error ? e.message : "Failed to save checklist answer");
     }
   }
