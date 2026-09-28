@@ -2,9 +2,8 @@
 import { useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import type { RqcDetail, RqcDefectResult, Machine } from "@/lib/types";
-import { RQC_DEFECT_GROUPS_QMP05, RQC_SAMPLING_PLAN } from "@/lib/types";
+import { RQC_DEFECT_ITEMS_FACTORY, RQC_CLASSIFICATION_SUMMARY_FACTORY } from "@/lib/types";
 import HoldReleaseSection from "@/components/HoldReleaseSection";
-import { T } from "@/lib/terms";
 
 function Kv({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -31,6 +30,24 @@ function ResultBadge({ found, reject }: { found: number | null; reject: number }
   );
 }
 
+// Classification-level "Total Defects Found" + "Result" on the sheet's own
+// Classification / Sampling Plan table -- summed from whatever's entered
+// against that classification's own items in the inspection grid above.
+// Minor has no items in this plan at all (see RQC_CLASSIFICATION_SUMMARY_
+// FACTORY's own comment), so it always reads "–" / "N/A", exactly as
+// printed on the sheet, never computed.
+function classificationTotal(classification: string, defects: Record<number, RqcDefectResult>): number | null {
+  const items = RQC_DEFECT_ITEMS_FACTORY.filter((i) => i.classification === classification);
+  if (items.length === 0) return null;
+  let total = 0;
+  let any = false;
+  for (const item of items) {
+    const found = defects[item.sr]?.found;
+    if (found !== null && found !== undefined) { total += found; any = true; }
+  }
+  return any ? total : 0;
+}
+
 /**
  * Factory OS Module 4 -- view/edit of one already-saved RQC activity record
  * (a completed FactoryRqcWizard run). Same "view" vs "edit" mode split as
@@ -47,9 +64,23 @@ function ResultBadge({ found, reject }: { found: number | null; reject: number }
  * RqcDetailPanel -- whenever record.status is "hold", HoldReleaseSection
  * renders above everything else so a held record's hold/release workflow
  * is reachable from this page, not just the shared (non-Factory) /rqc page.
+ *
+ * 2026-09-28 -- redesigned to match the "FINISHED GOODS RANDOM QUALITY
+ * ASSURANCE PLAN -- PADDED TRAYS" sheet (V0, 27/09/2026) exactly: Product &
+ * Shipment Details up top (Product Name, Product Code, Container/Vehicle
+ * Number [=Shipment Number -- there is no separate outbound container
+ * concept at RQC time], No. of Pallets, No. of Trays, Inspection Date),
+ * the sheet's own 5-item defect list (RQC_DEFECT_ITEMS_FACTORY, replacing
+ * the old QMP05-derived 4-item one), and its Classification / Sampling
+ * Plan summary table with computed Total Defects Found / Result per
+ * classification. Number of Pallets and Inspection Date moved up into the
+ * Product & Shipment Details card (previously in Inspection Records /
+ * Approval respectively) to match the sheet's own layout; nothing about
+ * their validation/gating (inspectionStarted, the Date-required check)
+ * changed, only where their inputs render.
  */
 export default function FactoryRqcDetailPanel({
-  record, onClose, machineCode, hasFgQr, onViewFgQr, onOpenCoa, mode, canEdit, canDelete, onEdit, onDelete, onSaved,
+  record, onClose, machineCode, hasFgQr, onViewFgQr, onOpenCoa, mode, canEdit, canDelete, onEdit, onDelete, onSaved, onApproved,
 }: {
   record: RqcDetail;
   onClose: () => void;
@@ -63,6 +94,11 @@ export default function FactoryRqcDetailPanel({
   onEdit?: () => void;
   onDelete?: () => void;
   onSaved: () => void;
+  // 2026-09-28 -- fires (in addition to onSaved) when a Save results in this
+  // record's status becoming Approved, so the page can pop the FG QR
+  // Generation panel open right away. Optional so nothing else that renders
+  // this panel needs to change.
+  onApproved?: () => void;
 }) {
   const editable = mode === "edit" && canEdit;
 
@@ -119,7 +155,7 @@ export default function FactoryRqcDetailPanel({
     }
     setSaving(saveMode);
     try {
-      await api.saveRqc(record.id, {
+      const result = await api.saveRqc(record.id, {
         manufacturer: record.manufacturer || null,
         overall_result: overallResult || null,
         fg_pallets_generated: approvedPallets === "" ? null : Number(approvedPallets),
@@ -134,6 +170,10 @@ export default function FactoryRqcDetailPanel({
       });
       onSaved();
       onClose();
+      // 2026-09-28 -- pop up the FG QR Generation panel right away once this
+      // save lands on Approved, instead of leaving the operator to notice
+      // and click "View / Print ->" in Traceability on their own.
+      if (result.status === "approved" && onApproved) onApproved();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : e instanceof Error ? e.message : "Failed to save record");
     } finally {
@@ -160,30 +200,30 @@ export default function FactoryRqcDetailPanel({
           <div className="detail-card">
             <h3>Product and Shipment Details</h3>
             <div className="detail-grid">
-              <Kv label={T.shipmentNumber} value={record.shipment_number ? <span className="mono">{record.shipment_number}</span> : "—"} />
-              <Kv label={T.sku} value={record.sku_code ? <span className="mono">{record.sku_code}</span> : "—"} />
+              <Kv label="Product Name" value={record.product_name || "—"} />
+              <Kv label="Product Code" value={record.sku_code ? <span className="mono">{record.sku_code}</span> : "—"} />
+              <Kv label="Container/Vehicle Number" value={record.shipment_number ? <span className="mono">{record.shipment_number}</span> : "—"} />
+              {editable ? (
+                <div className="field">
+                  <label>No. of Pallets <span style={{ color: "var(--red)" }}>*</span></label>
+                  <input type="number" min={0} placeholder="0" value={palletsTested} onChange={(e) => setPalletsTested(e.target.value)} />
+                  <div className="hint-text">How many pallets were tested in this activity -- not how many passed (Approved Pallets, below).</div>
+                </div>
+              ) : (
+                <Kv label="No. of Pallets" value={record.pallets_tested} />
+              )}
+              <Kv label="No. of Trays" value={record.no_of_trays != null ? record.no_of_trays.toLocaleString() : "—"} />
+              {editable ? (
+                <div className="field">
+                  <label>Inspection Date <span style={{ color: "var(--red)" }}>*</span></label>
+                  <input type="date" value={activityDate} onChange={(e) => setActivityDate(e.target.value)} />
+                </div>
+              ) : (
+                <Kv label="Inspection Date" value={record.activity_date} />
+              )}
               <Kv label="Manufacturer" value={record.manufacturer || "—"} />
               <Kv label="Status" value={<StatusBadge status={record.status} />} />
             </div>
-          </div>
-
-          <div className="detail-card">
-            <h3>Sampling Plan (QMP05)</h3>
-            <table className="qc-obs-table">
-              <thead>
-                <tr><th>Level</th><th style={{ width: 110 }}>Sample Size</th><th style={{ width: 90 }}>AQL</th><th style={{ width: 130 }}>Accept | Reject</th></tr>
-              </thead>
-              <tbody>
-                {RQC_SAMPLING_PLAN.map((row) => (
-                  <tr key={row.level}>
-                    <td>{row.level}</td>
-                    <td className="mono">{row.sampleSize}</td>
-                    <td className="mono">{row.aql}</td>
-                    <td className="mono">{row.acceptReject}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
           </div>
 
           {/* RQC Inspection Records comes before Approval -- same order as
@@ -191,52 +231,40 @@ export default function FactoryRqcDetailPanel({
               (Approval): approved pallets should only ever be recorded
               once the inspection grid is actually filled in, not before. */}
           <div className="detail-card">
-            <h3>RQC Inspection Records</h3>
+            <h3>Quality Inspection Details</h3>
             <div className="hint-text" style={{ marginBottom: 10, fontWeight: 700, color: "var(--ink-70)" }}>
-              Sample Size: {RQC_DEFECT_GROUPS_QMP05[0].sampleSize}
+              Sample Size: {RQC_DEFECT_ITEMS_FACTORY[0].sampleSize}
             </div>
-            {editable ? (
-              <div className="field" style={{ maxWidth: 260, marginBottom: 16 }}>
-                <label>Number of Pallets <span style={{ color: "var(--red)" }}>*</span></label>
-                <input type="number" min={0} placeholder="0" value={palletsTested} onChange={(e) => setPalletsTested(e.target.value)} />
-                <div className="hint-text">How many pallets were tested in this activity -- not how many passed (Approved Pallets, below).</div>
-              </div>
-            ) : (
-              <div className="detail-grid" style={{ marginBottom: 16 }}>
-                <Kv label="Number of Pallets (Tested)" value={record.pallets_tested} />
-              </div>
-            )}
             <table className="qc-obs-table">
               <thead>
                 <tr>
-                  <th>Defect Type</th><th>Classification</th><th>Inspection Method</th>
+                  <th>#</th><th>Defect Type</th><th>Classification</th><th>Inspection Method</th>
                   <th style={{ width: 120 }}>Defects Found</th><th style={{ width: 120 }}>Result</th><th>Remarks</th>
                 </tr>
               </thead>
               <tbody>
-                {RQC_DEFECT_GROUPS_QMP05.flatMap((group) =>
-                  group.items.map((item) => {
-                    const defect = defects[item.sr];
-                    return (
-                      <tr key={item.sr}>
-                        <td>{item.type}</td>
-                        <td><span className={`classification-badge ${group.badgeClass}`}>{group.classification}</span></td>
-                        <td>Visual inspection</td>
-                        <td>
-                          {editable ? (
-                            <input type="number" placeholder="0" value={defect?.found ?? ""} onChange={(e) => setFound(item.sr, e.target.value)} />
-                          ) : (defect?.found ?? "—")}
-                        </td>
-                        <td><ResultBadge found={defect?.found ?? null} reject={group.reject} /></td>
-                        <td>
-                          {editable ? (
-                            <input type="text" placeholder="Add remarks (optional)" value={defect?.remarks ?? ""} onChange={(e) => setRemarks(item.sr, e.target.value)} />
-                          ) : (defect?.remarks || "—")}
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
+                {RQC_DEFECT_ITEMS_FACTORY.map((item, idx) => {
+                  const defect = defects[item.sr];
+                  return (
+                    <tr key={item.sr}>
+                      <td>{idx + 1}</td>
+                      <td>{item.type}</td>
+                      <td><span className={`classification-badge ${item.badgeClass}`}>{item.classification}</span></td>
+                      <td>{item.method}</td>
+                      <td>
+                        {editable ? (
+                          <input type="number" placeholder="0" value={defect?.found ?? ""} onChange={(e) => setFound(item.sr, e.target.value)} />
+                        ) : (defect?.found ?? "—")}
+                      </td>
+                      <td><ResultBadge found={defect?.found ?? null} reject={item.reject} /></td>
+                      <td>
+                        {editable ? (
+                          <input type="text" placeholder={item.remarksHint || "Add remarks (optional)"} value={defect?.remarks ?? ""} onChange={(e) => setRemarks(item.sr, e.target.value)} />
+                        ) : (defect?.remarks || (item.remarksHint ? <span className="hint-text">{item.remarksHint}</span> : "—"))}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
             <div className="field" style={{ marginTop: 16, maxWidth: 320 }}>
@@ -250,15 +278,38 @@ export default function FactoryRqcDetailPanel({
           </div>
 
           <div className="detail-card">
+            <h3>Classification / Sampling Plan</h3>
+            <table className="qc-obs-table">
+              <thead>
+                <tr>
+                  <th>Classification</th><th style={{ width: 100 }}>Sample Size</th><th style={{ width: 80 }}>AQL %</th>
+                  <th style={{ width: 120 }}>Accept | Reject</th><th style={{ width: 120 }}>Total Defects Found</th><th style={{ width: 100 }}>Result</th>
+                </tr>
+              </thead>
+              <tbody>
+                {RQC_CLASSIFICATION_SUMMARY_FACTORY.map((row) => {
+                  const total = classificationTotal(row.classification, defects);
+                  return (
+                    <tr key={row.classification}>
+                      <td><span className={`classification-badge ${row.badgeClass}`}>{row.classification}</span></td>
+                      <td className="mono">{row.sampleSize}</td>
+                      <td className="mono">{row.aqlLabel}</td>
+                      <td className="mono">{row.accept} | {row.reject}</td>
+                      <td className="mono">{total ?? "–"}</td>
+                      <td>{total === null ? "N/A" : <ResultBadge found={total} reject={row.reject} />}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="detail-card">
             <h3>Approval</h3>
             {editable && !inspectionStarted ? (
-              <div className="hint-text">Fill in Number of Pallets and the RQC Inspection Records above first -- approval is recorded once the inspection is filled in.</div>
+              <div className="hint-text">Fill in No. of Pallets and the Quality Inspection Details above first -- approval is recorded once the inspection is filled in.</div>
             ) : editable ? (
               <div className="detail-grid">
-                <div className="field">
-                  <label>Date <span style={{ color: "var(--red)" }}>*</span></label>
-                  <input type="date" value={activityDate} onChange={(e) => setActivityDate(e.target.value)} />
-                </div>
                 <div className="field">
                   <label>Machine <span style={{ color: "var(--red)" }}>*</span></label>
                   <select value={machineId} onChange={(e) => setMachineId(e.target.value)}>
@@ -286,7 +337,6 @@ export default function FactoryRqcDetailPanel({
               </div>
             ) : (
               <div className="detail-grid">
-                <Kv label="Date" value={record.activity_date} />
                 <Kv label="Machine" value={machineCode ? <span className="mono">{machineCode}</span> : "—"} />
                 <Kv label="Shift" value={record.activity_shift} />
                 <Kv label="Approved Pallets" value={record.fg_pallets_generated} />

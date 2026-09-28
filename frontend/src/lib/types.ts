@@ -1014,6 +1014,67 @@ export const RQC_SAMPLING_PLAN: RqcSamplingPlanRow[] = [
   { level: "Critical | Level 3", sampleSize: 800, aql: 1, acceptReject: "14 | 15" },
 ];
 
+// 2026-09-28 -- "FINISHED GOODS RANDOM QUALITY ASSURANCE PLAN -- PADDED
+// TRAYS" (Cirkla Inc, Gainesville Factory, Document ID as per ERP, V0,
+// issued 27/09/2026), transcribed verbatim. Supersedes RQC_DEFECT_GROUPS_
+// QMP05 / RQC_SAMPLING_PLAN above for the Factory product's RQC record
+// (US Factory's own /rqc page is untouched -- it keeps RQC_DEFECT_GROUPS,
+// the full 15-item list, unchanged). This is a genuinely different
+// sampling plan, not a re-filter of the old one: two of the four items it
+// shares a name with have moved to a different classification (Direction
+// of the Pad: Major -> Critical; Placement/Offset of the Pad: Critical ->
+// Major) and Stickiness of the Pad moved from Critical/Visual to
+// Unacceptable/Functional test (remarks: "SOP TO BE DEVELOPED", exactly as
+// printed on the sheet -- the SOP for that functional test doesn't exist
+// yet), plus a brand-new item (Glue strings / glue on side walls). A
+// fresh, independent sr numbering space (101-105) keeps this fully
+// separate from RQC_DEFECT_GROUPS's own 1-15 (ProductScoped RqcRecord rows
+// never mix the two products' defect_sr values against each other, but a
+// separate space avoids any risk of confusing the two sets during review).
+export interface RqcDefectItemFactoryDef {
+  sr: number;
+  type: string;
+  classification: string;
+  badgeClass: string;
+  method: string;
+  sampleSize: number;
+  accept: number;
+  reject: number;
+  remarksHint?: string;
+}
+
+export const RQC_DEFECT_ITEMS_FACTORY: RqcDefectItemFactoryDef[] = [
+  { sr: 101, type: "Foreign material (insects, hair, dust)", classification: "Unacceptable", badgeClass: "unacceptable", method: "Visual inspection", sampleSize: 800, accept: 0, reject: 1 },
+  { sr: 102, type: "Glue strings / glue on side walls", classification: "Unacceptable", badgeClass: "unacceptable", method: "Visual inspection", sampleSize: 800, accept: 0, reject: 1 },
+  { sr: 103, type: "Direction of the pad", classification: "Critical", badgeClass: "critical", method: "Visual inspection", sampleSize: 800, accept: 14, reject: 15 },
+  { sr: 104, type: "Placement / offset of the pad", classification: "Major", badgeClass: "major", method: "Visual inspection", sampleSize: 800, accept: 21, reject: 22 },
+  { sr: 105, type: "Stickiness of the pad", classification: "Unacceptable", badgeClass: "unacceptable", method: "Functional test", sampleSize: 800, accept: 0, reject: 1, remarksHint: "SOP TO BE DEVELOPED" },
+];
+
+// The sheet's own Classification / Sampling Plan summary table -- one row
+// per classification (Unacceptable, Critical, Major, Minor -- in that
+// order, exactly as printed), each with its own AQL% (Unacceptable has
+// none set on the sheet, printed as "–") and Accept|Reject numbers. Total
+// Defects Found and Result are computed per classification from whatever
+// Defects Found values are entered against that classification's own
+// items (see FactoryRqcDetailPanel/FactoryRqcWizard) -- Minor has no items
+// in this plan at all, so its row always reads "–" / "N/A", exactly as
+// printed on the sheet, never computed.
+export interface RqcClassificationSummaryFactoryDef {
+  classification: string;
+  badgeClass: string;
+  sampleSize: number;
+  aqlLabel: string;
+  accept: number;
+  reject: number;
+}
+export const RQC_CLASSIFICATION_SUMMARY_FACTORY: RqcClassificationSummaryFactoryDef[] = [
+  { classification: "Unacceptable", badgeClass: "unacceptable", sampleSize: 800, aqlLabel: "–", accept: 0, reject: 1 },
+  { classification: "Critical", badgeClass: "critical", sampleSize: 800, aqlLabel: "1.0", accept: 14, reject: 15 },
+  { classification: "Major", badgeClass: "major", sampleSize: 800, aqlLabel: "1.5", accept: 21, reject: 22 },
+  { classification: "Minor", badgeClass: "minor", sampleSize: 800, aqlLabel: "4.0", accept: 53, reject: 54 },
+];
+
 export interface RqcCoaParamDef {
   sr: number;
   param: string;
@@ -1140,6 +1201,17 @@ export interface RqcDetail {
   manufacturer: string | null;
   sku_code: string | null;
   sku_version: string | null;
+  // 2026-09-28 -- "Product Name" on the Factory RQC sheet, live-joined from
+  // sku_codes.description via this record's own sku_code_id (never
+  // snapshotted -- same freshness convention as production_run_machines
+  // below). Null when this record has no linked SKU yet.
+  product_name: string | null;
+  // 2026-09-28 -- "No. of Trays" on the Factory RQC sheet: pallets_tested x
+  // the linked SKU Version's own Trays per Sleeve (sku_versions.prod_pcs_
+  // per_sleeve), the same derivation Goods Outward's own Trays field uses.
+  // Computed client-side (flattenRqcDetail), never stored -- null until
+  // both Number of Pallets and a Trays-per-Sleeve reference value exist.
+  no_of_trays: number | null;
   // Legacy/display fallback only -- read live from production_runs.total_fg_pallets,
   // which Production no longer collects (see migration 0030). Prefer
   // fg_pallets_generated below, RQC's own editable field and the value

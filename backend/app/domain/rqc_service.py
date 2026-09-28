@@ -94,11 +94,30 @@ RQC_DEFECT_GROUPS = [
     },
 ]
 
+# 2026-09-28 -- "FINISHED GOODS RANDOM QUALITY ASSURANCE PLAN -- PADDED
+# TRAYS" (Gainesville Factory, V0, 27/09/2026), transcribed verbatim --
+# supersedes the old QMP05-derived subset for the Factory product's RQC
+# record (frontend/src/lib/types.ts's RQC_DEFECT_ITEMS_FACTORY is the
+# authoritative copy this mirrors for display; this dict only needs the
+# reject thresholds, for has_any_reject below). A fresh sr space (101-105),
+# independent from RQC_DEFECT_GROUPS's own 1-15, so it merges into
+# _REJECT_BY_SR below with no risk of colliding with or overwriting an
+# existing entry -- a Factory RqcRecord's defect_results only ever carry sr
+# 101-105, a US Factory one only ever 1-15 (ProductScoped rows never mix).
+_REJECT_BY_SR_FACTORY: dict[int, int] = {
+    101: 1,  # Foreign material (insects, hair, dust) -- Unacceptable
+    102: 1,  # Glue strings / glue on side walls -- Unacceptable
+    103: 15,  # Direction of the pad -- Critical
+    104: 22,  # Placement / offset of the pad -- Major
+    105: 1,  # Stickiness of the pad -- Unacceptable (Functional test)
+}
+
 # sr -> reject threshold, flattened for cheap lookup when computing overall
 # status (mirrors rqcRecalcResult's per-defect group lookup).
 _REJECT_BY_SR: dict[int, int] = {
     item["sr"]: group["reject"] for group in RQC_DEFECT_GROUPS for item in group["items"]
 }
+_REJECT_BY_SR.update(_REJECT_BY_SR_FACTORY)
 
 RQC_COA_BASE = [
     {"sr": 1, "param": "Tray Colour", "spec": "Natural"},

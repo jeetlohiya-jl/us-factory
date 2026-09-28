@@ -172,9 +172,25 @@ function FactoryRqcFgQrPageContent() {
       setDetailRecord(rec);
       setDetailMachine(allMachines.find((m) => m.id === rec.machine_id)?.code ?? null);
       setFgQr(batch);
+      // 2026-09-28 -- pop the FG QR Generation panel open immediately when
+      // this record just came out of the wizard Approved, instead of
+      // leaving the operator to notice and click through to it themselves.
+      if (rec.status === "approved" && batch) setShowFgQrPanel(true);
     } catch {
       // Non-fatal -- the list has already refreshed; the record can still
       // be opened from there.
+    }
+  }
+
+  // Same pop-up, for a Save made from the Detail panel's own Edit mode
+  // (FactoryRqcDetailPanel's onApproved) rather than the wizard's.
+  async function handleApprovedFromDetail(recordId: string) {
+    try {
+      const batch = await api.getFgQrForRqcRecord(recordId);
+      setFgQr(batch);
+      if (batch) setShowFgQrPanel(true);
+    } catch {
+      // Non-fatal -- the record's own Traceability card still links to it.
     }
   }
 
@@ -270,6 +286,7 @@ function FactoryRqcFgQrPageContent() {
           onClose={() => { setDetailRecord(null); setFgQr(null); setDetailMachine(null); setDetailMode("view"); }}
           onViewFgQr={() => setShowFgQrPanel(true)}
           onOpenCoa={() => detailRecord.shipment_number && setCoaShipment(detailRecord.shipment_number)}
+          onApproved={() => handleApprovedFromDetail(detailRecord.id)}
         />
       )}
 
