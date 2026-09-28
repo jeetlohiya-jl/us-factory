@@ -17,7 +17,7 @@ export default function InventoryFormPanel({ onClose, onSaved }: { onClose: () =
 
   const [skuCodeId, setSkuCodeId] = useState("");
   const [uom, setUom] = useState("Kgs");
-  const [traySkuId, setTraySkuId] = useState("");
+  const [traySkuIds, setTraySkuIds] = useState<string[]>([]);
   const [initialQty, setInitialQty] = useState("");
   const [vendorId, setVendorId] = useState("");
   const [country, setCountry] = useState("");
@@ -25,6 +25,10 @@ export default function InventoryFormPanel({ onClose, onSaved }: { onClose: () =
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  function toggleTray(id: string) {
+    setTraySkuIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }
 
   useEffect(() => {
     api.skus({ includeInactive: false }).then(setSkus).catch(() => {});
@@ -40,7 +44,7 @@ export default function InventoryFormPanel({ onClose, onSaved }: { onClose: () =
       await api.createInventoryItem({
         sku_code_id: skuCodeId,
         uom: uom.trim() || "Kgs",
-        compatible_tray_sku_code_id: traySkuId || null,
+        compatible_tray_sku_code_ids: traySkuIds,
         initial_quantity: initialQty ? Number(initialQty) : null,
         vendor_id: vendorId || null,
         supplier_country: country.trim() || null,
@@ -77,12 +81,16 @@ export default function InventoryFormPanel({ onClose, onSaved }: { onClose: () =
                 <label>UOM</label>
                 <input value={uom} onChange={(e) => setUom(e.target.value)} placeholder="e.g. Kgs, Rolls, Pcs" />
               </div>
-              <div className="field">
-                <label>Compatible Tray SKU</label>
-                <select value={traySkuId} onChange={(e) => setTraySkuId(e.target.value)}>
-                  <option value="">— none —</option>
-                  {traySkus.map((s) => <option key={s.id} value={s.id}>{s.code}</option>)}
-                </select>
+              <div className="field" style={{ gridColumn: "1 / -1" }}>
+                <label>Compatible Tray SKU(s)</label>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 16px" }}>
+                  {traySkus.map((s) => (
+                    <label key={s.id} style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 400 }}>
+                      <input type="checkbox" checked={traySkuIds.includes(s.id)} onChange={() => toggleTray(s.id)} />
+                      {s.code}
+                    </label>
+                  ))}
+                </div>
               </div>
             </div>
           </div>

@@ -543,6 +543,11 @@ export interface InventorySource {
   created_at: string;
 }
 
+export interface CompatibleTray {
+  id: string;
+  code: string;
+}
+
 export interface InventoryDetail {
   id: string;
   sku_code_id: string;
@@ -551,8 +556,8 @@ export interface InventoryDetail {
   category: string;
   uom: string;
   quantity: number;
-  compatible_tray_sku_code_id: string | null;
-  compatible_tray_sku: string | null;
+  // Migration 0061 -- a material can pair with more than one tray SKU.
+  compatible_trays: CompatibleTray[];
   sources: InventorySource[];
 }
 

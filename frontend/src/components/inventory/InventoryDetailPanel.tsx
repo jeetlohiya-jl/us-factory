@@ -32,7 +32,7 @@ export default function InventoryDetailPanel({
 }) {
   const [editing, setEditing] = useState(false);
   const [uom, setUom] = useState(item.uom);
-  const [traySkuId, setTraySkuId] = useState(item.compatible_tray_sku_code_id || "");
+  const [traySkuIds, setTraySkuIds] = useState<string[]>(item.compatible_trays.map((t) => t.id));
   const [traySkus, setTraySkus] = useState<SkuCode[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -46,8 +46,12 @@ export default function InventoryDetailPanel({
 
   useEffect(() => {
     setUom(item.uom);
-    setTraySkuId(item.compatible_tray_sku_code_id || "");
+    setTraySkuIds(item.compatible_trays.map((t) => t.id));
   }, [item]);
+
+  function toggleTray(id: string) {
+    setTraySkuIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }
 
   useEffect(() => {
     // Tray-family SKUs (Base Tray / LNP Tray / FG) for the "Compatible
@@ -63,7 +67,7 @@ export default function InventoryDetailPanel({
     try {
       const updated = await api.updateInventoryItem(item.id, {
         uom: uom.trim() || undefined,
-        compatible_tray_sku_code_id: traySkuId || null,
+        compatible_tray_sku_code_ids: traySkuIds,
       });
       onChanged(updated);
       setEditing(false);
@@ -120,7 +124,10 @@ export default function InventoryDetailPanel({
               <div className="detail-grid">
                 <Kv label="Quantity" value={item.quantity.toLocaleString()} />
                 <Kv label="UOM" value={item.uom} />
-                <Kv label="Compatible Tray SKU" value={item.compatible_tray_sku} />
+                <Kv
+                  label="Compatible Tray SKU(s)"
+                  value={item.compatible_trays.length > 0 ? item.compatible_trays.map((t) => t.code).join(", ") : null}
+                />
               </div>
             ) : (
               <div className="form-grid">
@@ -128,15 +135,20 @@ export default function InventoryDetailPanel({
                   <label>UOM</label>
                   <input value={uom} onChange={(e) => setUom(e.target.value)} />
                 </div>
-                <div className="field">
-                  <label>Compatible Tray SKU</label>
-                  <select value={traySkuId} onChange={(e) => setTraySkuId(e.target.value)}>
-                    <option value="">— none —</option>
-                    {traySkus.map((s) => <option key={s.id} value={s.id}>{s.code}</option>)}
-                  </select>
+                <div className="field" style={{ gridColumn: "1 / -1" }}>
+                  <label>Compatible Tray SKU(s)</label>
+                  <div className="hint-text" style={{ marginBottom: 6 }}>A material can pair with more than one tray — check every tray it's compatible with.</div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 16px" }}>
+                    {traySkus.map((s) => (
+                      <label key={s.id} style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 400 }}>
+                        <input type="checkbox" checked={traySkuIds.includes(s.id)} onChange={() => toggleTray(s.id)} />
+                        {s.code}
+                      </label>
+                    ))}
+                  </div>
                 </div>
                 <div className="field" style={{ gridColumn: "1 / -1", display: "flex", gap: 10, justifyContent: "flex-end" }}>
-                  <button className="btn btn-ghost" onClick={() => { setEditing(false); setUom(item.uom); setTraySkuId(item.compatible_tray_sku_code_id || ""); }}>Cancel</button>
+                  <button className="btn btn-ghost" onClick={() => { setEditing(false); setUom(item.uom); setTraySkuIds(item.compatible_trays.map((t) => t.id)); }}>Cancel</button>
                   <button className="btn btn-primary" disabled={saving} onClick={handleSave}>{saving ? "Saving…" : "Save"}</button>
                 </div>
               </div>
