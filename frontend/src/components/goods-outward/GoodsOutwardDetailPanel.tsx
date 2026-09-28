@@ -1,7 +1,7 @@
 "use client";
 import { useRef, useState } from "react";
 import { api, ApiError } from "@/lib/api";
-import type { GoodsOutwardDetail, OviDetail } from "@/lib/types";
+import type { GoodsOutwardDetail, GoodsOutwardScannedPallet, OviDetail } from "@/lib/types";
 import CameraQrScanner from "@/components/storage/CameraQrScanner";
 import PackingListPanel from "@/components/goods-outward/PackingListPanel";
 import OviPanel from "@/components/outward-vehicle-inspection/OviPanel";
@@ -50,6 +50,19 @@ function StatusBadge({ status }: { status: string }) {
  * re-validates lifecycle/SKU-version/duplicate/quantity and is the only
  * real source of truth -- this component never assumes success before that
  * call returns.
+ *
+ * 2026-09-28 -- per explicit feedback, a scan no longer picks the pallet
+ * immediately: it only resolves and previews it (same read-only lookup as
+ * before), then this component shows a "Confirm Pallet Pick" card -- same
+ * shape as RM/FG Storage's own scan-then-preview-then-confirm pattern in
+ * StorageScanPanel.tsx -- and the actual api.pickPallet call only happens
+ * once the operator clicks OK. The scan input is hidden while a pick is
+ * pending, so a big multi-pallet pick (e.g. 40 pallets) is still one scan
+ * -> one confirm -> next scan cycle, never several unconfirmed scans
+ * racing each other. This only changes when THIS component records a pick;
+ * the existing "auto-open Outward Vehicle Inspection the moment the whole
+ * shipment reaches Complete" behavior (see refresh() below) is unchanged --
+ * it already waited for the last pallet, never fired mid-pick.
  */
 export default function GoodsOutwardDetailPanel({
   detail, canPick, canEdit, canFillOvi, onClose, onChanged, onEdit,
@@ -71,6 +84,14 @@ export default function GoodsOutwardDetailPanel({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [packingListOpen, setPackingListOpen] = useState(false);
+  // A scan that resolved to a real, matching FG pallet but hasn't been
+  // confirmed yet -- nothing is picked (no api.pickPallet call) until the
+  // operator clicks OK on the confirm card below. rawScan is kept alongside
+  // the previewed pallet because api.pickPallet re-validates against the
+  // original scanned payload server-side, not the preview response.
+  const [pendingPick, setPendingPick] = useState<{
+    pallet: GoodsOutwardScannedPallet; lineItemId: string; pickingRequestId: string; rawScan: string;
+  } | null>(null);
   // The Outward Vehicle Inspection record is auto-created (always exists)
   // for this shipment -- record.outward_inspection already carries its
   // {id,status} from the same read that loaded this panel, so opening it
@@ -128,7 +149,7 @@ export default function GoodsOutwardDetailPanel({
 
   async function handleScan(payload?: string) {
     const raw = (payload ?? scanInput).trim();
-    if (!raw || busy) return;
+    if (!raw || busy || pendingPick) return;
     setBusy(true);
     setError(null);
     try {
@@ -150,10 +171,10 @@ export default function GoodsOutwardDetailPanel({
         );
         return;
       }
-      await api.pickPallet(target.picking_request_id, raw);
+      // Preview only -- nothing is picked yet. The operator confirms this
+      // exact pallet via the card below before api.pickPallet is called.
       setScanInput("");
-      await refresh();
-      onChanged();
+      setPendingPick({ pallet, lineItemId: target.id, pickingRequestId: target.picking_request_id, rawScan: raw });
     } catch (e) {
       setError(e instanceof ApiError ? e.message : e instanceof Error ? e.message : "Could not resolve that pallet scan.");
     } finally {
@@ -165,6 +186,29 @@ export default function GoodsOutwardDetailPanel({
     setCameraOpen(false);
     setScanInput(text);
     handleScan(text);
+  }
+
+  async function confirmPendingPick() {
+    if (!pendingPick) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.pickPallet(pendingPick.pickingRequestId, pendingPick.rawScan);
+      setPendingPick(null);
+      await refresh();
+      onChanged();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : e instanceof Error ? e.message : "Could not resolve that pallet scan.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function cancelPendingPick() {
+    // Nothing was ever picked -- this just discards the preview so the
+    // operator can scan again (the same pallet, or a different one).
+    setPendingPick(null);
+    setError(null);
   }
 
   async function handleRemove(lineItemId: string, pickId: string) {
@@ -239,29 +283,50 @@ export default function GoodsOutwardDetailPanel({
                 Scan any FG pallet QR for this shipment — it will automatically be matched to the correct SKU/Version line item above. Over-picking and duplicate picks are blocked.
               </div>
               {error && <div className="hint-text" style={{ display: "block", color: "var(--red)", fontWeight: 700, marginBottom: 10 }}>{error}</div>}
-              <div className="scan-grid" style={{ gridTemplateColumns: "1fr" }}>
-                <div className="scan-card">
-                  <div className="scan-icon">📦</div>
-                  <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 6 }}>Scan FG Pallet QR</div>
-                  {cameraOpen ? (
-                    <CameraQrScanner onDetected={handleCameraDetected} onCancel={() => setCameraOpen(false)} />
-                  ) : (
-                    <>
-                      <div className="scan-input-row">
-                        <input
-                          type="text" placeholder="Scan or enter pallet QR / ID" autoFocus
-                          value={scanInput} onChange={(e) => setScanInput(e.target.value)}
-                          onKeyDown={(e) => e.key === "Enter" && handleScan()}
-                          disabled={busy}
-                        />
-                      </div>
-                      <button type="button" className="btn btn-secondary btn-camera-scan" disabled={busy} onClick={() => setCameraOpen(true)}>
-                        📷 Scan
-                      </button>
-                    </>
-                  )}
+              {!pendingPick ? (
+                <div className="scan-grid" style={{ gridTemplateColumns: "1fr" }}>
+                  <div className="scan-card">
+                    <div className="scan-icon">📦</div>
+                    <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 6 }}>Scan FG Pallet QR</div>
+                    {cameraOpen ? (
+                      <CameraQrScanner onDetected={handleCameraDetected} onCancel={() => setCameraOpen(false)} />
+                    ) : (
+                      <>
+                        <div className="scan-input-row">
+                          <input
+                            type="text" placeholder="Scan or enter pallet QR / ID" autoFocus
+                            value={scanInput} onChange={(e) => setScanInput(e.target.value)}
+                            onKeyDown={(e) => e.key === "Enter" && handleScan()}
+                            disabled={busy}
+                          />
+                        </div>
+                        <button type="button" className="btn btn-secondary btn-camera-scan" disabled={busy} onClick={() => setCameraOpen(true)}>
+                          📷 Scan
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
-              </div>
+              ) : (
+                // Same shape as RM/FG Storage's own "Confirm Storage Record"
+                // scan-then-confirm card -- nothing is picked until OK.
+                <div id="confirm-pallet-pick-card">
+                  <div className="section-label">Confirm Pallet Pick</div>
+                  <table className="summary-table" style={{ marginBottom: 10 }}>
+                    <tbody>
+                      <tr><td>{T.palletNumber}</td><td className="mono">{pendingPick.pallet.display_id}</td></tr>
+                      <tr><td>{T.sku}</td><td className="mono">{pendingPick.pallet.sku_code || "—"}</td></tr>
+                      <tr><td>Version</td><td className="mono">{pendingPick.pallet.sku_version || "—"}</td></tr>
+                    </tbody>
+                  </table>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button type="button" className="btn btn-ghost" disabled={busy} onClick={cancelPendingPick}>Cancel</button>
+                    <button type="button" className="btn btn-primary" disabled={busy} onClick={confirmPendingPick}>
+                      {busy ? "Confirming…" : "OK — Confirm Pick"}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
