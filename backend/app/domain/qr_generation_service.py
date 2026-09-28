@@ -376,15 +376,18 @@ def get_or_create_fg_qr_for_rqc_record(db: Session, rqc: models.RqcRecord) -> mo
 
 
 def _create_pallet_row(
-    db: Session, rec: models.QrGenerationRecord,
+    db: Session, rec: models.QrGenerationRecord, display_id: str,
     source_machine_id=None, batch_code: str | None = None,
 ) -> models.Pallet:
-    """DB-only, no network -- just the row. QR image generation/upload and
-    lifecycle events are handled separately by generate_pallets so the
-    (slow, network-bound) QR upload for every pallet in the batch can run
-    concurrently instead of one at a time -- see build_pallet_qr's
-    docstring."""
-    display_id = pallet_service.next_pallet_display_id(db, rec.category, rec.country_code)
+    """DB-only, no network -- just the row, not even flushed (see
+    generate_pallets, which now flushes once for the whole batch instead of
+    once per pallet). QR image generation/upload and lifecycle events are
+    handled separately by generate_pallets so the (slow, network-bound) QR
+    upload for every pallet in the batch can run concurrently instead of
+    one at a time -- see build_pallet_qr's docstring. display_id is
+    pre-allocated by the caller (pallet_service.next_pallet_display_id_batch)
+    for the whole batch in one round trip, rather than one next_seq call per
+    pallet here."""
     pallet = models.Pallet(
         display_id=display_id,
         pallet_type=rec.qr_type,
@@ -403,7 +406,6 @@ def _create_pallet_row(
         lifecycle_status="generated",
     )
     db.add(pallet)
-    db.flush()
     return pallet
 
 
@@ -451,6 +453,14 @@ def generate_pallets(db: Session, rec: models.QrGenerationRecord, actor_user_id=
     if rec.quantity <= 0:
         raise QrGenerationError("Enter a quantity greater than 0 before generating QR codes.")
 
+    # Every branch below creates exactly rec.quantity pallets in total
+    # (split across machines differently, but the total is always this
+    # batch's own quantity) -- reserve the whole range's display numbers in
+    # one round trip up front instead of one next_seq call per pallet, and
+    # hand them out here as each row is built. See next_pallet_display_id_
+    # batch's docstring for why this was worth doing.
+    display_ids = iter(pallet_service.next_pallet_display_id_batch(db, rec.category, rec.country_code, rec.quantity))
+
     pallets: list[models.Pallet] = []
     if rec.qr_type == "fg" and rec.source_rqc_approval_entry:
         # Migration 0039 -- current flow: this batch belongs to exactly one
@@ -476,7 +486,7 @@ def generate_pallets(db: Session, rec: models.QrGenerationRecord, actor_user_id=
             )
             for _ in range(count):
                 pallets.append(_create_pallet_row(
-                    db, rec, source_machine_id=machine.id if machine else None, batch_code=batch_code,
+                    db, rec, next(display_ids), source_machine_id=machine.id if machine else None, batch_code=batch_code,
                 ))
     elif rec.qr_type == "fg" and rec.source_rqc_record:
         # 2026-09-17 -- current per-activity flow: this batch belongs to
@@ -503,7 +513,7 @@ def generate_pallets(db: Session, rec: models.QrGenerationRecord, actor_user_id=
         )
         for _ in range(rec.quantity):
             pallets.append(_create_pallet_row(
-                db, rec, source_machine_id=machine.id if machine else None, batch_code=batch_code,
+                db, rec, next(display_ids), source_machine_id=machine.id if machine else None, batch_code=batch_code,
             ))
     elif rec.qr_type == "fg" and rec.source_production_run and rec.source_production_run.rqc_records:
         # Legacy whole-run path -- pre-migration-0039 batches, and the
@@ -530,11 +540,17 @@ def generate_pallets(db: Session, rec: models.QrGenerationRecord, actor_user_id=
             )
             for _ in range(count):
                 pallets.append(_create_pallet_row(
-                    db, rec, source_machine_id=machine.id if machine else None, batch_code=batch_code,
+                    db, rec, next(display_ids), source_machine_id=machine.id if machine else None, batch_code=batch_code,
                 ))
     else:
         for _ in range(rec.quantity):
-            pallets.append(_create_pallet_row(db, rec))
+            pallets.append(_create_pallet_row(db, rec, next(display_ids)))
+
+    # One flush for the whole batch's INSERTs (was one per pallet) -- this
+    # is what actually assigns each pallet.id (gen_uuid's Python-side
+    # default only runs at flush time), which build_pallet_qr below needs
+    # for its storage path.
+    db.flush()
 
     # Every pallet row now exists (fast -- local DB only). Building each
     # QR PNG and uploading it to storage is the slow, network-bound part

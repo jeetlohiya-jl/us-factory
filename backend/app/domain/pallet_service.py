@@ -35,7 +35,7 @@ from sqlalchemy.orm import Session
 
 from app.db import models
 from app.adapters.storage.factory import get_storage_adapter
-from app.domain.id_counters import next_seq
+from app.domain.id_counters import next_seq, next_seq_batch
 
 
 # Category -> the part of the pallet-number prefix that identifies WHAT is
@@ -83,6 +83,22 @@ def next_pallet_display_id(db: Session, category: str | None, country_code: str 
     yymm = datetime.now(timezone.utc).strftime("%y%m")
     seq = next_seq(db, f"pallet:{prefix}")
     return f"{prefix}-{yymm}-{str(seq).zfill(4)}"
+
+
+def next_pallet_display_id_batch(db: Session, category: str | None, country_code: str | None, count: int) -> list[str]:
+    """Same numbering as next_pallet_display_id, but reserves `count`
+    consecutive sequence numbers in one round trip -- for generating a
+    whole batch's worth of pallets at once (see
+    qr_generation_service.generate_pallets) instead of calling next_seq
+    once per pallet. Every pallet in one QrGenerationRecord batch shares the
+    same category/country_code, so they share one prefix -- a single
+    contiguous range is exactly the same numbering a caller would get by
+    calling next_pallet_display_id in a loop, just without the N round
+    trips."""
+    prefix = prefix_for_category(category, country_code)
+    yymm = datetime.now(timezone.utc).strftime("%y%m")
+    start = next_seq_batch(db, f"pallet:{prefix}", count)
+    return [f"{prefix}-{yymm}-{str(start + i).zfill(4)}" for i in range(count)]
 
 
 def _make_qr_png(payload: str) -> bytes:

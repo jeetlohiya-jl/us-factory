@@ -19,6 +19,16 @@ function StatusBadge({ status }: { status: string }) {
   return <span className={`badge ${cls}`}>{status.charAt(0).toUpperCase() + status.slice(1)}</span>;
 }
 
+// This workstation's own local clock, not the backend's (which can run
+// anywhere) -- same reasoning as material-consumption/Wizard.tsx's
+// nowHHMM(). Inspection Date almost always IS today, so the field starts
+// pre-filled instead of making the operator pick a date every time; it
+// stays a normal editable input for the rare backdated entry.
+function todayYMD(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 function ResultBadge({ found, reject }: { found: number | null; reject: number }) {
   if (found === null || Number.isNaN(found)) return <span className="result-badge pending">–</span>;
   const isNotOk = found >= reject;
@@ -107,7 +117,7 @@ export default function FactoryRqcDetailPanel({
   );
   const [overallResult, setOverallResult] = useState(record.overall_result || "");
   const [palletsTested, setPalletsTested] = useState(record.pallets_tested != null ? String(record.pallets_tested) : "");
-  const [activityDate, setActivityDate] = useState(record.activity_date || "");
+  const [activityDate, setActivityDate] = useState(record.activity_date || todayYMD());
   const [activityShift, setActivityShift] = useState(record.shift || "");
   const [machineId, setMachineId] = useState(record.machine_id || "");
   const [approvedPallets, setApprovedPallets] = useState(record.fg_pallets_generated != null ? String(record.fg_pallets_generated) : "");
@@ -197,38 +207,36 @@ export default function FactoryRqcDetailPanel({
             <HoldReleaseSection module="rqc" recordId={record.id} canFill={canEdit} />
           )}
 
-          <div className="detail-card">
-            <h3>Product and Shipment Details</h3>
-            <div className="detail-grid">
-              <Kv label="Product Name" value={record.product_name || "—"} />
-              <Kv label="Product Code" value={record.sku_code ? <span className="mono">{record.sku_code}</span> : "—"} />
-              <Kv label="Container/Vehicle Number" value={record.shipment_number ? <span className="mono">{record.shipment_number}</span> : "—"} />
-              <Kv label="No. of Trays" value={record.no_of_trays != null ? record.no_of_trays.toLocaleString() : "—"} />
-              <Kv label="Manufacturer" value={record.manufacturer || "—"} />
-              <Kv label="Status" value={<StatusBadge status={record.status} />} />
-              {!editable && <Kv label="No. of Pallets" value={record.pallets_tested} />}
-              {!editable && <Kv label="Inspection Date" value={record.activity_date} />}
+          {/* 2026-09-28: hidden entirely while still Pending, per explicit
+              direction -- a still-Pending record has nothing to reference
+              yet (nothing's been inspected), so this card was just more
+              text between the operator and the one thing they're actually
+              here to do (see "Fill In To Begin" below). Once no longer
+              Pending, it's the real record's reference facts and shows as
+              before. */}
+          {record.status !== "pending" && (
+            <div className="detail-card">
+              <h3>Product and Shipment Details</h3>
+              <div className="detail-grid">
+                <Kv label="Product Name" value={record.product_name || "—"} />
+                <Kv label="Product Code" value={record.sku_code ? <span className="mono">{record.sku_code}</span> : "—"} />
+                <Kv label="Container/Vehicle Number" value={record.shipment_number ? <span className="mono">{record.shipment_number}</span> : "—"} />
+                <Kv label="No. of Trays" value={record.no_of_trays != null ? record.no_of_trays.toLocaleString() : "—"} />
+                <Kv label="Manufacturer" value={record.manufacturer || "—"} />
+                <Kv label="Status" value={<StatusBadge status={record.status} />} />
+                {!editable && <Kv label="No. of Pallets Checked" value={record.pallets_tested} />}
+                {!editable && <Kv label="Inspection Date" value={record.activity_date} />}
+              </div>
             </div>
-          </div>
+          )}
 
-          {/* 2026-09-28: pulled out of the reference-only card above -- these
-              two were the only editable fields mixed into an otherwise
-              read-only grid of Product/Shipment facts, easy to skim past as
-              "just more info" rather than something to fill in. That's
-              exactly why Approval below can silently never appear: nothing
-              is recorded there until No. of Pallets is actually a number
-              greater than zero (inspectionStarted), and a fully-populated-
-              looking card gives no visual cue that this one field is still
-              blank. Its own card, shown only while there's something to
-              fill in, makes that impossible to miss. */}
           {editable && (
             <div className="detail-card">
               <h3>Fill In To Begin</h3>
               <div className="detail-grid">
                 <div className="field">
-                  <label>No. of Pallets <span style={{ color: "var(--red)" }}>*</span></label>
+                  <label>No. of Pallets Checked <span style={{ color: "var(--red)" }}>*</span></label>
                   <input type="number" min={0} placeholder="0" value={palletsTested} onChange={(e) => setPalletsTested(e.target.value)} />
-                  <div className="hint-text">How many pallets were tested in this activity -- not how many passed (Approved Pallets, below). The Quality Inspection Details and Approval sections below stay blank until this is filled in.</div>
                 </div>
                 <div className="field">
                   <label>Inspection Date <span style={{ color: "var(--red)" }}>*</span></label>
