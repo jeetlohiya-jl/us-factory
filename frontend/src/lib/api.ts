@@ -2625,9 +2625,29 @@ export const api = {
       }),
       { conflict: `"${displayId}" already exists.`, denied: "You need RM Storage edit permission to add locations." }
     ).then(() => invalidateListCache("ref:locations")),
-  updateLocation: (id: string, patch: { is_active?: boolean }) =>
-    sbVoid(() => supabase.from("locations").update(patch).eq("id", id))
-      .then(() => invalidateListCache("ref:locations")),
+  // Deactivating tries a real delete first, so an unused location's
+  // display_id (globally unique) actually becomes reusable -- a plain
+  // is_active=false never freed it. Falls back to the old soft-hide
+  // only when the location has real RM/FG Storage history behind it
+  // (Postgres's own FK "on delete restrict" surfaces that as 23503;
+  // see migration 0063), same delete-then-409-fallback pattern already
+  // used for Vendors/SKUs/Machines. Reactivating is unchanged.
+  updateLocation: async (id: string, patch: { is_active?: boolean }): Promise<{ deleted: boolean }> => {
+    if (patch.is_active === false) {
+      const { error } = await supabase.from("locations").delete().eq("id", id);
+      if (!error) {
+        invalidateListCache("ref:locations");
+        return { deleted: true };
+      }
+      if (error.code === "42501") throw new ApiError(403, "You do not have permission to do this.");
+      if (error.code !== "23503") throw new ApiError(500, error.message);
+      // Referenced by existing storage/pallet/pick history -- keep it,
+      // just hide it, exactly like before.
+    }
+    await sbVoid(() => supabase.from("locations").update(patch).eq("id", id));
+    invalidateListCache("ref:locations");
+    return { deleted: false };
+  },
 
   // -- Material Consumption -------------------------------------------------
   // list/detail go direct to Supabase (Phase 2); every draft/scan/finalize
