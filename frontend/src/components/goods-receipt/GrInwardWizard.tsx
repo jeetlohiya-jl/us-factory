@@ -271,7 +271,7 @@ export default function GrInwardWizard({
                   </div>
                   <div>
                     <div className="detail-kv-label">SKU</div>
-                    <div className="detail-kv-value">{entry.sku_code || "—"}{entry.sku_version ? ` · ${entry.sku_version}` : ""}</div>
+                    <div className="detail-kv-value">{entry.sku_code || "—"}</div>
                   </div>
                   <div>
                     <div className="detail-kv-label">Vendor</div>

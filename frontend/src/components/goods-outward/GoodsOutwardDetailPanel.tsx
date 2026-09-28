@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import type { GoodsOutwardDetail, OviDetail } from "@/lib/types";
 import CameraQrScanner from "@/components/storage/CameraQrScanner";
@@ -79,11 +79,18 @@ export default function GoodsOutwardDetailPanel({
   // Outward's entry point into that existing system, not a new one.
   const [oviRecord, setOviRecord] = useState<OviDetail | null>(null);
   const [oviError, setOviError] = useState<string | null>(null);
+  // True only while the CURRENTLY open OviPanel is the one this component
+  // auto-opened right after the last pallet was picked (never for a manual
+  // reopen via the footer button, and never once it's been closed) -- the
+  // one signal that decides whether finishing it should also auto-open the
+  // Packing List next. See handleOviSaved below.
+  const autoFlow = useRef(false);
 
   const allComplete = record.status === "complete";
 
   async function openOvi() {
     if (!record.outward_inspection) return;
+    autoFlow.current = false;
     setOviError(null);
     try {
       setOviRecord(await api.getOvi(record.outward_inspection.id));
@@ -102,8 +109,21 @@ export default function GoodsOutwardDetailPanel({
     if (justCompleted && rec.outward_inspection) {
       try {
         setOviRecord(await api.getOvi(rec.outward_inspection.id));
+        autoFlow.current = true;
       } catch { /* best-effort -- the manual button below still works */ }
     }
+  }
+
+  // Second half of the same automation, per explicit feedback: once the
+  // auto-opened inspection is actually finished (Save, not Save Draft), go
+  // straight into the Packing List next instead of leaving the user to find
+  // the "Print Packing List" button themselves -- pick -> inspect -> pack,
+  // no manual hunting between any of the three steps.
+  function handleOviSaved(saveMode: "draft" | "final") {
+    onChanged();
+    refresh();
+    if (autoFlow.current && saveMode === "final") setPackingListOpen(true);
+    autoFlow.current = false;
   }
 
   async function handleScan(payload?: string) {
@@ -126,7 +146,7 @@ export default function GoodsOutwardDetailPanel({
       );
       if (!target || !target.picking_request_id) {
         setError(
-          `Pallet ${pallet.display_id} (${pallet.sku_code || "—"} / ${pallet.sku_version || "—"}) doesn't match any remaining line item on this shipment.`
+          `Pallet ${pallet.display_id} (${pallet.sku_code || "—"}) doesn't match any remaining line item on this shipment.`
         );
         return;
       }
@@ -251,7 +271,7 @@ export default function GoodsOutwardDetailPanel({
               <div className="hint-text">No pallets picked yet for this shipment.</div>
             ) : (
               <table className="qc-obs-table">
-                <thead><tr><th>Pallet QR</th><th>{T.sku}</th><th>Batch Code</th><th>Picked At</th><th /></tr></thead>
+                <thead><tr><th>Pallet QR</th><th>{T.sku}</th><th>Batch Code</th><th>Production Run</th><th>Picked At</th><th /></tr></thead>
                 <tbody>
                   {record.line_items.flatMap((li) =>
                     li.picks.map((p) => (
@@ -259,6 +279,10 @@ export default function GoodsOutwardDetailPanel({
                         <td className="mono">{p.pallet_display_id || "—"}</td>
                         <td className="mono">{li.sku_code || "—"}</td>
                         <td className="mono">{p.batch_code || "—"}</td>
+                        {/* Read straight off the scanned pallet's own
+                            source_production_run_id -- no manual "which run
+                            made this" picker needed anywhere in this flow. */}
+                        <td className="mono">{p.production_run || "—"}</td>
                         <td>{new Date(p.picked_at).toLocaleString()}</td>
                         <td>
                           {canPick && li.status !== "complete" && (
@@ -303,8 +327,8 @@ export default function GoodsOutwardDetailPanel({
           record={oviRecord}
           mode={oviModeFor(oviRecord.status)}
           canFill={canFillOvi}
-          onClose={() => setOviRecord(null)}
-          onSaved={() => { onChanged(); refresh(); }}
+          onClose={() => { autoFlow.current = false; setOviRecord(null); }}
+          onSaved={handleOviSaved}
         />
       )}
     </>

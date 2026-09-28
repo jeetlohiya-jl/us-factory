@@ -57,6 +57,22 @@ function num(v: string | null | undefined): number | null {
  * populated for the required backend field; the operator just never has
  * to see or pick it. US Factory's own Customer Shipment keeps the Version
  * picker unchanged.
+ *
+ * 2026-09-28 -- per explicit feedback, the manual "Linked Production Run(s)"
+ * checkbox picker above is no longer shown for Goods Outward (isFactory):
+ * asking the operator to hand-pick which run(s) "made the trays" at
+ * Customer-Shipment-creation time -- before a single pallet has even been
+ * scanned -- was unnecessary. Every FG pallet already records which
+ * Production Run generated it (pallets.source_production_run_id, set at QR
+ * generation time), so once pallets are actually picked in Goods Outward,
+ * the run each one came from is already known with no manual linking at
+ * all -- see the "Production Run" column GoodsOutwardDetailPanel's Picked
+ * FG Pallets table now shows, sourced straight from each pick's own
+ * pallet. Trays for Factory is therefore always the plain manual number
+ * (the pre-existing "no runs linked" fallback path below), same as before
+ * this feature existed; production_run_ids stays in the data model/type
+ * only because US Factory's own Customer Shipment (isFactory === false)
+ * still uses the manual picker unchanged.
  */
 export default function CsLineItemsEditor({
   items, skuCodes, onChange,
@@ -70,8 +86,11 @@ export default function CsLineItemsEditor({
   const isFactory = useProduct() === "factory";
 
   useEffect(() => {
+    // Goods Outward (isFactory) no longer shows the Linked Production
+    // Run(s) picker at all -- skip fetching the list nobody will see.
+    if (isFactory) return;
     api.listProductionRuns().then(setRuns).catch(() => setRuns([]));
-  }, []);
+  }, [isFactory]);
 
   const trayOptions = skuCodes.filter((s) => s.category === "tray");
   const otherOptions = skuCodes.filter((s) => s.category !== "tray");
@@ -232,30 +251,32 @@ export default function CsLineItemsEditor({
                   onChange={(e) => update(i, { pcs_per_sleeve: e.target.value })}
                 />
               </div>
-              <div className="field" style={{ gridColumn: "1 / -1" }}>
-                <label>Linked Production Run(s)</label>
-                <div className="hint-text" style={{ marginBottom: 6 }}>
-                  {item.sku_code_id
-                    ? availableRuns.length === 0
-                      ? "No Production Runs found for this SKU yet -- Trays stays a manual entry below."
-                      : "Pick the run(s) that made the trays on this shipment -- Trays is then derived from their Pallets Produced x Trays per Sleeve, instead of typed in."
-                    : "Choose a SKU first."}
-                </div>
-                {availableRuns.length > 0 && (
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 16px", maxHeight: 110, overflowY: "auto" }}>
-                    {availableRuns.map((r) => (
-                      <label key={r.id} style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 400 }}>
-                        <input
-                          type="checkbox"
-                          checked={item.production_run_ids.includes(r.id)}
-                          onChange={() => toggleRun(i, r.id)}
-                        />
-                        <span className="mono">{r.run_number}</span> ({r.total_fg_pallets} pallets)
-                      </label>
-                    ))}
+              {!isFactory && (
+                <div className="field" style={{ gridColumn: "1 / -1" }}>
+                  <label>Linked Production Run(s)</label>
+                  <div className="hint-text" style={{ marginBottom: 6 }}>
+                    {item.sku_code_id
+                      ? availableRuns.length === 0
+                        ? "No Production Runs found for this SKU yet -- Trays stays a manual entry below."
+                        : "Pick the run(s) that made the trays on this shipment -- Trays is then derived from their Pallets Produced x Trays per Sleeve, instead of typed in."
+                      : "Choose a SKU first."}
                   </div>
-                )}
-              </div>
+                  {availableRuns.length > 0 && (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 16px", maxHeight: 110, overflowY: "auto" }}>
+                      {availableRuns.map((r) => (
+                        <label key={r.id} style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 400 }}>
+                          <input
+                            type="checkbox"
+                            checked={item.production_run_ids.includes(r.id)}
+                            onChange={() => toggleRun(i, r.id)}
+                          />
+                          <span className="mono">{r.run_number}</span> ({r.total_fg_pallets} pallets)
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="field">
                 <label>Trays</label>
                 {item.production_run_ids.length > 0 ? (

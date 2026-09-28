@@ -44,7 +44,10 @@ export default function OviPanel({
   record: OviDetail;
   onClose: () => void;
   canFill: boolean;
-  onSaved: () => void;
+  // Told which button actually saved -- Goods Outward's auto-open-after-
+  // picking flow uses this to only chain into the Packing List popup once
+  // the inspection is genuinely done ("Save"/final), never on a Save Draft.
+  onSaved: (saveMode: "draft" | "final") => void;
   mode: "view" | "edit";
 }) {
   const [step, setStep] = useState(1);
@@ -87,7 +90,7 @@ export default function OviPanel({
         save_mode: saveMode,
         answers: payload,
       });
-      onSaved();
+      onSaved(saveMode);
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to save record");
