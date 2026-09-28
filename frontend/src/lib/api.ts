@@ -20,7 +20,7 @@ import type {
   AppUser, UserCreateInput, UserUpdateInput,
   PortfolioAccessMe, PortfolioAccess, PortfolioAccessInput, PortfolioAccessUpdateInput,
   GoodsReceiptDetail, GoodsReceiptListItem, GoodsReceiptSavePayload, GoodsReceiptInwardPayload, GoodsReceiptEntry,
-  InventoryListResponse, InventoryDetail,
+  InventoryListResponse, InventoryDetail, InspectionStatus,
 } from "./types";
 
 // Static, never-changing business constants -- mirrored 1:1 from
@@ -2132,15 +2132,35 @@ const GR_DETAIL_SELECT =
   "status,inwarded_at,sort_order," +
   "inward_events:goods_receipt_inward_events(received_quantity,pallet_count,unit,kind,inwarded_at)," +
   "qr_batch:qr_generation_records!qr_generation_records_source_goods_receipt_entry_id_fkey(id,batch_display_id,status,quantity)," +
-  "inward_inspection:inward_vehicle_inspections!inward_vehicle_inspections_source_goods_receipt_entry_id_fkey(id,status))";
+  "inward_inspection:inward_vehicle_inspections!inward_vehicle_inspections_source_goods_receipt_entry_id_fkey(id,status,created_at))";
+
+type RawInwardInspectionRef = { id: string; status: InspectionStatus; created_at: string };
 
 type RawGrEntry = Omit<GoodsReceiptEntry, "qr_batch" | "po_quantity" | "received_quantity" | "inward_inspection"> & {
   sort_order: number;
   po_quantity: number | string;
   received_quantity: number | string | null;
   qr_batch: GoodsReceiptEntry["qr_batch"][] | GoodsReceiptEntry["qr_batch"];
-  inward_inspection: NonNullable<GoodsReceiptEntry["inward_inspection"]>[] | GoodsReceiptEntry["inward_inspection"];
+  inward_inspection: RawInwardInspectionRef[] | RawInwardInspectionRef | null;
 };
+
+// Migration 0068 -- an entry can now have MORE THAN ONE inspection over its
+// lifetime (one per delivery: first inward, then any "Inward remaining"
+// top-ups), so the FK is no longer plainly unique and PostgREST embeds it
+// as an array instead of a single object. The row this panel actually
+// cares about is whichever one is still in progress (draft/hold) --
+// resuming it is exactly what re-clicking "Inward"/"Inward remaining"
+// should do -- or, if every delivery so far is fully approved, the most
+// recent of those (so the button reads "View Inspection" rather than
+// "Inward" on an entry that's already been through this once).
+function currentInwardInspection(raw: RawGrEntry["inward_inspection"]): GoodsReceiptEntry["inward_inspection"] {
+  const list = Array.isArray(raw) ? raw : raw ? [raw] : [];
+  if (list.length === 0) return null;
+  const byNewest = (a: RawInwardInspectionRef, b: RawInwardInspectionRef) => (a.created_at < b.created_at ? 1 : -1);
+  const inProgress = list.filter((x) => x.status !== "approved").sort(byNewest)[0];
+  const picked = inProgress || [...list].sort(byNewest)[0];
+  return { id: picked.id, status: picked.status };
+}
 
 function flattenGoodsReceipt(raw: Omit<GoodsReceiptDetail, "entries"> & { entries: RawGrEntry[] }): GoodsReceiptDetail {
   const entries = [...(raw.entries || [])]
@@ -2150,7 +2170,7 @@ function flattenGoodsReceipt(raw: Omit<GoodsReceiptDetail, "entries"> & { entrie
       po_quantity: Number(e.po_quantity),
       received_quantity: e.received_quantity == null ? null : Number(e.received_quantity),
       qr_batch: Array.isArray(e.qr_batch) ? e.qr_batch[0] ?? null : e.qr_batch ?? null,
-      inward_inspection: Array.isArray(e.inward_inspection) ? e.inward_inspection[0] ?? null : e.inward_inspection ?? null,
+      inward_inspection: currentInwardInspection(e.inward_inspection),
     }));
   return { ...raw, entries };
 }

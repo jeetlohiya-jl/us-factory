@@ -155,13 +155,21 @@ def create_draft(
     Receipt entry already knows (category, vendor, shipment number, SKU) is
     pre-filled here rather than left for the operator to re-enter -- see
     GrInwardWizard.tsx, which shows those fields read-only. Idempotent: a
-    second call for the same entry (e.g. a double-click) returns the
-    existing inspection instead of erroring or creating a duplicate --
-    matching the entry_id's own DB-level unique constraint."""
+    second call for the same entry (e.g. a double-click, or re-clicking
+    "Inward"/"Inward remaining" on a draft/hold left in progress) returns
+    that in-progress inspection instead of erroring or creating a
+    duplicate -- matching migration 0068's partial unique index on
+    (source_goods_receipt_entry_id) where status <> 'approved'. Once an
+    entry's inspection is approved it's excluded from this lookup, so the
+    next call (its next delivery, e.g. "Inward remaining" on a container
+    that arrived short) creates a fresh one rather than resuming the old,
+    already-finalized record."""
     if source_goods_receipt_entry_id is not None:
         existing = (
             db.query(models.InwardVehicleInspection)
             .filter(models.InwardVehicleInspection.source_goods_receipt_entry_id == source_goods_receipt_entry_id)
+            .filter(models.InwardVehicleInspection.status != "approved")
+            .order_by(models.InwardVehicleInspection.created_at.desc())
             .first()
         )
         if existing:
