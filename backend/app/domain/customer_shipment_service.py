@@ -36,8 +36,10 @@ Generation -> FG Storage) and this module must never regress that.
 """
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.db import models
@@ -54,6 +56,49 @@ def next_container_number(db: Session) -> str:
     yymm = datetime.now(timezone.utc).strftime("%y%m")
     seq = next_seq(db, "cs_container")
     return f"US-CTN-{yymm}-{str(seq).zfill(4)}"
+
+
+def _parse_int(text: str | None) -> int | None:
+    """pcs_per_sleeve is free-text (Text column, entered on the SKU Names
+    admin screen) -- pulls the first run of digits out of it ("43" or
+    "43 pcs"), or None if it isn't a plain number."""
+    if not text:
+        return None
+    m = re.search(r"\d+", text)
+    return int(m.group()) if m else None
+
+
+def compute_pcs_from_production_runs(
+    db: Session, production_run_ids: list, pcs_per_sleeve: str | None
+) -> int | None:
+    """2026-09-28 -- Trays (pcs), when one or more Production Runs are
+    linked to this line item, is derived rather than hand-typed: SUM of
+    those runs' Total FG Pallets Generated x Trays per Sleeve. Returns
+    None (leave pcs as whatever was already there / hand-typed) when no
+    runs are linked, or when Trays per Sleeve isn't a plain number yet --
+    never silently drops to 0 for a real, already-entered value."""
+    if not production_run_ids:
+        return None
+    trays_per_sleeve = _parse_int(pcs_per_sleeve)
+    if trays_per_sleeve is None:
+        return None
+    total_pallets = (
+        db.query(func.coalesce(func.sum(models.ProductionRun.total_fg_pallets), 0))
+        .filter(models.ProductionRun.id.in_(production_run_ids))
+        .scalar()
+    ) or 0
+    return int(total_pallets) * trays_per_sleeve
+
+
+def _sync_production_run_links(db: Session, line_item: models.CustomerShipmentLineItem, production_run_ids: list) -> None:
+    """Replace this line item's linked-runs list wholesale -- same
+    delete-then-reinsert convention as InventoryItem's compatible_trays
+    (inventory_service.py)."""
+    db.query(models.CustomerShipmentLineItemProductionRun).filter(
+        models.CustomerShipmentLineItemProductionRun.line_item_id == line_item.id
+    ).delete(synchronize_session=False)
+    for run_id in production_run_ids:
+        db.add(models.CustomerShipmentLineItemProductionRun(line_item_id=line_item.id, production_run_id=run_id))
 
 
 def create_customer_shipment(
@@ -121,6 +166,8 @@ def create_customer_shipment(
         sku_code = sku_codes_by_id.get(sku_code_id)
         sku_version = sku_versions_by_id.get(sku_version_id) if sku_version_id else None
 
+        production_run_ids = li.get("production_run_ids") or []
+        computed_pcs = compute_pcs_from_production_runs(db, production_run_ids, li.get("pcs_per_sleeve"))
         line_item = models.CustomerShipmentLineItem(
             customer_shipment_id=shipment.id,
             sku_code_id=sku_code_id,
@@ -128,11 +175,13 @@ def create_customer_shipment(
             sku_code_snapshot=sku_code.code if sku_code else None,
             sku_version_snapshot=sku_version.version if sku_version else None,
             pallets_required=pallets_required,
-            pcs=li.get("pcs"),
+            pcs=computed_pcs if computed_pcs is not None else li.get("pcs"),
             pcs_per_sleeve=li.get("pcs_per_sleeve"),
         )
         db.add(line_item)
         db.flush()
+        if production_run_ids:
+            _sync_production_run_links(db, line_item, production_run_ids)
 
         db.add(models.ShipmentPickingRequest(
             customer_shipment_id=shipment.id,
@@ -308,6 +357,9 @@ def update_customer_shipment(
         sku_code = sku_codes_by_id.get(sku_code_id)
         sku_version = sku_versions_by_id.get(sku_version_id) if sku_version_id else None
 
+        production_run_ids = li.get("production_run_ids") or []
+        computed_pcs = compute_pcs_from_production_runs(db, production_run_ids, li.get("pcs_per_sleeve"))
+
         if li_id and str(li_id) in existing_by_id:
             existing = existing_by_id[str(li_id)]
             existing.sku_code_id = sku_code_id
@@ -315,8 +367,9 @@ def update_customer_shipment(
             existing.sku_code_snapshot = sku_code.code if sku_code else None
             existing.sku_version_snapshot = sku_version.version if sku_version else None
             existing.pallets_required = pallets_required
-            existing.pcs = li.get("pcs")
+            existing.pcs = computed_pcs if computed_pcs is not None else li.get("pcs")
             existing.pcs_per_sleeve = li.get("pcs_per_sleeve")
+            _sync_production_run_links(db, existing, production_run_ids)
 
             request = (
                 db.query(models.ShipmentPickingRequest)
@@ -340,11 +393,13 @@ def update_customer_shipment(
                 sku_code_snapshot=sku_code.code if sku_code else None,
                 sku_version_snapshot=sku_version.version if sku_version else None,
                 pallets_required=pallets_required,
-                pcs=li.get("pcs"),
+                pcs=computed_pcs if computed_pcs is not None else li.get("pcs"),
                 pcs_per_sleeve=li.get("pcs_per_sleeve"),
             )
             db.add(new_item)
             db.flush()
+            if production_run_ids:
+                _sync_production_run_links(db, new_item, production_run_ids)
             db.add(models.ShipmentPickingRequest(
                 customer_shipment_id=shipment.id,
                 customer_shipment_line_item_id=new_item.id,

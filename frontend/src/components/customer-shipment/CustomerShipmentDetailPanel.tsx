@@ -56,7 +56,7 @@ export default function CustomerShipmentDetailPanel({
           <div className="detail-card">
             <h3>Line Items</h3>
             <table className="qc-obs-table">
-              <thead><tr><th>{T.sku}</th><th>Quantity</th><th>Pcs</th><th>Trays/Sleeve</th></tr></thead>
+              <thead><tr><th>{T.sku}</th><th>Quantity</th><th>Trays</th><th>Trays per Sleeve</th></tr></thead>
               <tbody>
                 {detail.line_items.map((li) => (
                   <tr key={li.id}>

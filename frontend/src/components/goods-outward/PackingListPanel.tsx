@@ -14,6 +14,15 @@ function fmt(v: number | null): string {
   return v.toLocaleString();
 }
 
+function Kv({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div>
+      <div className="detail-kv-label">{label}</div>
+      <div className="detail-kv-value">{value ?? "—"}</div>
+    </div>
+  );
+}
+
 /**
  * Goods Outward -- "Print Packing List" (2026-09-25). Opened from
  * GoodsOutwardDetailPanel's own "Print Packing List" action. Loads
@@ -194,86 +203,91 @@ export default function PackingListPanel({
                 </div>
               </div>
 
-              <div className="detail-card">
-                <h3>Goods Details</h3>
-                <div className="hint-text" style={{ marginBottom: 10 }}>
-                  SKU No. and Description come from the SKU Names admin screen. HS Code, Case Size, Trays/Sleeve and Sleeves/Combo pre-fill from there too when already entered — editable here if you need to fill a gap or fix one, and doing so updates the SKU Version itself, not just this shipment. UOM and Total Combo are the actual quantity going out on this shipment — enter them below.
-                </div>
-                <table className="qc-obs-table">
-                  <thead>
-                    <tr>
-                      <th>SKU No.</th><th>Description</th><th>HS Code</th><th>Case Size (inch)</th>
-                      <th style={{ width: 90 }}>UOM</th><th style={{ width: 100 }}>Total Combo</th>
-                      <th style={{ width: 90 }}>Trays/ Sleeve</th><th style={{ width: 90 }}>Sleeves/ Combo</th>
-                      <th style={{ width: 90 }}>Trays/ Combo</th><th style={{ width: 120 }}>Total Qty (Trays)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.line_items.length === 0 ? (
-                      <tr className="empty-row"><td colSpan={10}>No line items on this shipment.</td></tr>
-                    ) : (
-                      data.line_items.map((li) => (
-                        <tr key={li.id}>
-                          <td className="mono">{li.sku_code || "—"}</td>
-                          <td>{li.description || "—"}</td>
-                          <td>
-                            <input
-                              style={{ width: 80 }}
-                              value={lineEdits[li.id]?.hs_code ?? ""}
-                              onChange={(e) => setLineEdits((prev) => ({ ...prev, [li.id]: { ...prev[li.id], hs_code: e.target.value } }))}
-                            />
-                          </td>
-                          <td>
-                            <input
-                              style={{ width: 80 }}
-                              value={lineEdits[li.id]?.case_size ?? ""}
-                              onChange={(e) => setLineEdits((prev) => ({ ...prev, [li.id]: { ...prev[li.id], case_size: e.target.value } }))}
-                            />
-                          </td>
-                          <td>
-                            <input
-                              value={lineEdits[li.id]?.uom ?? ""}
-                              onChange={(e) => setLineEdits((prev) => ({ ...prev, [li.id]: { ...prev[li.id], uom: e.target.value } }))}
-                            />
-                          </td>
-                          <td>
-                            <input
-                              type="number" value={lineEdits[li.id]?.total_combo ?? ""}
-                              onChange={(e) => setLineEdits((prev) => ({ ...prev, [li.id]: { ...prev[li.id], total_combo: e.target.value } }))}
-                            />
-                          </td>
-                          <td>
-                            <input
-                              type="number" style={{ width: 70 }}
-                              value={lineEdits[li.id]?.trays_per_sleeve ?? ""}
-                              onChange={(e) => setLineEdits((prev) => ({ ...prev, [li.id]: { ...prev[li.id], trays_per_sleeve: e.target.value } }))}
-                            />
-                          </td>
-                          <td>
-                            <input
-                              type="number" style={{ width: 70 }}
-                              value={lineEdits[li.id]?.sleeves_per_combo ?? ""}
-                              onChange={(e) => setLineEdits((prev) => ({ ...prev, [li.id]: { ...prev[li.id], sleeves_per_combo: e.target.value } }))}
-                            />
-                          </td>
-                          <td>{fmt(traysPerCombo(li))}</td>
-                          <td>{fmt(totalQuantity(li))}</td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                  {data.line_items.length > 0 && (
-                    <tfoot>
-                      <tr style={{ fontWeight: 700 }}>
-                        <td colSpan={5}>Total</td>
-                        <td>{fmt(totals.combo)}</td>
-                        <td colSpan={3} />
-                        <td>{fmt(totals.qty)}</td>
-                      </tr>
-                    </tfoot>
-                  )}
-                </table>
+              {/* One card per line item, fields stacked vertically -- a
+                  10-column table (SKU/Description/HS Code/Case Size/UOM/
+                  Total Combo/Trays-per-Sleeve/Sleeves-per-Combo/Trays-per-
+                  Combo/Total Qty) doesn't fit this panel's width and was
+                  breaking the layout (fields clipped/overlapping). Same
+                  per-item detail-card pattern already used elsewhere in
+                  this app for a row with many fields (e.g. Production's
+                  per-machine cards). */}
+              <div className="hint-text" style={{ marginBottom: 4 }}>
+                SKU No. and Description come from the SKU Names admin screen. HS Code, Case Size, Trays/Sleeve and Sleeves/Combo pre-fill from there too when already entered — editable here if you need to fill a gap or fix one, and doing so updates the SKU Version itself, not just this shipment. UOM and Total Combo are the actual quantity going out on this shipment — enter them below.
               </div>
+              {data.line_items.length === 0 ? (
+                <div className="detail-card"><div className="hint-text">No line items on this shipment.</div></div>
+              ) : (
+                data.line_items.map((li) => (
+                  <div className="detail-card" key={li.id}>
+                    <h3 className="mono">{li.sku_code || "—"}</h3>
+                    <div className="hint-text" style={{ marginBottom: 10 }}>{li.description || "—"}</div>
+                    <div className="form-grid">
+                      <div className="field">
+                        <label>HS Code</label>
+                        <input
+                          value={lineEdits[li.id]?.hs_code ?? ""}
+                          onChange={(e) => setLineEdits((prev) => ({ ...prev, [li.id]: { ...prev[li.id], hs_code: e.target.value } }))}
+                        />
+                      </div>
+                      <div className="field">
+                        <label>Case Size (inch)</label>
+                        <input
+                          value={lineEdits[li.id]?.case_size ?? ""}
+                          onChange={(e) => setLineEdits((prev) => ({ ...prev, [li.id]: { ...prev[li.id], case_size: e.target.value } }))}
+                        />
+                      </div>
+                      <div className="field">
+                        <label>UOM</label>
+                        <input
+                          value={lineEdits[li.id]?.uom ?? ""}
+                          onChange={(e) => setLineEdits((prev) => ({ ...prev, [li.id]: { ...prev[li.id], uom: e.target.value } }))}
+                        />
+                      </div>
+                      <div className="field">
+                        <label>Total Combo</label>
+                        <input
+                          type="number" value={lineEdits[li.id]?.total_combo ?? ""}
+                          onChange={(e) => setLineEdits((prev) => ({ ...prev, [li.id]: { ...prev[li.id], total_combo: e.target.value } }))}
+                        />
+                      </div>
+                      <div className="field">
+                        <label>Trays/Sleeve</label>
+                        <input
+                          type="number"
+                          value={lineEdits[li.id]?.trays_per_sleeve ?? ""}
+                          onChange={(e) => setLineEdits((prev) => ({ ...prev, [li.id]: { ...prev[li.id], trays_per_sleeve: e.target.value } }))}
+                        />
+                      </div>
+                      <div className="field">
+                        <label>Sleeves/Combo</label>
+                        <input
+                          type="number"
+                          value={lineEdits[li.id]?.sleeves_per_combo ?? ""}
+                          onChange={(e) => setLineEdits((prev) => ({ ...prev, [li.id]: { ...prev[li.id], sleeves_per_combo: e.target.value } }))}
+                        />
+                      </div>
+                      <div className="field">
+                        <label>Trays/Combo</label>
+                        <div className="readonly-val">{fmt(traysPerCombo(li))}</div>
+                      </div>
+                      <div className="field">
+                        <label>Total Qty (Trays)</label>
+                        <div className="readonly-val">{fmt(totalQuantity(li))}</div>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+
+              {data.line_items.length > 0 && (
+                <div className="detail-card">
+                  <h3>Total</h3>
+                  <div className="detail-grid">
+                    <Kv label="Total Combo" value={fmt(totals.combo)} />
+                    <Kv label="Total Qty (Trays)" value={fmt(totals.qty)} />
+                  </div>
+                </div>
+              )}
             </>
           )}
           {error && data && <div className="error-banner" style={{ marginTop: 10 }}>{error}</div>}

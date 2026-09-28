@@ -71,8 +71,9 @@ export default function NewCustomerShipmentPanel({
           pallets_required: li.pallets_required,
           pcs: li.pcs ?? "",
           pcs_per_sleeve: li.pcs_per_sleeve || "",
+          production_run_ids: li.production_runs.map((r) => r.id),
         }))
-      : [{ key: "li-0", sku_code_id: null, sku_version_id: null, pallets_required: "", pcs: "", pcs_per_sleeve: "" }]
+      : [{ key: "li-0", sku_code_id: null, sku_version_id: null, pallets_required: "", pcs: "", pcs_per_sleeve: "", production_run_ids: [] }]
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -132,6 +133,7 @@ export default function NewCustomerShipmentPanel({
             pallets_required: Number(li.pallets_required),
             pcs: li.pcs === "" ? null : Number(li.pcs),
             pcs_per_sleeve: li.pcs_per_sleeve || null,
+            production_run_ids: li.production_run_ids,
           })),
         });
       } else {
@@ -144,6 +146,7 @@ export default function NewCustomerShipmentPanel({
             pallets_required: Number(li.pallets_required),
             pcs: li.pcs === "" ? null : Number(li.pcs),
             pcs_per_sleeve: li.pcs_per_sleeve || null,
+            production_run_ids: li.production_run_ids,
           })),
         });
       }

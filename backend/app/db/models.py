@@ -1296,6 +1296,27 @@ class CustomerShipmentLineItem(Base):
     customer_shipment = relationship("CustomerShipment", back_populates="line_items")
     sku_code = relationship("SkuCode")
     sku_version = relationship("SkuVersion")
+    production_run_links = relationship(
+        "CustomerShipmentLineItemProductionRun", back_populates="line_item",
+        cascade="all, delete-orphan",
+    )
+
+
+class CustomerShipmentLineItemProductionRun(Base):
+    """Which Production Run(s) actually made the trays going out on a
+    Customer Shipment / Goods Outward line item -- migration 0064.
+    Many-to-many (not a single FK) since more than one run can contribute
+    pallets to the same shipment line item. `pcs` (Trays) is derived from
+    the sum of these runs' total_fg_pallets x the line item's
+    pcs_per_sleeve, computed in customer_shipment_service.py -- this table
+    only records the link, not the computed number."""
+    __tablename__ = "customer_shipment_line_item_production_runs"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    line_item_id = Column(UUID(as_uuid=True), ForeignKey("customer_shipment_line_items.id", ondelete="CASCADE"), nullable=False)
+    production_run_id = Column(UUID(as_uuid=True), ForeignKey("production_runs.id", ondelete="CASCADE"), nullable=False)
+
+    line_item = relationship("CustomerShipmentLineItem", back_populates="production_run_links")
+    production_run = relationship("ProductionRun")
 
 
 class ShipmentPickingRequest(ProductScoped, Base):
