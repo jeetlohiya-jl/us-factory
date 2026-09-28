@@ -69,6 +69,12 @@ export default function Wizard({
   // click, not just the first.
   const dirty = useRef(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // See handleSetAnswer below and GrInwardWizard.tsx for the bug this
+  // guards against: an older click's PUT response landing after a newer
+  // click's, silently reverting a just-fixed answer back to the wrong one
+  // for a moment (confirmed on video). Only the most-recently-fired
+  // request's response is ever applied.
+  const checklistReqSeq = useRef(0);
 
   const isFinalized = detail.status === "approved" || detail.status === "hold";
   const readOnlyStep1 = isFinalized && !permissions.can_edit;
@@ -179,15 +185,17 @@ export default function Wizard({
   }
 
   async function handleSetAnswer(checklistItemId: string, val: "ok" | "not_ok") {
-    const optimistic = {
-      ...detail,
-      checklist_answers: detail.checklist_answers.map((a) => a.checklist_item_id === checklistItemId ? { ...a, answer: val } : a),
-    };
-    setDetail(optimistic);
+    const seq = ++checklistReqSeq.current;
+    setDetail((prev) => ({
+      ...prev,
+      checklist_answers: prev.checklist_answers.map((a) => a.checklist_item_id === checklistItemId ? { ...a, answer: val } : a),
+    }));
     try {
       const updated = await api.saveChecklist(inspectionId, { [checklistItemId]: val });
+      if (seq !== checklistReqSeq.current) return;
       setDetail(updated);
     } catch (e) {
+      if (seq !== checklistReqSeq.current) return;
       setError(e instanceof Error ? e.message : "Failed to save checklist answer");
     }
   }

@@ -65,8 +65,13 @@ export default function GoodsReceiptFormPanel({
       if (!(Number(e.po_quantity) > 0)) return `${label}: PO Quantity must be greater than 0.`;
       if (tray && !Number.isInteger(Number(e.po_quantity))) return `${label}: tray PO Quantity is a whole number of pallets.`;
       // A tray's stage may stay blank -- it is chosen when the container is inwarded.
+      // SKU Version is never shown to the operator here (auto-picked, the
+      // SKU's first active version, the moment a SKU is chosen -- see
+      // GrEntriesEditor's update()); if it's still missing at save time,
+      // the SKU itself has no active version set up and needs one in Setup,
+      // not something this operator can fix by picking a different value.
       const hasVersions = (skuCodes.find((s) => s.id === e.sku_code_id)?.versions || []).some((v) => v.is_active);
-      if (!asDraft && hasVersions && !e.sku_version_id) return `${label}: select a SKU Version.`;
+      if (!asDraft && hasVersions && !e.sku_version_id) return `${label}: this SKU has no active Version set up in Setup yet.`;
     }
     if (!asDraft && rows.length === 0) return "Add at least one container before saving.";
     return {

@@ -24,7 +24,7 @@ export function blankEntry(unit: QuantityUnit = "Pallets"): GoodsReceiptEntryDra
   return { key: newKey(), id: null, locked: false, shipment_number: "", category: "", sku_code_id: null, sku_version_id: null, po_quantity: "", unit };
 }
 
-/** "HA1" + 3 -> HA1, HA2, HA3 ; "V6" + 4 -> V6..V9 ; "SHP" + 2 -> SHP1, SHP2. */
+/** "A1" + 3 -> A1, A2, A3 ; "V6" + 4 -> V6..V9 ; "SHP" + 2 -> SHP1, SHP2. */
 function shipmentNumbers(first: string, count: number): string[] {
   const m = first.trim().toUpperCase().match(/^(.*?)(\d+)$/);
   const prefix = m ? m[1] : first.trim().toUpperCase();
@@ -35,13 +35,13 @@ function shipmentNumbers(first: string, count: number): string[] {
 
 /**
  * The PO's containers -- one row per container, identified by its Shipment
- * Number (HA1, V6, ...), exactly as the PO lists them. Same table/row
+ * Number (A1, V6, ...), exactly as the PO lists them. Same table/row
  * editor pattern as CsLineItemsEditor. Rows already inwarded are read-only
  * (they have pallets/QRs that reference them; the backend enforces the
  * same rule).
  *
  * "+ Add several containers" opens an optional shortcut that adds N rows at
- * once with consecutive shipment numbers (HA1 -> HA1..HA5) -- hidden until
+ * once with consecutive shipment numbers (A1 -> A1..A5) -- hidden until
  * asked for, so the default view is just the container table.
  */
 export default function GrEntriesEditor({
@@ -101,7 +101,7 @@ export default function GrEntriesEditor({
       ) : (
         <table className="qc-obs-table">
           <thead>
-            <tr><th>{T.shipmentNumber}</th><th>SKU</th><th>Category</th><th>{T.skuVersion}</th><th>PO Quantity</th><th>Unit</th><th /></tr>
+            <tr><th>{T.shipmentNumber}</th><th>SKU</th><th>Category</th><th>PO Quantity</th><th>Unit</th><th /></tr>
           </thead>
           <tbody>
             {items.map((item, i) =>
@@ -110,14 +110,13 @@ export default function GrEntriesEditor({
                   <td className="mono">{item.shipment_number}</td>
                   <td className="mono">{skuCodes.find((s) => s.id === item.sku_code_id)?.code || "—"}</td>
                   <td>{item.category ? INWARD_CATEGORY_LABELS[item.category as Category] : "—"}</td>
-                  <td className="mono">{versionsFor(item.sku_code_id).find((v) => v.id === item.sku_version_id)?.version || "—"}</td>
                   <td>{Number(item.po_quantity).toLocaleString()}</td>
                   <td>{item.unit}</td>
                   <td><span className="badge approved">Inwarded</span></td>
                 </tr>
               ) : (
                 <tr key={item.key}>
-                  <td><input type="text" value={item.shipment_number} onChange={(e) => update(i, { shipment_number: e.target.value.toUpperCase() })} placeholder="e.g. HA1" /></td>
+                  <td><input type="text" value={item.shipment_number} onChange={(e) => update(i, { shipment_number: e.target.value.toUpperCase() })} placeholder="e.g. A1" /></td>
                   <td>
                     <select value={item.sku_code_id || ""} onChange={(e) => update(i, { sku_code_id: e.target.value || null })}>
                       <option value="">Select</option>
@@ -133,12 +132,6 @@ export default function GrEntriesEditor({
                     ) : (
                       <div className="readonly-val">{item.category ? INWARD_CATEGORY_LABELS[item.category as Category] : "—"}</div>
                     )}
-                  </td>
-                  <td>
-                    <select value={item.sku_version_id || ""} onChange={(e) => update(i, { sku_version_id: e.target.value || null })}>
-                      <option value="">Select</option>
-                      {versionsFor(item.sku_code_id).map((v) => <option key={v.id} value={v.id}>{v.version}</option>)}
-                    </select>
                   </td>
                   <td>
                     <input type="number" min={0} step={isTraySku(skuById(item.sku_code_id)) ? 1 : "any"} value={item.po_quantity}
@@ -170,7 +163,7 @@ export default function GrEntriesEditor({
         <div className="detail-card" style={{ marginTop: 14 }}>
           <h3>Add several containers</h3>
           <div className="hint-text" style={{ marginBottom: 10 }}>
-            Adds one row per container with consecutive shipment numbers — e.g. 5 starting at HA1 adds HA1, HA2, HA3, HA4, HA5.
+            Adds one row per container with consecutive shipment numbers — e.g. 5 starting at A1 adds A1, A2, A3, A4, A5.
           </div>
           <div className="form-grid">
             <div className="field"><label>Number of Containers</label>
@@ -189,11 +182,6 @@ export default function GrEntriesEditor({
                   {TRAY_STAGES.map((c) => <option key={c} value={c}>{INWARD_CATEGORY_LABELS[c]}</option>)}
                 </select></div>
             )}
-            <div className="field"><label>{T.skuVersion}</label>
-              <select value={qaVersion || ""} onChange={(e) => setQaVersion(e.target.value || null)}>
-                <option value="">Select</option>
-                {versionsFor(qaSku).map((v) => <option key={v.id} value={v.id}>{v.version}</option>)}
-              </select></div>
             <div className="field"><label>{qaIsTray ? "Pallets per Container" : "PO Quantity per Container"}</label>
               <input type="number" min={0} step={qaIsTray ? 1 : "any"} value={qaQty} onChange={(e) => setQaQty(e.target.value)} /></div>
             {qaSku && !qaIsTray && (

@@ -1622,9 +1622,13 @@ async function getShipmentPickingSb(id: string): Promise<ShipmentPickingDetail> 
 // individual picks, so one query gets everything a combined detail view
 // needs -- no separate round trip per line item.
 
+type RawGoLineItemPallet = {
+  display_id: string; batch_code: string | null;
+  source_production_run: { run_number: string } | { run_number: string }[] | null;
+};
 type RawGoLineItemPick = {
   id: string; pallet_id: string; picked_at: string;
-  pallet: { display_id: string; batch_code: string | null } | { display_id: string; batch_code: string | null }[] | null;
+  pallet: RawGoLineItemPallet | RawGoLineItemPallet[] | null;
 };
 type RawGoPickingRequest = {
   id: string; status: string; picks: RawGoLineItemPick[];
@@ -1651,7 +1655,8 @@ function flattenOutwardInspection(raw: RawGoShipment["outward_inspection"]): { i
 const GO_LINE_ITEM_SELECT =
   "id,sku_code_id,sku_version_id,sku_code_snapshot,sku_version_snapshot,pallets_required,pcs,pcs_per_sleeve," +
   "production_runs:customer_shipment_line_item_production_runs(production_run:production_runs(id,run_number,total_fg_pallets))," +
-  "picking_request:shipment_picking_requests(id,status,picks:shipment_picking_picks(id,pallet_id,picked_at,pallet:pallets(display_id,batch_code)))";
+  "picking_request:shipment_picking_requests(id,status,picks:shipment_picking_picks(id,pallet_id,picked_at," +
+  "pallet:pallets(display_id,batch_code,source_production_run:production_runs(run_number))))";
 
 /** A shipment's aggregate status: complete only once every line item's own
  * request is complete, pending only when nothing at all has been picked
@@ -1669,7 +1674,11 @@ function flattenGoLineItem(raw: RawGoLineItem): GoodsOutwardLineItem {
   const req = Array.isArray(raw.picking_request) ? raw.picking_request[0] ?? null : raw.picking_request;
   const picks = (req?.picks || []).map((p) => {
     const pallet = Array.isArray(p.pallet) ? p.pallet[0] ?? null : p.pallet;
-    return { id: p.id, pallet_id: p.pallet_id, pallet_display_id: pallet?.display_id ?? null, batch_code: pallet?.batch_code ?? null, picked_at: p.picked_at };
+    const run = pallet ? (Array.isArray(pallet.source_production_run) ? pallet.source_production_run[0] ?? null : pallet.source_production_run) : null;
+    return {
+      id: p.id, pallet_id: p.pallet_id, pallet_display_id: pallet?.display_id ?? null, batch_code: pallet?.batch_code ?? null,
+      picked_at: p.picked_at, production_run: run?.run_number ?? null,
+    };
   });
   return {
     id: raw.id, sku_code_id: raw.sku_code_id, sku_version_id: raw.sku_version_id,
@@ -1687,7 +1696,9 @@ const GO_LIST_SELECT =
 
 function flattenGoListItem(raw: RawGoShipment): GoodsOutwardListItem {
   const lineItems = (raw.line_items || []).map(flattenGoLineItem);
-  const sku_summary = lineItems.map((li) => [li.sku_code, li.sku_version].filter(Boolean).join(" / ")).filter(Boolean).join(", ");
+  // SKU Version is never displayed in Goods Outward (per explicit
+  // feedback) -- the SKU(s) column shows just the code, deduped.
+  const sku_summary = Array.from(new Set(lineItems.map((li) => li.sku_code).filter(Boolean))).join(", ");
   return {
     id: raw.id, shipment_number: raw.shipment_number, container_number: raw.container_number, customer: raw.customer,
     sku_summary,

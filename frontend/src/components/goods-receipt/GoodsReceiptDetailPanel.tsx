@@ -175,6 +175,22 @@ export default function GoodsReceiptDetailPanel({
   // Already generated -> reopen the existing batch (Supabase read).
   // Otherwise -> one click generates (FastAPI: QR PNGs + shared numbering)
   // and opens the panel with every QR already in the response.
+  //
+  // Bug fixed 2026-09-28 (found from a screen recording: after Submit ->
+  // auto-inward -> auto-QR-generate, the Containers table kept showing the
+  // container as "Pending" with no QR button until a hard page refresh):
+  // this used to merge the new qr_batch onto `record` read directly from
+  // this function's own closure. When called right after
+  // handleInspectionApproved's `apply(next)` -- i.e. from the SAME render's
+  // closure, before React had re-rendered this component with the fresh
+  // `record` -- that closure's `record` was still the PRE-inward snapshot
+  // (status "pending", no received_quantity/pallet_count yet). Spreading
+  // `...record` here silently reverted the just-applied inward back to
+  // "pending" everywhere except the one qr_batch field this function itself
+  // set, which is exactly the stale display that only a full refetch
+  // (bypassing the stale closure entirely) corrected. Using the functional
+  // form of setRecord guarantees this always merges onto the latest state,
+  // never a stale one, regardless of when this promise resolves.
   async function openOrGenerateQr(e: GoodsReceiptEntry) {
     setBusy(e.id);
     setError(null);
@@ -185,11 +201,15 @@ export default function GoodsReceiptDetailPanel({
       }
       const d = await api.generateGoodsReceiptEntryQr(record.id, e.id);
       setQr({ entry: e, detail: d });
-      apply({
-        ...record,
-        entries: record.entries.map((x) =>
-          x.id === e.id ? { ...x, qr_batch: { id: d.id, batch_display_id: d.batch_display_id, status: d.status, quantity: d.quantity } } : x
-        ),
+      setRecord((prev) => {
+        const next = {
+          ...prev,
+          entries: prev.entries.map((x) =>
+            x.id === e.id ? { ...x, qr_batch: { id: d.id, batch_display_id: d.batch_display_id, status: d.status, quantity: d.quantity } } : x
+          ),
+        };
+        onChanged(next);
+        return next;
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to generate pallet QRs");

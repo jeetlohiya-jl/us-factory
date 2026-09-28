@@ -1483,6 +1483,11 @@ export interface GoodsOutwardPick {
   pallet_display_id: string | null;
   batch_code: string | null;
   picked_at: string;
+  // The Production Run that generated this specific pallet
+  // (pallets.source_production_run_id), read straight off the pallet -- no
+  // manual linking needed. Null for a pallet generated some other way (e.g.
+  // pre-dating that column, or not FG).
+  production_run: string | null;
 }
 
 export interface GoodsOutwardLineItem {
@@ -1780,7 +1785,7 @@ export type GoodsReceiptEntryStatus = "pending" | "inwarded";
 
 export interface GoodsReceiptEntry {
   id: string;
-  // The PO line's own identifier (HA1, V6, ...) -- this IS the shipment number.
+  // The PO line's own identifier (A1, V6, ...) -- this IS the shipment number.
   shipment_number: string;
   // Per container (migration 0050): a PO can mix materials.
   category: Category | null;

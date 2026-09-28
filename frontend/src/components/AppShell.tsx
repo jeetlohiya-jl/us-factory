@@ -424,13 +424,33 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       if (event === "INITIAL_SESSION") return;
       const newUserId = newSession?.user?.id ?? null;
       if (event === "SIGNED_OUT" || newUserId !== signedInUserId.current) {
-        const previous = signedInUserId.current;
-        if (event === "SIGNED_OUT" && previous) rememberProduct(previous, null);
-        clearBootstrap(event === "SIGNED_OUT" ? previous : null);
-        setChosenProduct(null);
-        setCheckedPortfolio(false);
-        setPortfolioAccess(null);
-        startFor(newSession);
+        // supabase-js can fire a spurious SIGNED_OUT (session momentarily
+        // null) when its background token-refresh request itself fails --
+        // e.g. the tab was idle for a while and the refresh call hits a
+        // network blip or a cold-starting backend right as it fires. Taking
+        // that at face value used to nuke bootstrap/portfolio/chosenProduct
+        // and unmount every open panel for a still-signed-in user, with no
+        // error shown -- exactly the "clicked a button and the whole detail
+        // panel vanished" symptom this was found from. Re-confirm with a
+        // fresh getSession() before treating it as a real sign-out/user
+        // switch; a genuine sign-out or account switch still reports no (or
+        // a different) session on that recheck and proceeds exactly as
+        // before -- this only filters out the transient false alarm.
+        supabase.auth.getSession().then(({ data: reChecked }) => {
+          const confirmedUserId = reChecked.session?.user?.id ?? null;
+          if (confirmedUserId === signedInUserId.current && confirmedUserId != null) {
+            // False alarm: still the same signed-in person. Ignore it.
+            setSession(reChecked.session);
+            return;
+          }
+          const previous = signedInUserId.current;
+          if (!confirmedUserId && previous) rememberProduct(previous, null);
+          clearBootstrap(!confirmedUserId ? previous : null);
+          setChosenProduct(null);
+          setCheckedPortfolio(false);
+          setPortfolioAccess(null);
+          startFor(reChecked.session);
+        });
       } else {
         setSession(newSession);
       }
