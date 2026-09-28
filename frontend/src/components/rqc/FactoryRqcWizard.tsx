@@ -18,6 +18,17 @@ function ResultBadge({ found, reject }: { found: number | null; reject: number }
   );
 }
 
+// This workstation's own local clock, not the backend's (which can run
+// anywhere) -- same reasoning as material-consumption/Wizard.tsx's
+// nowHHMM() and FactoryRqcDetailPanel's todayYMD(). Inspection Date
+// almost always IS today, so it starts pre-filled instead of making the
+// operator pick a date every time; it stays a normal editable input for
+// the rare backdated entry.
+function todayYMD(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 // Same classification-level rollup as FactoryRqcDetailPanel's own
 // classificationTotal -- kept in sync manually, same convention as the two
 // panels' already-duplicated defect-grid rendering.
@@ -97,7 +108,7 @@ export default function FactoryRqcWizard({
       const created = await api.createRqc({ shipment_number: shipmentNumber.trim(), manufacturer: null });
       const rec = await api.getRqc(created.id);
       setRecord(rec);
-      setActivityDate(rec.date || "");
+      setActivityDate(rec.date || todayYMD());
       setActivityShift(rec.shift || "");
       setTablePersonNumber(rec.table_person_number || "");
       if (rec.production_run_machines.length === 1) setMachineId(rec.production_run_machines[0].id);
@@ -114,7 +125,7 @@ export default function FactoryRqcWizard({
 
   function handleNextFromPage2() {
     if (palletsTested === "" || Number(palletsTested) <= 0) {
-      setError("Number of Pallets is required.");
+      setError("No. of Pallets Checked is required.");
       return;
     }
     setError(null);
@@ -133,7 +144,7 @@ export default function FactoryRqcWizard({
       if (approvedPallets === "" || Number(approvedPallets) < 0) { setError("Approved Pallets is required."); return; }
       const tested = Number(palletsTested) || 0;
       if (Number(approvedPallets) > tested) {
-        setError(`Approved Pallets (${approvedPallets}) cannot exceed Number of Pallets tested (${tested}).`);
+        setError(`Approved Pallets (${approvedPallets}) cannot exceed No. of Pallets Checked (${tested}).`);
         return;
       }
     }
@@ -202,12 +213,11 @@ export default function FactoryRqcWizard({
                   <Kv label="Product Code" value={record.sku_code ? <span className="mono">{record.sku_code}</span> : "—"} />
                   <Kv label="Container/Vehicle Number" value={<span className="mono">{record.shipment_number}</span>} />
                   <div className="field">
-                    <label>No. of Pallets <span style={{ color: "var(--red)" }}>*</span></label>
+                    <label>No. of Pallets Checked <span style={{ color: "var(--red)" }}>*</span></label>
                     <input
                       type="number" min={0} placeholder="0"
                       value={palletsTested} onChange={(e) => setPalletsTested(e.target.value)}
                     />
-                    <div className="hint-text">How many pallets were tested in this activity -- not how many passed (Approved Pallets, Page 3), and not the fixed 800-unit sample size below.</div>
                   </div>
                 </div>
               </div>
