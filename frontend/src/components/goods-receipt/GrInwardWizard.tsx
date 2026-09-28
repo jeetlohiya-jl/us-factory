@@ -62,6 +62,18 @@ export default function GrInwardWizard({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [touched, setTouched] = useState(false);
+  // Tracks "changed since the last successful persistBasic()" -- separate
+  // from `touched` (which, once true, stays true for the rest of the
+  // session and only gates the autosave effect). Every caller of
+  // persistBasic() used to call it unconditionally, so a "click Next" or
+  // "click Submit" on a record that was just autosaved 900ms earlier (the
+  // common case: page 1 fields are already saved by the time page 2's
+  // checklist -- which has its own per-click save -- is fully answered)
+  // still paid for a full extra round trip to nothing but re-save the same
+  // values. On a slow/cold backend that's the difference between one wait
+  // and two. Skipping the call when nothing is actually dirty removes that
+  // wasted trip without changing behavior when there IS unsaved data.
+  const dirty = useRef(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const stagePickerNeeded = needsStage(entry);
@@ -93,11 +105,21 @@ export default function GrInwardWizard({
     try {
       const updated = await api.updateInspection(inspectionId, buildBasicPayload());
       setDetail(updated);
+      dirty.current = false;
       return updated;
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to save");
       return null;
     }
+  }
+
+  // Only actually hits the network when something changed since the last
+  // successful persistBasic() (via the debounced autosave, or a prior call
+  // from this same function). Safe: it's the exact save that would have run
+  // anyway, just skipped when it would be a no-op write of unchanged data.
+  async function persistBasicIfDirty(): Promise<InspectionDetail | null> {
+    if (!dirty.current) return detail;
+    return persistBasic();
   }
 
   // Debounced autosave of Page 1 fields, same as Wizard -- a draft survives
@@ -111,7 +133,7 @@ export default function GrInwardWizard({
   }, [stage, pallets, truck, container, transporter, seal, remarks, touched]);
 
   function markTouched<T>(setter: (v: T) => void) {
-    return (v: T) => { setTouched(true); setter(v); };
+    return (v: T) => { setTouched(true); dirty.current = true; setter(v); };
   }
 
   function validatePallets(): string | null {
@@ -124,7 +146,7 @@ export default function GrInwardWizard({
     const invalid = validatePallets();
     if (invalid) { setError(invalid); return; }
     setSaving(true);
-    const ok = await persistBasic();
+    const ok = await persistBasicIfDirty();
     setSaving(false);
     if (ok) { setError(null); setStep(2); }
   }
@@ -133,7 +155,7 @@ export default function GrInwardWizard({
     setSaving(true);
     setError(null);
     try {
-      await persistBasic();
+      await persistBasicIfDirty();
       const updated = await api.saveDraft(inspectionId);
       setDetail(updated);
       onSaved();
@@ -165,7 +187,7 @@ export default function GrInwardWizard({
     setSaving(true);
     setError(null);
     try {
-      await persistBasic();
+      await persistBasicIfDirty();
       const updated = await api.submit(inspectionId);
       setDetail(updated);
       if (updated.status === "approved") {

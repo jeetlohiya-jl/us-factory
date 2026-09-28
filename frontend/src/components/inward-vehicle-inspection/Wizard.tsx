@@ -62,6 +62,12 @@ export default function Wizard({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [touched, setTouched] = useState(false);
+  // See GrInwardWizard.tsx (Goods Receipt's fork of this component) for why
+  // this exists: tracks "changed since the last successful persistBasic()"
+  // so Next/Save Draft/Submit can skip re-saving data the 900ms autosave
+  // below already persisted -- removing a wasted extra round trip on every
+  // click, not just the first.
+  const dirty = useRef(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isFinalized = detail.status === "approved" || detail.status === "hold";
@@ -93,11 +99,17 @@ export default function Wizard({
     try {
       const updated = await api.updateInspection(inspectionId, buildBasicPayload());
       setDetail(updated);
+      dirty.current = false;
       return updated;
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to save");
       return null;
     }
+  }
+
+  async function persistBasicIfDirty(): Promise<InspectionDetail | null> {
+    if (!dirty.current) return detail;
+    return persistBasic();
   }
 
   // Debounced autosave of Step 1 fields so a draft survives even if the user
@@ -111,7 +123,7 @@ export default function Wizard({
   }, [category, shipmentNumber, truck, container, vendor, invoice, transporter, seal, remarks, lineItems, touched]);
 
   function markTouched<T>(setter: (v: T) => void) {
-    return (v: T) => { setTouched(true); setter(v); };
+    return (v: T) => { setTouched(true); dirty.current = true; setter(v); };
   }
 
   // Vendor Name is a managed per-category list (see /vendors) rather than
@@ -145,7 +157,7 @@ export default function Wizard({
 
   async function handleNext() {
     setSaving(true);
-    const ok = await persistBasic();
+    const ok = await persistBasicIfDirty();
     setSaving(false);
     if (ok) setStep(2);
   }
@@ -154,7 +166,7 @@ export default function Wizard({
     setSaving(true);
     setError(null);
     try {
-      await persistBasic();
+      await persistBasicIfDirty();
       const updated = await api.saveDraft(inspectionId);
       setDetail(updated);
       onSaved();
@@ -186,7 +198,7 @@ export default function Wizard({
     setSaving(true);
     setError(null);
     try {
-      await persistBasic();
+      await persistBasicIfDirty();
       const updated = await api.submit(inspectionId);
       setDetail(updated);
       onSaved();
