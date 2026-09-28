@@ -203,28 +203,40 @@ export default function FactoryRqcDetailPanel({
               <Kv label="Product Name" value={record.product_name || "—"} />
               <Kv label="Product Code" value={record.sku_code ? <span className="mono">{record.sku_code}</span> : "—"} />
               <Kv label="Container/Vehicle Number" value={record.shipment_number ? <span className="mono">{record.shipment_number}</span> : "—"} />
-              {editable ? (
+              <Kv label="No. of Trays" value={record.no_of_trays != null ? record.no_of_trays.toLocaleString() : "—"} />
+              <Kv label="Manufacturer" value={record.manufacturer || "—"} />
+              <Kv label="Status" value={<StatusBadge status={record.status} />} />
+              {!editable && <Kv label="No. of Pallets" value={record.pallets_tested} />}
+              {!editable && <Kv label="Inspection Date" value={record.activity_date} />}
+            </div>
+          </div>
+
+          {/* 2026-09-28: pulled out of the reference-only card above -- these
+              two were the only editable fields mixed into an otherwise
+              read-only grid of Product/Shipment facts, easy to skim past as
+              "just more info" rather than something to fill in. That's
+              exactly why Approval below can silently never appear: nothing
+              is recorded there until No. of Pallets is actually a number
+              greater than zero (inspectionStarted), and a fully-populated-
+              looking card gives no visual cue that this one field is still
+              blank. Its own card, shown only while there's something to
+              fill in, makes that impossible to miss. */}
+          {editable && (
+            <div className="detail-card">
+              <h3>Fill In To Begin</h3>
+              <div className="detail-grid">
                 <div className="field">
                   <label>No. of Pallets <span style={{ color: "var(--red)" }}>*</span></label>
                   <input type="number" min={0} placeholder="0" value={palletsTested} onChange={(e) => setPalletsTested(e.target.value)} />
-                  <div className="hint-text">How many pallets were tested in this activity -- not how many passed (Approved Pallets, below).</div>
+                  <div className="hint-text">How many pallets were tested in this activity -- not how many passed (Approved Pallets, below). The Quality Inspection Details and Approval sections below stay blank until this is filled in.</div>
                 </div>
-              ) : (
-                <Kv label="No. of Pallets" value={record.pallets_tested} />
-              )}
-              <Kv label="No. of Trays" value={record.no_of_trays != null ? record.no_of_trays.toLocaleString() : "—"} />
-              {editable ? (
                 <div className="field">
                   <label>Inspection Date <span style={{ color: "var(--red)" }}>*</span></label>
                   <input type="date" value={activityDate} onChange={(e) => setActivityDate(e.target.value)} />
                 </div>
-              ) : (
-                <Kv label="Inspection Date" value={record.activity_date} />
-              )}
-              <Kv label="Manufacturer" value={record.manufacturer || "—"} />
-              <Kv label="Status" value={<StatusBadge status={record.status} />} />
+              </div>
             </div>
-          </div>
+          )}
 
           {/* RQC Inspection Records comes before Approval -- same order as
               FactoryRqcWizard's own Page 2 (Inspection) then Page 3
