@@ -1552,3 +1552,65 @@ class GoodsReceiptEntry(Base):
     sku_code = relationship("SkuCode")
     sku_version = relationship("SkuVersion")
     qr_batch = relationship("QrGenerationRecord", back_populates="source_goods_receipt_entry", uselist=False)
+
+
+class InventoryItem(ProductScoped, Base):
+    """Inventory (2026-09-28, migration 0059) -- SKU-centric raw-material
+    stock, one row per SKU per product. The dashboard shows exactly this
+    table (SKU / SKU Code / UOM / clubbed Quantity); the same SKU received
+    from multiple suppliers is still ONE row here, never a second one just
+    because the vendor differs. Quantity itself is derived (summed from
+    `sources`, see inventory_service.py), not stored redundantly -- kept in
+    sync automatically since inventory_apply_receipt() (migration 0059,
+    called from goods_receipt_inward/_inward_remaining) and manual
+    additions both just add another InventorySource row under this item."""
+    __tablename__ = "inventory_items"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    sku_code_id = Column(UUID(as_uuid=True), ForeignKey("sku_codes.id", ondelete="CASCADE"), nullable=False)
+    uom = Column(Text, nullable=False, default="Kgs")
+    # The tray SKU this material is compatible with/packed into (last
+    # column of the reference inventory sheet) -- nullable, only
+    # meaningful for materials that pair with one specific tray.
+    compatible_tray_sku_code_id = Column(UUID(as_uuid=True), ForeignKey("sku_codes.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    sku_code = relationship("SkuCode", foreign_keys=[sku_code_id])
+    compatible_tray_sku_code = relationship("SkuCode", foreign_keys=[compatible_tray_sku_code_id])
+    sources = relationship(
+        "InventorySource", back_populates="inventory_item",
+        cascade="all, delete-orphan", order_by="InventorySource.created_at.desc()",
+    )
+
+    __table_args__ = (UniqueConstraint("product", "sku_code_id"),)
+
+
+class InventorySource(Base):
+    """One source line behind an InventoryItem's clubbed quantity -- either
+    a Goods Receipt container (source_goods_receipt_entry_id set; one row
+    per container -- inventory_apply_receipt grows this same row rather
+    than inserting a second one on a later "inward remaining" delivery) or
+    a manual entry (is_manual, no PO behind it -- entered directly on the
+    Inventory screen). This is what keeps supplier/country/PO traceability
+    available for QR generation even though the dashboard clubs quantity
+    by SKU."""
+    __tablename__ = "inventory_sources"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    inventory_item_id = Column(UUID(as_uuid=True), ForeignKey("inventory_items.id", ondelete="CASCADE"), nullable=False)
+    source_goods_receipt_entry_id = Column(UUID(as_uuid=True), ForeignKey("goods_receipt_entries.id", ondelete="SET NULL"), nullable=True)
+    vendor_id = Column(UUID(as_uuid=True), ForeignKey("vendors.id", ondelete="SET NULL"), nullable=True)
+    vendor_name = Column(Text, nullable=True)
+    # Snapshot -- same "vendor.country, default US" rule QR generation uses.
+    country_code = Column(Text, nullable=True)
+    quantity = Column(Numeric, nullable=False, default=0)
+    unit = Column(Text, nullable=False, default="Kgs")
+    is_manual = Column(Boolean, nullable=False, default=False)
+    note = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    inventory_item = relationship("InventoryItem", back_populates="sources")
+    vendor = relationship("Vendor")
+    source_goods_receipt_entry = relationship("GoodsReceiptEntry")
+
+    __table_args__ = (UniqueConstraint("source_goods_receipt_entry_id"),)

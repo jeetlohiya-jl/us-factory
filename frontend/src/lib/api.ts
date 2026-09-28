@@ -20,6 +20,7 @@ import type {
   AppUser, UserCreateInput, UserUpdateInput,
   PortfolioAccessMe, PortfolioAccess, PortfolioAccessInput, PortfolioAccessUpdateInput,
   GoodsReceiptDetail, GoodsReceiptListItem, GoodsReceiptSavePayload, GoodsReceiptInwardPayload, GoodsReceiptEntry,
+  InventoryListResponse, InventoryDetail,
 } from "./types";
 
 // Static, never-changing business constants -- mirrored 1:1 from
@@ -3187,6 +3188,39 @@ export const api = {
       supabase.rpc("goods_receipt_delete", { _id: id }) as unknown as Promise<{ data: null; error: { message: string; code?: string } | null }>
     );
     invalidateListCache("goods-receipt");
+  },
+
+  // -- Inventory (2026-09-28) -- SKU-centric raw-material stock, backed by
+  // FastAPI (migration 0059's inventory_items/inventory_sources), not
+  // direct Supabase -- quantity is aggregated at the database/query level
+  // (see inventory_service.list_inventory), so the dashboard is one fast
+  // request rather than every PO/vendor/inward row fetched up front.
+  listInventory: (search = "", page = 1, pageSize = 50) =>
+    cachedList(listCacheKey("inventory", { search, page, pageSize }), () =>
+      request<InventoryListResponse>(
+        `/api/v1/inventory?search=${encodeURIComponent(search)}&page=${page}&page_size=${pageSize}`
+      )
+    ),
+  getInventoryItem: (id: string) => request<InventoryDetail>(`/api/v1/inventory/${id}`),
+  createInventoryItem: async (payload: {
+    sku_code_id: string; uom?: string; compatible_tray_sku_code_id?: string | null;
+    initial_quantity?: number | null; vendor_id?: string | null; supplier_country?: string | null; note?: string | null;
+  }) => {
+    const res = await request<InventoryDetail>("/api/v1/inventory", { method: "POST", body: JSON.stringify(payload) });
+    invalidateListCache("inventory");
+    return res;
+  },
+  updateInventoryItem: async (id: string, patch: { uom?: string; compatible_tray_sku_code_id?: string | null }) => {
+    const res = await request<InventoryDetail>(`/api/v1/inventory/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
+    invalidateListCache("inventory");
+    return res;
+  },
+  addInventorySource: async (id: string, payload: {
+    quantity: number; vendor_id?: string | null; supplier_country?: string | null; unit?: string | null; note?: string | null;
+  }) => {
+    const res = await request<InventoryDetail>(`/api/v1/inventory/${id}/sources`, { method: "POST", body: JSON.stringify(payload) });
+    invalidateListCache("inventory");
+    return res;
   },
 
 };

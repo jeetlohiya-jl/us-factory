@@ -1135,3 +1135,78 @@ class PortfolioAccessIn(BaseModel):
 class PortfolioAccessUpdateIn(BaseModel):
     access_factory: Optional[bool] = None
     access_us_factory: Optional[bool] = None
+
+
+# ---------------------------------------------------------------------------
+# Inventory (2026-09-28) -- SKU-centric raw-material stock.
+# ---------------------------------------------------------------------------
+
+class InventoryListItemOut(BaseModel):
+    """One dashboard row -- exactly SKU / SKU Code / UOM / clubbed
+    Quantity, per the task's explicit "do NOT include Cirkla Entity"."""
+    id: uuid.UUID
+    sku: str
+    sku_code: Optional[str] = None
+    uom: str
+    quantity: float
+
+
+class InventoryListOut(BaseModel):
+    items: list[InventoryListItemOut]
+    matched_count: int
+
+
+class InventorySourceOut(BaseModel):
+    id: uuid.UUID
+    vendor_name: Optional[str] = None
+    supplier_country: Optional[str] = None
+    quantity: float
+    unit: str
+    is_manual: bool
+    note: Optional[str] = None
+    po_number: Optional[str] = None
+    shipment_number: Optional[str] = None
+    goods_receipt_id: Optional[uuid.UUID] = None
+    created_at: str
+
+
+class InventoryDetailOut(BaseModel):
+    id: uuid.UUID
+    sku_code_id: uuid.UUID
+    sku: str
+    sku_code: Optional[str] = None
+    category: str
+    uom: str
+    quantity: float
+    compatible_tray_sku_code_id: Optional[uuid.UUID] = None
+    compatible_tray_sku: Optional[str] = None
+    sources: list[InventorySourceOut]
+
+
+class InventoryCreateIn(BaseModel):
+    sku_code_id: uuid.UUID
+    uom: str = "Kgs"
+    compatible_tray_sku_code_id: Optional[uuid.UUID] = None
+    # An optional first manual source line, so "Add" can record an initial
+    # quantity/supplier in the same step rather than a bare empty item.
+    initial_quantity: Optional[float] = None
+    vendor_id: Optional[uuid.UUID] = None
+    supplier_country: Optional[str] = None
+    note: Optional[str] = None
+
+
+class InventoryUpdateIn(BaseModel):
+    uom: Optional[str] = None
+    compatible_tray_sku_code_id: Optional[uuid.UUID] = None
+
+
+class InventorySourceIn(BaseModel):
+    """Adds a manual source line onto an existing Inventory item -- e.g. a
+    supplier delivery with no PO behind it yet, or a correction. PO-backed
+    quantity only ever arrives via Goods Receipt inward (see migration
+    0059's inventory_apply_receipt), never entered here."""
+    quantity: float
+    vendor_id: Optional[uuid.UUID] = None
+    supplier_country: Optional[str] = None
+    unit: Optional[str] = None
+    note: Optional[str] = None

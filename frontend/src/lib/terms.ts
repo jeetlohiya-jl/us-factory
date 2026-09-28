@@ -65,6 +65,7 @@ export const MODULE_NAMES = {
   shipment_picking: "Shipment Picking",
   goods_outward: "Goods Outward",
   outward_vehicle_inspection: "Outward Vehicle Inspection",
+  inventory: "Inventory",
   machine_downtime: "Machine Downtime",
   traceability: "Traceability",
   // Setup

@@ -29,6 +29,7 @@ const MODULE_LABELS: Record<ModuleKey, string> = {
   factory_rqc_fg_qr: MODULE_NAMES.rqc_fg_qr,
   factory_fg_storage: MODULE_NAMES.fg_storage,
   factory_goods_outward: MODULE_NAMES.goods_outward,
+  inventory: MODULE_NAMES.inventory,
 };
 
 const PRODUCT_GROUPS: { title: string; modules: ModuleKey[] }[] = [
