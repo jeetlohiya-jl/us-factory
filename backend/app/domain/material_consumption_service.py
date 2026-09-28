@@ -621,28 +621,47 @@ def _next_run_number(db: Session) -> str:
 
 
 def find_or_create_production_run(db: Session, mc: models.MaterialConsumption, actor_user_id=None) -> models.ProductionRun:
-    """Idempotent find-or-create keyed by (date, shift) -- NOT machine --
-    so multiple Material Consumption records (or multiple machine entries
-    within one record) on different machines for the same date+shift all
-    attach to the same run. category/SKU snapshot onto the run come from
-    the record's first machine entry that has them set. `created_by` is
-    only set the first time the run is created (by whichever Material
-    Consumption record's first primary-pallet scan spawns it -- see
-    add_primary_pallet, which calls this as soon as the record has enough
-    to show, well before it's finalized) -- this is what the Production
-    module surfaces as "Operator", since there is no separate manual
-    Production entry step to collect one."""
-    run = (
-        db.query(models.ProductionRun)
-        .filter(models.ProductionRun.production_date == mc.consumption_date, models.ProductionRun.shift == mc.shift)
-        .first()
+    """Idempotent find-or-create keyed by (date, shift, shipment_number) --
+    NOT machine. A shift can now span more than one Production Run: a new
+    Material Consumption record picking up a DIFFERENT Shipment Number
+    (a different container of material) always gets its own Production
+    Run and, via ensure_pending_rqc_for_run below, its own RQC record --
+    same shipment number reuses the existing run, whatever machine it's
+    on. This only decides the run for a whole Material Consumption record,
+    at the moment its very first primary pallet is scanned (mc.shipment_number
+    is already set by then -- see add_primary_pallet); a second machine
+    entry added later to that SAME record stays on the run already chosen
+    for it (this function's later call from finalize() is a no-op re-fetch
+    by the same key, never a re-decision).
+
+    category/SKU snapshot onto the run come from the record's first machine
+    entry that has them set. `created_by` is only set the first time the
+    run is created (by whichever Material Consumption record's first
+    primary-pallet scan spawns it -- see add_primary_pallet, which calls
+    this as soon as the record has enough to show, well before it's
+    finalized) -- this is what the Production module surfaces as
+    "Operator", since there is no separate manual Production entry step to
+    collect one."""
+    base_query = db.query(models.ProductionRun).filter(
+        models.ProductionRun.production_date == mc.consumption_date, models.ProductionRun.shift == mc.shift
     )
+    if mc.shipment_number:
+        run = base_query.filter(models.ProductionRun.shipment_number == mc.shipment_number).first()
+    else:
+        # No Shipment Number known yet -- shouldn't normally happen, since
+        # this is only ever called once add_primary_pallet has already set
+        # mc.shipment_number from the very pallet that triggered it. Falls
+        # back to the old date+shift-only lookup so this edge case (and any
+        # pre-existing run created before shipment-number scoping existed)
+        # doesn't regress into spawning duplicate runs.
+        run = base_query.filter(models.ProductionRun.shipment_number.is_(None)).first()
     first_with_sku = next((e for e in mc.machine_entries if e.category), None)
     if not run:
         run = models.ProductionRun(
             run_number=_next_run_number(db),
             production_date=mc.consumption_date,
             shift=mc.shift,
+            shipment_number=mc.shipment_number,
             category=(first_with_sku.category if first_with_sku else "fgtray"),
             sku_code_id=first_with_sku.sku_code_id if first_with_sku else None,
             sku_version_id=first_with_sku.sku_version_id if first_with_sku else None,
