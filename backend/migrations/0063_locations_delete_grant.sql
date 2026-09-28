@@ -1,0 +1,22 @@
+-- 2026-09-28 -- Fixes "deactivating a location doesn't free its ID".
+--
+-- Root cause: locations.display_id is globally UNIQUE (not scoped by
+-- is_active or product), but "Deactivate" has only ever been a soft
+-- is_active=false update -- the row, and its display_id, stay in the
+-- table forever. Unlike Vendors/SKUs/Machines (0011_rls_policies_
+-- phase1_phase2.sql grants them select/insert/update/DELETE), this
+-- table's grant was select/insert/update only (see 0048_factory_
+-- record_separation.sql) -- DELETE was never granted, so even a real
+-- delete attempt from the client would have failed outright with a
+-- permission error before ever reaching a row.
+--
+-- The FK side is already safe: StorageRecord.location_id (0003, "on
+-- delete restrict"), Pallet.current_location_id/released_location_id
+-- and ShipmentPickingPick.location_id all reference locations(id)
+-- with no cascade, so Postgres already refuses to delete a location
+-- that's been actually used in RM/FG Storage -- that constraint is
+-- exactly what the frontend's new delete-then-fallback-to-deactivate
+-- flow relies on (409 / 23503 -> soft is_active=false, same pattern as
+-- Vendors' delete_vendor()). This migration only grants the privilege
+-- that was missing; no schema/constraint change.
+grant delete on locations to authenticated;
