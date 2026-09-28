@@ -1275,10 +1275,17 @@ type RawRqcProductionRun = {
   machines: { machine: { id: string; code: string } | null }[] | null;
   material_consumptions: RawRqcRunMc[] | null;
 };
+// 2026-09-28 -- live (not snapshotted) SKU reference for the Factory RQC
+// sheet's "Product Name" (sku_codes.description) and "No. of Trays"
+// (sku_versions.prod_pcs_per_sleeve x pallets_tested) fields.
+type RawRqcSkuCode = { description: string | null };
+type RawRqcSkuVersion = { prod_pcs_per_sleeve: string | null };
 type RawRqcRecordDetail = {
   id: string; production_run_id: string | null; shipment_number: string | null; manufacturer: string | null;
   sku_code_snapshot: string | null; sku_version_snapshot: string | null; overall_result: string | null; status: string;
   ipqc_record_id: string | null; fg_pallets_generated: number | null; table_person_number: string | null;
+  sku_code_ref: RawRqcSkuCode | RawRqcSkuCode[] | null;
+  sku_version_ref: RawRqcSkuVersion | RawRqcSkuVersion[] | null;
   pallets_tested: number | null; machine_id: string | null; shift: string | null; activity_date: string | null;
   production_run: RawRqcProductionRun | RawRqcProductionRun[] | null;
   machine_allocations: RawRqcMachineAllocation[];
@@ -1290,6 +1297,8 @@ type RawRqcRecordDetail = {
 const RQC_DETAIL_SELECT =
   "id,production_run_id,shipment_number,manufacturer,sku_code_snapshot,sku_version_snapshot,overall_result,status,ipqc_record_id,fg_pallets_generated,table_person_number," +
   "pallets_tested,machine_id,shift,activity_date," +
+  "sku_code_ref:sku_codes(description)," +
+  "sku_version_ref:sku_versions(prod_pcs_per_sleeve)," +
   "production_run:production_runs(run_number,total_fg_pallets,shift,production_date,machines:production_run_machines(machine:machines(id,code))," +
   "material_consumptions(machine_entries:material_consumption_machine_entries(pallets_produced)))," +
   "machine_allocations:rqc_machine_allocations(machine_id,fg_pallets_count,machine:machines(code))," +
@@ -1298,6 +1307,15 @@ const RQC_DETAIL_SELECT =
   "fg_qr_batch:qr_generation_records(status))," +
   "defect_results:rqc_defect_results(defect_sr,found,remarks)," +
   "coa_observations:rqc_coa_observations(coa_group,sr,observation)";
+
+/** Trays per Sleeve (SkuVersion.prod_pcs_per_sleeve) is free text (e.g.
+ * "48 pcs"), same convention as CsLineItemsEditor's own `num()` -- pulls out
+ * the first integer, or null if there isn't one. */
+function firstIntIn(v: string | null | undefined): number | null {
+  if (!v) return null;
+  const m = /\d+/.exec(v);
+  return m ? Number(m[0]) : null;
+}
 
 /** Sum of Production's own pallets_produced across every machine entry
  * feeding this run -- the hard ceiling RQC's approved pallets are checked
@@ -1330,11 +1348,16 @@ function flattenRqcDetail(raw: RawRqcRecordDetail): RqcDetail {
       };
     })
     .sort((a, c) => (a.entry_date < c.entry_date ? -1 : a.entry_date > c.entry_date ? 1 : (a.created_at || "").localeCompare(c.created_at || "")));
+  const skuCodeRef = Array.isArray(raw.sku_code_ref) ? raw.sku_code_ref[0] ?? null : raw.sku_code_ref;
+  const skuVersionRef = Array.isArray(raw.sku_version_ref) ? raw.sku_version_ref[0] ?? null : raw.sku_version_ref;
+  const traysPerSleeve = firstIntIn(skuVersionRef?.prod_pcs_per_sleeve ?? null);
   return {
     id: raw.id, production_run_id: raw.production_run_id, production_run_number: runObj?.run_number ?? null,
     ipqc_id: raw.ipqc_record_id,
     shipment_number: raw.shipment_number, manufacturer: raw.manufacturer,
     sku_code: raw.sku_code_snapshot, sku_version: raw.sku_version_snapshot,
+    product_name: skuCodeRef?.description ?? null,
+    no_of_trays: raw.pallets_tested != null && traysPerSleeve != null ? raw.pallets_tested * traysPerSleeve : null,
     total_fg_pallets: runObj?.total_fg_pallets ?? null,
     total_pallets_produced: runObj ? sumRunPalletsProduced(runObj) : null,
     fg_pallets_generated: raw.fg_pallets_generated,

@@ -2,12 +2,11 @@
 import { useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import type { RqcDetail, RqcDefectResult, Machine } from "@/lib/types";
-import { RQC_DEFECT_GROUPS_QMP05, RQC_SAMPLING_PLAN } from "@/lib/types";
-import { T } from "@/lib/terms";
+import { RQC_DEFECT_ITEMS_FACTORY, RQC_CLASSIFICATION_SUMMARY_FACTORY } from "@/lib/types";
 
-// Result badge: computed from Found vs. that defect's own group reject
-// threshold, never stored -- same rqcRecalcResult logic as the US Factory
-// RQC wizard/detail panel, just against the QMP05-filtered item list.
+// Result badge: computed from Found vs. that defect's own reject threshold,
+// never stored -- same rqcRecalcResult logic as the US Factory RQC wizard/
+// detail panel, just against the Factory item list.
 function ResultBadge({ found, reject }: { found: number | null; reject: number }) {
   if (found === null || Number.isNaN(found)) return <span className="result-badge pending">–</span>;
   const isNotOk = found >= reject;
@@ -19,22 +18,39 @@ function ResultBadge({ found, reject }: { found: number | null; reject: number }
   );
 }
 
+// Same classification-level rollup as FactoryRqcDetailPanel's own
+// classificationTotal -- kept in sync manually, same convention as the two
+// panels' already-duplicated defect-grid rendering.
+function classificationTotal(classification: string, defects: Record<number, RqcDefectResult>): number | null {
+  const items = RQC_DEFECT_ITEMS_FACTORY.filter((i) => i.classification === classification);
+  if (items.length === 0) return null;
+  let total = 0;
+  let any = false;
+  for (const item of items) {
+    const found = defects[item.sr]?.found;
+    if (found !== null && found !== undefined) { total += found; any = true; }
+  }
+  return any ? total : 0;
+}
+
 /**
  * Factory OS Module 4 -- "New RQC Record" wizard for the combined RQC + FG
  * QR page. Same 3-page structure, same backend routes (rqc_service.create_rqc
  * / the PUT save route), and same per-activity RqcRecord model as US
  * Factory's own RqcWizard -- the only difference is Page 2's defect list:
- * RQC_DEFECT_GROUPS_QMP05 (the QMP05 spreadsheet's exact 4 items) instead of
- * the full 15-item RQC_DEFECT_GROUPS, plus the QMP05 Sampling Plan shown as
- * a reference table so the user never has to recreate it by hand. Nothing
- * about the backend save route changes: found/remarks are still keyed by
- * defect_sr, and RQC_DEFECT_GROUPS_QMP05's sr values (1, 6, 7, 8) are a
- * subset of the same numbering space rqc_service.has_any_reject already
- * evaluates against the correct per-group thresholds.
+ * RQC_DEFECT_ITEMS_FACTORY (2026-09-28, the "FINISHED GOODS RANDOM QUALITY
+ * ASSURANCE PLAN -- PADDED TRAYS" sheet's own 5 items) instead of the full
+ * 15-item RQC_DEFECT_GROUPS, plus its Classification / Sampling Plan summary
+ * shown as a reference table so the user never has to recreate it by hand.
+ * Nothing about the backend save route changes: found/remarks are still
+ * keyed by defect_sr, and RQC_DEFECT_ITEMS_FACTORY's sr values (101-105) are
+ * a fresh, independent numbering space rqc_service.has_any_reject already
+ * evaluates against the correct thresholds (_REJECT_BY_SR_FACTORY).
  *
  * A Save (final) that computes to 'approved' auto-generates this record's
  * own FG QR Generation batch server-side; onSaved(id) hands the id back to
- * the page so it can immediately look up and show that batch inline.
+ * the page so it can immediately look up and show that batch inline (and,
+ * as of 2026-09-28, pop the FG QR Generation panel open automatically).
  */
 export default function FactoryRqcWizard({
   onClose, onSaved,
@@ -182,78 +198,86 @@ export default function FactoryRqcWizard({
               <div className="detail-card">
                 <h3>Product and Shipment Details</h3>
                 <div className="detail-grid">
-                  <Kv label={T.shipmentNumber} value={<span className="mono">{record.shipment_number}</span>} />
-                  <Kv label={T.sku} value={record.sku_code ? <span className="mono">{record.sku_code}</span> : "—"} />
+                  <Kv label="Product Name" value={record.product_name || "—"} />
+                  <Kv label="Product Code" value={record.sku_code ? <span className="mono">{record.sku_code}</span> : "—"} />
+                  <Kv label="Container/Vehicle Number" value={<span className="mono">{record.shipment_number}</span>} />
+                  <div className="field">
+                    <label>No. of Pallets <span style={{ color: "var(--red)" }}>*</span></label>
+                    <input
+                      type="number" min={0} placeholder="0"
+                      value={palletsTested} onChange={(e) => setPalletsTested(e.target.value)}
+                    />
+                    <div className="hint-text">How many pallets were tested in this activity -- not how many passed (Approved Pallets, Page 3), and not the fixed 800-unit sample size below.</div>
+                  </div>
                 </div>
               </div>
 
               <div className="detail-card">
-                <h3>Sampling Plan (QMP05)</h3>
+                <h3>Quality Inspection Details</h3>
+                <div className="hint-text" style={{ marginBottom: 10, fontWeight: 700, color: "var(--ink-70)" }}>
+                  Sample Size: {RQC_DEFECT_ITEMS_FACTORY[0].sampleSize}
+                </div>
                 <table className="qc-obs-table">
                   <thead>
-                    <tr><th>Level</th><th style={{ width: 110 }}>Sample Size</th><th style={{ width: 90 }}>AQL</th><th style={{ width: 130 }}>Accept | Reject</th></tr>
+                    <tr>
+                      <th>#</th><th>Defect Type</th><th>Classification</th><th>Inspection Method</th>
+                      <th style={{ width: 120 }}>Defects Found</th><th style={{ width: 120 }}>Result</th><th>Remarks</th>
+                    </tr>
                   </thead>
                   <tbody>
-                    {RQC_SAMPLING_PLAN.map((row) => (
-                      <tr key={row.level}>
-                        <td>{row.level}</td>
-                        <td className="mono">{row.sampleSize}</td>
-                        <td className="mono">{row.aql}</td>
-                        <td className="mono">{row.acceptReject}</td>
-                      </tr>
-                    ))}
+                    {RQC_DEFECT_ITEMS_FACTORY.map((item, idx) => {
+                      const defect = defects[item.sr];
+                      return (
+                        <tr key={item.sr}>
+                          <td>{idx + 1}</td>
+                          <td>{item.type}</td>
+                          <td><span className={`classification-badge ${item.badgeClass}`}>{item.classification}</span></td>
+                          <td>{item.method}</td>
+                          <td>
+                            <input
+                              type="number" placeholder="0"
+                              value={defect?.found ?? ""}
+                              onChange={(e) => setFound(item.sr, e.target.value)}
+                            />
+                          </td>
+                          <td><ResultBadge found={defect?.found ?? null} reject={item.reject} /></td>
+                          <td>
+                            <input
+                              type="text" placeholder={item.remarksHint || "Add remarks (optional)"}
+                              value={defect?.remarks ?? ""}
+                              onChange={(e) => setRemarks(item.sr, e.target.value)}
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
 
               <div className="detail-card">
-                <h3>RQC Inspection Records</h3>
-                <div className="hint-text" style={{ marginBottom: 10, fontWeight: 700, color: "var(--ink-70)" }}>
-                  Sample Size: {RQC_DEFECT_GROUPS_QMP05[0].sampleSize}
-                </div>
-                <div className="field" style={{ maxWidth: 260, marginBottom: 16 }}>
-                  <label>Number of Pallets <span style={{ color: "var(--red)" }}>*</span></label>
-                  <input
-                    type="number" min={0} placeholder="0"
-                    value={palletsTested} onChange={(e) => setPalletsTested(e.target.value)}
-                  />
-                  <div className="hint-text">How many pallets were tested in this activity -- not how many passed (Approved Pallets, Page 3), and not the fixed 800-unit sample size above.</div>
-                </div>
+                <h3>Classification / Sampling Plan</h3>
                 <table className="qc-obs-table">
                   <thead>
                     <tr>
-                      <th>Defect Type</th><th>Classification</th><th>Inspection Method</th>
-                      <th style={{ width: 120 }}>Defects Found</th><th style={{ width: 120 }}>Result</th><th>Remarks</th>
+                      <th>Classification</th><th style={{ width: 100 }}>Sample Size</th><th style={{ width: 80 }}>AQL %</th>
+                      <th style={{ width: 120 }}>Accept | Reject</th><th style={{ width: 120 }}>Total Defects Found</th><th style={{ width: 100 }}>Result</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {RQC_DEFECT_GROUPS_QMP05.flatMap((group) =>
-                      group.items.map((item) => {
-                        const defect = defects[item.sr];
-                        return (
-                          <tr key={item.sr}>
-                            <td>{item.type}</td>
-                            <td><span className={`classification-badge ${group.badgeClass}`}>{group.classification}</span></td>
-                            <td>Visual inspection</td>
-                            <td>
-                              <input
-                                type="number" placeholder="0"
-                                value={defect?.found ?? ""}
-                                onChange={(e) => setFound(item.sr, e.target.value)}
-                              />
-                            </td>
-                            <td><ResultBadge found={defect?.found ?? null} reject={group.reject} /></td>
-                            <td>
-                              <input
-                                type="text" placeholder="Add remarks (optional)"
-                                value={defect?.remarks ?? ""}
-                                onChange={(e) => setRemarks(item.sr, e.target.value)}
-                              />
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
+                    {RQC_CLASSIFICATION_SUMMARY_FACTORY.map((row) => {
+                      const total = classificationTotal(row.classification, defects);
+                      return (
+                        <tr key={row.classification}>
+                          <td><span className={`classification-badge ${row.badgeClass}`}>{row.classification}</span></td>
+                          <td className="mono">{row.sampleSize}</td>
+                          <td className="mono">{row.aqlLabel}</td>
+                          <td className="mono">{row.accept} | {row.reject}</td>
+                          <td className="mono">{total ?? "–"}</td>
+                          <td>{total === null ? "N/A" : <ResultBadge found={total} reject={row.reject} />}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

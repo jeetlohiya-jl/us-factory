@@ -4,6 +4,7 @@ import { api } from "@/lib/api";
 import type { SkuCode, ProductionRun } from "@/lib/types";
 import type { CustomerShipmentLineItemDraft } from "@/lib/types";
 import { T } from "@/lib/terms";
+import { useProduct } from "@/lib/productContext";
 
 const OTHERS = "__others__";
 
@@ -46,6 +47,16 @@ function num(v: string | null | undefined): number | null {
  * Switched from one wide table to one card per line item (same lesson as
  * the Packing List panel's own redesign) -- with the SKU split and the
  * Production Run picker added, a table row no longer fits this panel.
+ *
+ * 2026-09-28 -- per explicit feedback, Goods Outward (the Factory product's
+ * own name for this module) no longer asks for Version at all: the field
+ * is hidden here whenever useProduct() is "factory". This does NOT remove
+ * SKU Version from the data model -- `update()` below already auto-selects
+ * the SKU's first active version the moment a SKU is chosen (versions[0],
+ * same pre-fill logic Trays per Sleeve uses), so sku_version_id is still
+ * populated for the required backend field; the operator just never has
+ * to see or pick it. US Factory's own Customer Shipment keeps the Version
+ * picker unchanged.
  */
 export default function CsLineItemsEditor({
   items, skuCodes, onChange,
@@ -56,6 +67,7 @@ export default function CsLineItemsEditor({
 }) {
   const [runs, setRuns] = useState<ProductionRun[]>([]);
   const [othersMode, setOthersMode] = useState<Record<string, boolean>>({});
+  const isFactory = useProduct() === "factory";
 
   useEffect(() => {
     api.listProductionRuns().then(setRuns).catch(() => setRuns([]));
@@ -186,13 +198,15 @@ export default function CsLineItemsEditor({
                   </select>
                 </div>
               )}
-              <div className="field">
-                <label>{T.skuVersion}</label>
-                <select value={item.sku_version_id || ""} onChange={(e) => update(i, { sku_version_id: e.target.value || null })}>
-                  <option value="">Select</option>
-                  {versionsFor(item.sku_code_id).map((v) => <option key={v.id} value={v.id}>{v.version}</option>)}
-                </select>
-              </div>
+              {!isFactory && (
+                <div className="field">
+                  <label>{T.skuVersion}</label>
+                  <select value={item.sku_version_id || ""} onChange={(e) => update(i, { sku_version_id: e.target.value || null })}>
+                    <option value="">Select</option>
+                    {versionsFor(item.sku_code_id).map((v) => <option key={v.id} value={v.id}>{v.version}</option>)}
+                  </select>
+                </div>
+              )}
               <div className="field">
                 <label>Quantity</label>
                 {/* Quantity is always counted in Pallets -- shown as a
