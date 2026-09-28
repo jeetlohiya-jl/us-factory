@@ -221,6 +221,7 @@ export interface ModulePermissionsMap {
   factory_rqc_fg_qr: Permissions;
   factory_fg_storage: Permissions;
   factory_goods_outward: Permissions;
+  inventory: Permissions;
 }
 
 export interface MeResponse {
@@ -244,6 +245,7 @@ export const USER_MODULES: ModuleKey[] = [
   "goods_receipt",
   "factory_rm_storage", "factory_material_consumption", "factory_production",
   "factory_rqc_fg_qr", "factory_fg_storage", "factory_goods_outward",
+  "inventory",
 ];
 
 // Setup -> Users groups the permission matrix by product.
@@ -252,9 +254,12 @@ export const US_FACTORY_MODULES: ModuleKey[] = [
   "rm_qr_generation", "rm_storage", "material_consumption", "production", "ipqc", "rqc", "fg_qr_generation", "fg_storage",
   "customer_shipment", "shipment_picking", "outward_vehicle_inspection", "machine_downtime",
 ];
+// Factory-only (migration 0059, same "no separate US Factory row" pattern
+// as Goods Receipt itself -- see backend/app/api/deps.py's
+// FACTORY_PERMISSION_MAP, which only remaps modules shared with US Factory).
 export const FACTORY_MODULES: ModuleKey[] = [
   "goods_receipt", "factory_rm_storage", "factory_material_consumption", "factory_production",
-  "factory_rqc_fg_qr", "factory_fg_storage", "factory_goods_outward",
+  "factory_rqc_fg_qr", "factory_fg_storage", "factory_goods_outward", "inventory",
 ];
 
 export interface AppUser {
@@ -505,6 +510,50 @@ export interface StorageRecordDetail {
   // Factory Module 1 -- RM pallets received through Goods Receipt.
   goods_receipt_po_number?: string | null;
   goods_receipt_vendor_name?: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Inventory (2026-09-28) -- SKU-centric raw-material stock.
+// ---------------------------------------------------------------------------
+
+export interface InventoryListItem {
+  id: string;
+  sku: string;
+  sku_code: string | null;
+  uom: string;
+  quantity: number;
+}
+
+export interface InventoryListResponse {
+  items: InventoryListItem[];
+  matched_count: number;
+}
+
+export interface InventorySource {
+  id: string;
+  vendor_name: string | null;
+  supplier_country: string | null;
+  quantity: number;
+  unit: string;
+  is_manual: boolean;
+  note: string | null;
+  po_number: string | null;
+  shipment_number: string | null;
+  goods_receipt_id: string | null;
+  created_at: string;
+}
+
+export interface InventoryDetail {
+  id: string;
+  sku_code_id: string;
+  sku: string;
+  sku_code: string | null;
+  category: string;
+  uom: string;
+  quantity: number;
+  compatible_tray_sku_code_id: string | null;
+  compatible_tray_sku: string | null;
+  sources: InventorySource[];
 }
 
 export interface LocationRef {

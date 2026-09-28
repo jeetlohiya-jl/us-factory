@@ -158,6 +158,16 @@ const FACTORY_NAV_ITEMS = [
       <path d="M4 20V9l8-5 8 5v11M4 20h16M9 20v-6h6v6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
     ),
   },
+  // Inventory (2026-09-28) -- SKU-centric raw-material stock, aggregated
+  // from every Goods Receipt container inwarded for that SKU (migration
+  // 0059). A genuinely new Factory-only page (app/inventory/page.tsx).
+  {
+    href: "/inventory",
+    label: MODULE_NAMES.inventory,
+    icon: (
+      <path d="M20 7H4a1 1 0 00-1 1v11a1 1 0 001 1h16a1 1 0 001-1V8a1 1 0 00-1-1zM16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    ),
+  },
   {
     href: "/material-consumption",
     label: MODULE_NAMES.material_consumption,
@@ -251,7 +261,7 @@ const FACTORY_NAV_ITEMS = [
 ];
 
 // Routes that exist only inside the Factory product.
-const FACTORY_ONLY_HREFS = ["/goods-receipt"];
+const FACTORY_ONLY_HREFS = ["/goods-receipt", "/inventory"];
 
 const SETUP_NAV_ITEMS = [
   {
