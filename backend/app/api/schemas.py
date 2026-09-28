@@ -935,6 +935,18 @@ class PackingListLineItemIn(BaseModel):
     id: uuid.UUID
     uom: Optional[str] = None
     total_combo: Optional[Decimal] = None
+    # 2026-09-28 -- these four are still "once per SKU Version" reference
+    # data (see packing_list_service.save_packing_list_fields), normally
+    # entered via the SKU Names admin screen. Accepting them here too lets
+    # the operator fill in a gap right from the Packing List step instead of
+    # making a separate trip -- whatever's typed here is written back onto
+    # the line item's own SKU Version, so it's picked up everywhere else
+    # (and on any later shipment/reprint) exactly like the admin-entered
+    # values always have been, not just a one-off override for this PDF.
+    hs_code: Optional[str] = None
+    case_size: Optional[str] = None
+    trays_per_sleeve: Optional[str] = None
+    sleeves_per_combo: Optional[str] = None
 
 
 class PackingListSaveIn(BaseModel):

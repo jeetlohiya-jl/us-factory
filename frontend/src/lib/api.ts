@@ -2743,8 +2743,20 @@ export const api = {
   // hasn't happened yet for this shipment.
   exportTraceabilityPdf: async (shipmentNumber: string) => {
     const authHeader = await getAuthHeader();
+    // 2026-09-28 fix -- this raw fetch bypasses the shared request() helper
+    // (a PDF response, not JSON), which also meant it silently skipped
+    // request()'s own X-Product header. Every ProductScoped table (Customer
+    // Shipment included) is filtered server-side by the current product/
+    // unit (see db/product_scope.py); without this header the backend
+    // falls back to its default unit, so a Factory-unit shipment's PDF
+    // export from a US Factory session (or vice versa) 404'd even though
+    // the record genuinely exists -- same bug fixed on downloadPackingListPdf
+    // below.
     const res = await fetch(`${BASE}/api/v1/traceability/${encodeURIComponent(shipmentNumber)}/pdf`, {
-      headers: { Authorization: authHeader },
+      headers: {
+        Authorization: authHeader,
+        ...(getCurrentProduct() ? { "X-Product": getCurrentProduct() as string } : {}),
+      },
       cache: "no-store",
     });
     if (!res.ok) {
@@ -2998,8 +3010,17 @@ export const api = {
   },
   downloadPackingListPdf: async (shipmentId: string, shipmentNumber: string) => {
     const authHeader = await getAuthHeader();
+    // 2026-09-28 fix -- this raw fetch was missing the X-Product header
+    // every other authenticated call sends (see request()'s own comment
+    // above and exportTraceabilityPdf's, the same bug fixed there). Without
+    // it the backend scoped this query to the wrong unit and returned
+    // "Customer Shipment not found" for a shipment that genuinely exists --
+    // reported directly via a screenshot of that exact error.
     const res = await fetch(`${BASE}/api/v1/customer-shipments/${shipmentId}/packing-list-pdf`, {
-      headers: { Authorization: authHeader },
+      headers: {
+        Authorization: authHeader,
+        ...(getCurrentProduct() ? { "X-Product": getCurrentProduct() as string } : {}),
+      },
       cache: "no-store",
     });
     if (!res.ok) {
