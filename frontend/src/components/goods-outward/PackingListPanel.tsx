@@ -26,6 +26,16 @@ function fmt(v: number | null): string {
  * (api.downloadPackingListPdf), which recomputes Trays/Combo and Total
  * Quantity (Trays) server-side rather than trusting this preview's own
  * client-side arithmetic.
+ *
+ * 2026-09-28 -- HS Code, Case Size, Trays/Sleeve and Sleeves/Combo are also
+ * editable right here now, not just on the SKU Names admin screen: they
+ * still pre-fill from the SKU Version when already entered there, but a
+ * gap can now be filled in (or fixed) from this panel directly. Saving
+ * writes them back onto the SKU Version itself (see
+ * packing_list_service.save_packing_list_fields), so it's still "once per
+ * SKU Version" reference data reused on every later shipment, just no
+ * longer requiring a separate trip to that screen to enter it the first
+ * time.
  */
 export default function PackingListPanel({
   shipmentId, shipmentNumber, onClose,
@@ -43,7 +53,17 @@ export default function PackingListPanel({
   const [poDate, setPoDate] = useState("");
   const [piNumber, setPiNumber] = useState("");
   const [shipTo, setShipTo] = useState("");
-  const [lineEdits, setLineEdits] = useState<Record<string, { uom: string; total_combo: string }>>({});
+  // 2026-09-28 -- hs_code/case_size/trays_per_sleeve/sleeves_per_combo
+  // joined in here too: pre-filled from the SKU Version when it's already
+  // been entered on the SKU Names admin screen, but now editable right here
+  // as well so a gap doesn't force a separate trip to that screen. Saving
+  // writes them back onto the SKU Version itself (see
+  // packing_list_service.save_packing_list_fields) -- still "once per SKU
+  // Version" reference data, just fillable from either place now.
+  const [lineEdits, setLineEdits] = useState<Record<string, {
+    uom: string; total_combo: string;
+    hs_code: string; case_size: string; trays_per_sleeve: string; sleeves_per_combo: string;
+  }>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -60,7 +80,11 @@ export default function PackingListPanel({
         setShipTo(d.ship_to_address || d.customer_address || "");
         setLineEdits(
           Object.fromEntries(
-            d.line_items.map((li) => [li.id, { uom: li.uom || "Combo", total_combo: li.total_combo != null ? String(li.total_combo) : "" }])
+            d.line_items.map((li) => [li.id, {
+              uom: li.uom || "Combo", total_combo: li.total_combo != null ? String(li.total_combo) : "",
+              hs_code: li.hs_code || "", case_size: li.case_size || "",
+              trays_per_sleeve: li.trays_per_sleeve || "", sleeves_per_combo: li.sleeves_per_combo || "",
+            }])
           )
         );
       } catch (e) {
@@ -73,8 +97,8 @@ export default function PackingListPanel({
   }, [shipmentId]);
 
   function traysPerCombo(li: PackingListLineItem): number | null {
-    const a = num(li.trays_per_sleeve);
-    const b = num(li.sleeves_per_combo);
+    const a = num(lineEdits[li.id]?.trays_per_sleeve ?? li.trays_per_sleeve);
+    const b = num(lineEdits[li.id]?.sleeves_per_combo ?? li.sleeves_per_combo);
     return a !== null && b !== null ? a * b : null;
   }
 
@@ -107,6 +131,10 @@ export default function PackingListPanel({
           id: li.id,
           uom: (lineEdits[li.id]?.uom || "").trim() || null,
           total_combo: num(lineEdits[li.id]?.total_combo),
+          hs_code: (lineEdits[li.id]?.hs_code || "").trim() || null,
+          case_size: (lineEdits[li.id]?.case_size || "").trim() || null,
+          trays_per_sleeve: (lineEdits[li.id]?.trays_per_sleeve || "").trim() || null,
+          sleeves_per_combo: (lineEdits[li.id]?.sleeves_per_combo || "").trim() || null,
         })),
       });
       await api.downloadPackingListPdf(shipmentId, shipmentNumber);
@@ -169,7 +197,7 @@ export default function PackingListPanel({
               <div className="detail-card">
                 <h3>Goods Details</h3>
                 <div className="hint-text" style={{ marginBottom: 10 }}>
-                  SKU No., Description, HS Code, Case Size, Trays/Sleeve and Sleeves/Combo come from the SKU Names admin screen. UOM and Total Combo are the actual quantity going out on this shipment — enter them below.
+                  SKU No. and Description come from the SKU Names admin screen. HS Code, Case Size, Trays/Sleeve and Sleeves/Combo pre-fill from there too when already entered — editable here if you need to fill a gap or fix one, and doing so updates the SKU Version itself, not just this shipment. UOM and Total Combo are the actual quantity going out on this shipment — enter them below.
                 </div>
                 <table className="qc-obs-table">
                   <thead>
@@ -188,8 +216,20 @@ export default function PackingListPanel({
                         <tr key={li.id}>
                           <td className="mono">{li.sku_code || "—"}</td>
                           <td>{li.description || "—"}</td>
-                          <td>{li.hs_code || "—"}</td>
-                          <td>{li.case_size || "—"}</td>
+                          <td>
+                            <input
+                              style={{ width: 80 }}
+                              value={lineEdits[li.id]?.hs_code ?? ""}
+                              onChange={(e) => setLineEdits((prev) => ({ ...prev, [li.id]: { ...prev[li.id], hs_code: e.target.value } }))}
+                            />
+                          </td>
+                          <td>
+                            <input
+                              style={{ width: 80 }}
+                              value={lineEdits[li.id]?.case_size ?? ""}
+                              onChange={(e) => setLineEdits((prev) => ({ ...prev, [li.id]: { ...prev[li.id], case_size: e.target.value } }))}
+                            />
+                          </td>
                           <td>
                             <input
                               value={lineEdits[li.id]?.uom ?? ""}
@@ -202,8 +242,20 @@ export default function PackingListPanel({
                               onChange={(e) => setLineEdits((prev) => ({ ...prev, [li.id]: { ...prev[li.id], total_combo: e.target.value } }))}
                             />
                           </td>
-                          <td>{li.trays_per_sleeve || "—"}</td>
-                          <td>{li.sleeves_per_combo || "—"}</td>
+                          <td>
+                            <input
+                              type="number" style={{ width: 70 }}
+                              value={lineEdits[li.id]?.trays_per_sleeve ?? ""}
+                              onChange={(e) => setLineEdits((prev) => ({ ...prev, [li.id]: { ...prev[li.id], trays_per_sleeve: e.target.value } }))}
+                            />
+                          </td>
+                          <td>
+                            <input
+                              type="number" style={{ width: 70 }}
+                              value={lineEdits[li.id]?.sleeves_per_combo ?? ""}
+                              onChange={(e) => setLineEdits((prev) => ({ ...prev, [li.id]: { ...prev[li.id], sleeves_per_combo: e.target.value } }))}
+                            />
+                          </td>
                           <td>{fmt(traysPerCombo(li))}</td>
                           <td>{fmt(totalQuantity(li))}</td>
                         </tr>

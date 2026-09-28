@@ -1424,7 +1424,21 @@ export interface PackingListSavePayload {
   po_date: string | null;
   pi_number: string | null;
   ship_to_address: string | null;
-  line_items: { id: string; uom: string | null; total_combo: number | null }[];
+  // 2026-09-28 -- hs_code/case_size/trays_per_sleeve/sleeves_per_combo are
+  // still "once per SKU Version" reference data (see
+  // packing_list_service.save_packing_list_fields): a value sent here is
+  // written back onto the line item's own SKU Version, not just this one
+  // shipment, so it shows up on the SKU Names admin screen too. Sending
+  // null/omitting leaves whatever's already there untouched.
+  line_items: {
+    id: string;
+    uom: string | null;
+    total_combo: number | null;
+    hs_code?: string | null;
+    case_size?: string | null;
+    trays_per_sleeve?: string | null;
+    sleeves_per_combo?: string | null;
+  }[];
 }
 
 // ---------------------------------------------------------------------------

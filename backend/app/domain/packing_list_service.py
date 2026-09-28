@@ -98,6 +98,30 @@ def save_packing_list_fields(
         li.uom = (uom or "").strip() or None
         li.total_combo = _num(entry.get("total_combo"))
 
+        # 2026-09-28 -- HS Code / Case Size / Trays-Sleeve / Sleeves-Combo
+        # are still SKU-Version-level reference data (same "once per SKU
+        # Version" home as the SKU Names admin screen), NOT a per-shipment
+        # override -- so a value typed in here is written back onto the
+        # line item's own SKU Version, not just this line item, and shows
+        # up on the SKU Names admin screen and every other shipment of that
+        # SKU Version from now on. Blank/omitted stays untouched (never
+        # clobbers an existing value with blank), and there's simply
+        # nowhere to save it if this line item has no SKU Version linked.
+        sv = li.sku_version
+        if sv is not None:
+            hs_code = entry.get("hs_code")
+            if hs_code is not None and str(hs_code).strip():
+                sv.hs_code = str(hs_code).strip()
+            case_size = entry.get("case_size")
+            if case_size is not None and str(case_size).strip():
+                sv.case_size = str(case_size).strip()
+            trays_per_sleeve = entry.get("trays_per_sleeve")
+            if trays_per_sleeve is not None and str(trays_per_sleeve).strip():
+                sv.prod_pcs_per_sleeve = str(trays_per_sleeve).strip()
+            sleeves_per_combo = entry.get("sleeves_per_combo")
+            if sleeves_per_combo is not None and str(sleeves_per_combo).strip():
+                sv.prod_sleeve_per_case = str(sleeves_per_combo).strip()
+
     db.flush()
     return shipment
 
