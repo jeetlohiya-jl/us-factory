@@ -121,6 +121,12 @@ def _sum_rejections(run: models.ProductionRun) -> dict:
         "rejection_damage": Decimal("0"), "rejection_misplaced_glue": Decimal("0"),
         "rejection_misplaced_pad": Decimal("0"), "rejection_glue_on_pad": Decimal("0"),
         "rejection_pad_placement_direction": Decimal("0"), "rejection_adhesion_issue": Decimal("0"),
+        # Factory-only set (migration 0065) -- a US Factory run's machine
+        # entries never populate these, so they total 0 for it, same as the
+        # six above total 0 for a Factory run.
+        "rejection_foreign_material": Decimal("0"), "rejection_glue_strings": Decimal("0"),
+        "rejection_pad_direction": Decimal("0"), "rejection_pad_placement": Decimal("0"),
+        "rejection_stickiness": Decimal("0"),
     }
     for mc in run.material_consumptions:
         for e in mc.machine_entries:
@@ -130,6 +136,11 @@ def _sum_rejections(run: models.ProductionRun) -> dict:
             totals["rejection_glue_on_pad"] += e.rejection_glue_on_pad or Decimal("0")
             totals["rejection_pad_placement_direction"] += e.rejection_pad_placement_direction or Decimal("0")
             totals["rejection_adhesion_issue"] += e.rejection_adhesion_issue or Decimal("0")
+            totals["rejection_foreign_material"] += e.rejection_foreign_material or Decimal("0")
+            totals["rejection_glue_strings"] += e.rejection_glue_strings or Decimal("0")
+            totals["rejection_pad_direction"] += e.rejection_pad_direction or Decimal("0")
+            totals["rejection_pad_placement"] += e.rejection_pad_placement or Decimal("0")
+            totals["rejection_stickiness"] += e.rejection_stickiness or Decimal("0")
     return totals
 
 
@@ -264,6 +275,19 @@ def save_production_run(
             entry.rejection_pad_placement_direction = Decimal(attrs.rejection_pad_placement_direction or "0")
         if attrs.rejection_adhesion_issue is not None:
             entry.rejection_adhesion_issue = Decimal(attrs.rejection_adhesion_issue or "0")
+        # Factory-only Rejection Classification (migration 0065) -- same
+        # empty-means-0 convention; a US Factory save simply never sends
+        # these, so they're never touched for it.
+        if attrs.rejection_foreign_material is not None:
+            entry.rejection_foreign_material = Decimal(attrs.rejection_foreign_material or "0")
+        if attrs.rejection_glue_strings is not None:
+            entry.rejection_glue_strings = Decimal(attrs.rejection_glue_strings or "0")
+        if attrs.rejection_pad_direction is not None:
+            entry.rejection_pad_direction = Decimal(attrs.rejection_pad_direction or "0")
+        if attrs.rejection_pad_placement is not None:
+            entry.rejection_pad_placement = Decimal(attrs.rejection_pad_placement or "0")
+        if attrs.rejection_stickiness is not None:
+            entry.rejection_stickiness = Decimal(attrs.rejection_stickiness or "0")
         # Pallets Produced (migration 0039, task section 1) -- same
         # empty-means-0 convention as the rejection_* fields above.
         if attrs.pallets_produced is not None:
