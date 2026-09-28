@@ -58,3 +58,36 @@ def next_seq(db: Session, counter_key: str) -> int:
         {"key": counter_key},
     ).first()
     return int(row[0])
+
+
+def next_seq_batch(db: Session, counter_key: str, count: int) -> int:
+    """Same atomic UPSERT as next_seq, but reserves `count` consecutive
+    values in one round trip and returns the first one (the caller then
+    uses start, start+1, ..., start+count-1). Added for pallet generation
+    (qr_generation_service.generate_pallets), which used to call next_seq
+    once per pallet -- one DB round trip per pallet just to get its display
+    number, on top of one more for its own INSERT, before even reaching the
+    (already-parallelized) QR upload step. A 44-pallet batch was making ~90
+    sequential round trips for numbering/inserts alone. Reserving the whole
+    range up front, then building every Pallet row in memory and inserting
+    them in one flush, cuts that to a small constant number of round trips
+    regardless of batch size. Must be called inside the same transaction
+    that goes on to use every number in the range, for the same rollback-
+    safety reason as next_seq."""
+    if count <= 0:
+        raise ValueError("count must be positive")
+    if current_unit() == FACTORY:
+        counter_key = f"factory:{counter_key}"
+    row = db.execute(
+        text(
+            """
+            insert into display_id_counters (counter_key, next_value)
+            values (:key, :next_after)
+            on conflict (counter_key)
+            do update set next_value = display_id_counters.next_value + :count
+            returning next_value - :count
+            """
+        ),
+        {"key": counter_key, "count": count, "next_after": count + 1},
+    ).first()
+    return int(row[0])
