@@ -1595,7 +1595,7 @@ class GoodsReceiptEntry(Base):
     __tablename__ = "goods_receipt_entries"
     id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
     goods_receipt_id = Column(UUID(as_uuid=True), ForeignKey("goods_receipts.id", ondelete="CASCADE"), nullable=False)
-    # The PO line's own identifier (HA1, V6, ...) -- this IS the shipment
+    # The PO line's own identifier (A1, V6, ...) -- this IS the shipment
     # number used downstream (migration 0046 renamed it from container_name).
     shipment_number = Column(Text, nullable=False)
     # Added by migration 0050 (multi-category PO) -- was missing from this

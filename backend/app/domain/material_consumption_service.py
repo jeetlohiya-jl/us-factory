@@ -241,7 +241,7 @@ def add_primary_pallet(
     # below, so the IPQC created by this very first scan already carries
     # it (RQC later matches IPQC by Shipment Number).
     #
-    # One container (Shipment Number, e.g. HA1 = 44 pallets) is consumed
+    # One container (Shipment Number, e.g. A1 = 44 pallets) is consumed
     # over several shifts, so several RM Requisition records share it until
     # every pallet of that container has been scanned -- which limits itself:
     # a pallet can only be scanned while it is in storage. (Replaces the

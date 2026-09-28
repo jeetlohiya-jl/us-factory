@@ -181,7 +181,7 @@ export default function FactoryRqcWizard({
               <div className="field">
                 <label>Shipment Number <span style={{ color: "var(--red)" }}>*</span></label>
                 <input
-                  type="text" placeholder="e.g. US-SHP-2609-0001" autoFocus
+                  type="text" placeholder="e.g. A1" autoFocus
                   value={shipmentNumber} onChange={(e) => setShipmentNumber(e.target.value)}
                 />
                 <div className="hint-text">Used to identify the linked Production Run, if one already exists. A shipment can have many RQC activity records over time, across different dates.</div>

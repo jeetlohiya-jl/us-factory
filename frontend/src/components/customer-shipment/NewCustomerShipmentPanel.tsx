@@ -52,9 +52,10 @@ export default function NewCustomerShipmentPanel({
   editTarget?: GoodsOutwardDetail | null;
 }) {
   const isEdit = !!editTarget;
+  const isFactory = useProduct() === "factory";
   // One name per product for this record: Factory calls it Goods Outward;
   // US Factory keeps its own module name, Customer Shipment.
-  const recordName = useProduct() === "factory" ? `${MODULE_NAMES.goods_outward} Record` : MODULE_NAMES.customer_shipment;
+  const recordName = isFactory ? `${MODULE_NAMES.goods_outward} Record` : MODULE_NAMES.customer_shipment;
   const [customer, setCustomer] = useState(editTarget?.customer || "");
   const [shipmentNumber, setShipmentNumber] = useState(editTarget?.shipment_number || "");
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -200,7 +201,10 @@ export default function NewCustomerShipmentPanel({
           </div>
           <div className="field">
             <label>{T.shipmentNumber}</label>
-            <input type="text" placeholder="e.g. US-SHP-2609-0001" value={shipmentNumber} onChange={(e) => setShipmentNumber(e.target.value)} />
+            {/* Factory's own containers are labeled A1, V6, etc. (see Goods
+                Receipt) -- US Factory's are its own auto-numbered format.
+                Same field, product-appropriate example only. */}
+            <input type="text" placeholder={isFactory ? "e.g. A1" : "e.g. US-SHP-2609-0001"} value={shipmentNumber} onChange={(e) => setShipmentNumber(e.target.value)} />
           </div>
         </div>
         <div className="section-label" style={{ marginTop: 0 }}>Line Items</div>
