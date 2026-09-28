@@ -1568,18 +1568,20 @@ class InventoryItem(ProductScoped, Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
     sku_code_id = Column(UUID(as_uuid=True), ForeignKey("sku_codes.id", ondelete="CASCADE"), nullable=False)
     uom = Column(Text, nullable=False, default="Kgs")
-    # The tray SKU this material is compatible with/packed into (last
-    # column of the reference inventory sheet) -- nullable, only
-    # meaningful for materials that pair with one specific tray.
-    compatible_tray_sku_code_id = Column(UUID(as_uuid=True), ForeignKey("sku_codes.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
     sku_code = relationship("SkuCode", foreign_keys=[sku_code_id])
-    compatible_tray_sku_code = relationship("SkuCode", foreign_keys=[compatible_tray_sku_code_id])
     sources = relationship(
         "InventorySource", back_populates="inventory_item",
         cascade="all, delete-orphan", order_by="InventorySource.created_at.desc()",
+    )
+    # The tray SKU(s) this material is compatible with/packed into (last
+    # column of the reference inventory sheet) -- migration 0061:
+    # many-to-many, since one material can pair with more than one tray
+    # (the sheet lists e.g. "3P & 3D" for one Polybag SKU).
+    compatible_trays = relationship(
+        "InventoryCompatibleTray", back_populates="inventory_item", cascade="all, delete-orphan",
     )
 
     __table_args__ = (UniqueConstraint("product", "sku_code_id"),)
@@ -1614,3 +1616,19 @@ class InventorySource(Base):
     source_goods_receipt_entry = relationship("GoodsReceiptEntry")
 
     __table_args__ = (UniqueConstraint("source_goods_receipt_entry_id"),)
+
+
+class InventoryCompatibleTray(Base):
+    """Which tray SKU(s) an Inventory item's material is compatible
+    with/packed into -- migration 0061. Many-to-many (not a single FK on
+    InventoryItem) since the reference sheet lists more than one tray for
+    some materials (e.g. "3P & 3D")."""
+    __tablename__ = "inventory_compatible_trays"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    inventory_item_id = Column(UUID(as_uuid=True), ForeignKey("inventory_items.id", ondelete="CASCADE"), nullable=False)
+    tray_sku_code_id = Column(UUID(as_uuid=True), ForeignKey("sku_codes.id", ondelete="CASCADE"), nullable=False)
+
+    inventory_item = relationship("InventoryItem", back_populates="compatible_trays")
+    tray_sku_code = relationship("SkuCode")
+
+    __table_args__ = (UniqueConstraint("inventory_item_id", "tray_sku_code_id"),)

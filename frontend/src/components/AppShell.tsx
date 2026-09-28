@@ -147,18 +147,6 @@ const FACTORY_NAV_ITEMS = [
       <path d="M3 7l9-4 9 4v10l-9 4-9-4V7zM3 7l9 4 9-4M12 11v10M7.5 5.2l9 4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
     ),
   },
-  // Inventory (2026-09-28) -- SKU-centric raw-material stock, aggregated
-  // from every Goods Receipt container inwarded for that SKU (migration
-  // 0059). A genuinely new Factory-only page (app/inventory/page.tsx).
-  // Right after Goods Receipt itself, ahead of RM Storage -- it reflects
-  // what's been received, before those pallets are put away.
-  {
-    href: "/inventory",
-    label: MODULE_NAMES.inventory,
-    icon: (
-      <path d="M20 7H4a1 1 0 00-1 1v11a1 1 0 001 1h16a1 1 0 001-1V8a1 1 0 00-1-1zM16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-    ),
-  },
   // Module 1 (cont.) -- RM Storage. The exact same /rm-storage page and
   // scan -> location -> confirm flow US Factory uses; inside Factory it
   // lists and accepts only Goods-Receipt pallets (useProduct() in that page,
@@ -239,6 +227,16 @@ const FACTORY_NAV_ITEMS = [
     label: MODULE_NAMES.goods_outward,
     icon: (
       <path d="M3 3h18v18H3zM3 9h18M9 3v18M15 15l3 3M18 15l-3 3" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    ),
+  },
+  // Inventory (2026-09-28) -- SKU-centric raw-material stock, aggregated
+  // from every Goods Receipt container inwarded for that SKU (migration
+  // 0059). A genuinely new Factory-only page (app/inventory/page.tsx).
+  {
+    href: "/inventory",
+    label: MODULE_NAMES.inventory,
+    icon: (
+      <path d="M20 7H4a1 1 0 00-1 1v11a1 1 0 001 1h16a1 1 0 001-1V8a1 1 0 00-1-1zM16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
     ),
   },
   // "History" (item 11 of the 2026-09-24 feedback batch) -- the feature the

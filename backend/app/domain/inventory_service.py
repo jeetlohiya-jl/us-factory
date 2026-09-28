@@ -17,7 +17,8 @@ FastAPI leg to hook into. This module only reads that result (list/
 detail) plus handles the two things that DO make sense as ordinary
 FastAPI writes: manually adding a new inventory item / a manual source
 line (a delivery with no PO behind it yet, or a correction), and editing
-an item's own reference fields (UOM, compatible tray SKU).
+an item's own reference fields (UOM, compatible tray SKU(s) --
+migration 0061, a material can pair with more than one tray).
 
 Performance: the dashboard is one aggregating query (SUM per SKU) with
 no N+1 joins to every PO/vendor/inward row -- those only get fetched in
@@ -91,7 +92,10 @@ def get_inventory_detail(db: Session, item_id: uuid.UUID):
     unit = current_unit()
     item = (
         db.query(models.InventoryItem)
-        .options(joinedload(models.InventoryItem.sku_code), joinedload(models.InventoryItem.compatible_tray_sku_code))
+        .options(
+            joinedload(models.InventoryItem.sku_code),
+            joinedload(models.InventoryItem.compatible_trays).joinedload(models.InventoryCompatibleTray.tray_sku_code),
+        )
         .filter(models.InventoryItem.id == item_id, models.InventoryItem.product == unit)
         .first()
     )
@@ -136,8 +140,10 @@ def get_inventory_detail(db: Session, item_id: uuid.UUID):
         "category": item.sku_code.category if item.sku_code else "",
         "uom": item.uom,
         "quantity": quantity,
-        "compatible_tray_sku_code_id": item.compatible_tray_sku_code_id,
-        "compatible_tray_sku": item.compatible_tray_sku_code.code if item.compatible_tray_sku_code else None,
+        "compatible_trays": [
+            {"id": ct.tray_sku_code_id, "code": ct.tray_sku_code.code}
+            for ct in item.compatible_trays if ct.tray_sku_code
+        ],
         "sources": source_rows,
     }
 
@@ -164,10 +170,12 @@ def create_inventory_item(db: Session, payload) -> models.InventoryItem:
     item = models.InventoryItem(
         sku_code_id=payload.sku_code_id,
         uom=(payload.uom or "Kgs").strip() or "Kgs",
-        compatible_tray_sku_code_id=payload.compatible_tray_sku_code_id,
     )
     db.add(item)
     db.flush()
+
+    for tray_sku_code_id in payload.compatible_tray_sku_code_ids or []:
+        db.add(models.InventoryCompatibleTray(inventory_item_id=item.id, tray_sku_code_id=tray_sku_code_id))
 
     if payload.initial_quantity:
         if payload.initial_quantity <= 0:
@@ -206,8 +214,13 @@ def update_inventory_item(db: Session, item_id: uuid.UUID, payload) -> models.In
         if not uom:
             raise InventoryValidationError("UOM is required.")
         item.uom = uom
-    if "compatible_tray_sku_code_id" in payload.model_fields_set:
-        item.compatible_tray_sku_code_id = payload.compatible_tray_sku_code_id
+    if payload.compatible_tray_sku_code_ids is not None:
+        db.query(models.InventoryCompatibleTray).filter(
+            models.InventoryCompatibleTray.inventory_item_id == item.id
+        ).delete()
+        db.flush()
+        for tray_sku_code_id in payload.compatible_tray_sku_code_ids:
+            db.add(models.InventoryCompatibleTray(inventory_item_id=item.id, tray_sku_code_id=tray_sku_code_id))
     db.commit()
     db.refresh(item)
     return item

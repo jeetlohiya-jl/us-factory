@@ -3203,14 +3203,14 @@ export const api = {
     ),
   getInventoryItem: (id: string) => request<InventoryDetail>(`/api/v1/inventory/${id}`),
   createInventoryItem: async (payload: {
-    sku_code_id: string; uom?: string; compatible_tray_sku_code_id?: string | null;
+    sku_code_id: string; uom?: string; compatible_tray_sku_code_ids?: string[];
     initial_quantity?: number | null; vendor_id?: string | null; supplier_country?: string | null; note?: string | null;
   }) => {
     const res = await request<InventoryDetail>("/api/v1/inventory", { method: "POST", body: JSON.stringify(payload) });
     invalidateListCache("inventory");
     return res;
   },
-  updateInventoryItem: async (id: string, patch: { uom?: string; compatible_tray_sku_code_id?: string | null }) => {
+  updateInventoryItem: async (id: string, patch: { uom?: string; compatible_tray_sku_code_ids?: string[] }) => {
     const res = await request<InventoryDetail>(`/api/v1/inventory/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
     invalidateListCache("inventory");
     return res;

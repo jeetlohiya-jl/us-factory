@@ -1170,6 +1170,11 @@ class InventorySourceOut(BaseModel):
     created_at: str
 
 
+class CompatibleTrayOut(BaseModel):
+    id: uuid.UUID
+    code: str
+
+
 class InventoryDetailOut(BaseModel):
     id: uuid.UUID
     sku_code_id: uuid.UUID
@@ -1178,15 +1183,16 @@ class InventoryDetailOut(BaseModel):
     category: str
     uom: str
     quantity: float
-    compatible_tray_sku_code_id: Optional[uuid.UUID] = None
-    compatible_tray_sku: Optional[str] = None
+    # Migration 0061 -- a material can pair with more than one tray SKU
+    # (the reference sheet lists e.g. "3P & 3D" for one Polybag SKU).
+    compatible_trays: list[CompatibleTrayOut] = []
     sources: list[InventorySourceOut]
 
 
 class InventoryCreateIn(BaseModel):
     sku_code_id: uuid.UUID
     uom: str = "Kgs"
-    compatible_tray_sku_code_id: Optional[uuid.UUID] = None
+    compatible_tray_sku_code_ids: list[uuid.UUID] = []
     # An optional first manual source line, so "Add" can record an initial
     # quantity/supplier in the same step rather than a bare empty item.
     initial_quantity: Optional[float] = None
@@ -1197,7 +1203,7 @@ class InventoryCreateIn(BaseModel):
 
 class InventoryUpdateIn(BaseModel):
     uom: Optional[str] = None
-    compatible_tray_sku_code_id: Optional[uuid.UUID] = None
+    compatible_tray_sku_code_ids: Optional[list[uuid.UUID]] = None
 
 
 class InventorySourceIn(BaseModel):
