@@ -187,6 +187,9 @@ export interface InspectionDetail {
   checklist_answers: ChecklistAnswer[];
   linked_qc_id: string | null;
   linked_qc_shipment_number: string | null;
+  // 2026-09-28 -- set only for an inspection opened from Factory's own
+  // Goods Receipt "Inward" action (migration 0066).
+  source_goods_receipt_entry_id: string | null;
 }
 
 export interface Permissions {
@@ -1539,6 +1542,13 @@ export interface GoodsOutwardDetail {
   created_at: string;
   line_items: GoodsOutwardLineItem[];
   status: "pending" | "partial" | "complete";
+  // 2026-09-28 -- the Outward Vehicle Inspection auto-created for this
+  // shipment (always present -- see ovi_service.create_pending_for_shipment)
+  // embedded here so GoodsOutwardDetailPanel can open/resume it (and
+  // auto-open it once picking completes) without a second round trip. Only
+  // {id,status}, not the full record -- the full OviDetail is fetched
+  // lazily via api.getOvi only when the user/flow actually opens it.
+  outward_inspection: { id: string; status: string } | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -1607,14 +1617,20 @@ export interface PackingListSavePayload {
 // same split as RQC/IPQC.
 // ---------------------------------------------------------------------------
 
+// 2026-09-28 -- reworded to match the reference checklist image (same 7-item
+// wording Factory's Inward Vehicle Inspection checklist got in migration
+// 0066), for Goods Outward's new "pick pallets -> Outward Vehicle
+// Inspection" flow. Must stay in sync with OVI_QUESTIONS in ovi_service.py.
+// Only the label text changed -- `sr` values (what answers are actually
+// keyed by) are untouched, so existing OVI records/answers are unaffected.
 export const OVI_QUESTIONS: { sr: number; label: string }[] = [
-  { sr: 1, label: "Clean, dry & dust free" },
+  { sr: 1, label: "Vehicle is clean & dry" },
   { sr: 2, label: "No objectionable odour" },
-  { sr: 3, label: "No insects/rodents" },
+  { sr: 3, label: "No insects, rodents or signs of pest activity" },
   { sr: 4, label: "No floor damage or contamination risk" },
   { sr: 5, label: "No water leakage" },
-  { sr: 6, label: "No rust inside the container" },
-  { sr: 7, label: "Boxes are in intact condition (no damages)" },
+  { sr: 6, label: "No rust inside the container / trailer" },
+  { sr: 7, label: "No damaged boxes/packages observed" },
 ];
 
 export interface OviListItem {
@@ -1782,6 +1798,13 @@ export interface GoodsReceiptEntry {
   // "Inward remaining" (migration 0056).
   inward_events?: { received_quantity: number; pallet_count: number; unit: string; kind: "initial" | "remaining"; inwarded_at: string }[];
   qr_batch: { id: string; batch_display_id: string; status: "pending" | "generated"; quantity: number } | null;
+  // 2026-09-28 -- the Inward Inspection this entry's "Inward" click opened
+  // (see GrInwardWizard.tsx), if any. Draft/Hold means the entry is still
+  // Pending and the row shows "Resume Inspection"/"View Inspection" instead
+  // of "Inward"; an inspection reaching Approved is what actually performs
+  // the real inward (status flips to "inwarded" separately, at that point)
+  // -- this field itself doesn't change once Approved.
+  inward_inspection?: { id: string; status: InspectionStatus } | null;
 }
 
 export interface GoodsReceiptDetail {

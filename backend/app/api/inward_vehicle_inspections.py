@@ -66,6 +66,7 @@ def _serialize_detail(db: Session, inspection: models.InwardVehicleInspection) -
         checklist_answers=checklist_out,
         linked_qc_id=linked_qc.id if linked_qc else None,
         linked_qc_shipment_number=linked_qc.shipment_number if linked_qc else None,
+        source_goods_receipt_entry_id=inspection.source_goods_receipt_entry_id,
     ).model_dump()
 
 
@@ -138,13 +139,62 @@ def list_inspections(
 @router.post("/draft", status_code=201)
 def create_draft(
     category: str = Query(default="tray"),
+    # Migration 0066 -- present only when this draft is being opened from
+    # Factory's own Goods Receipt "Inward" action (GrInwardWizard.tsx).
+    # Never sent by US Factory's own "+ New Record" flow.
+    source_goods_receipt_entry_id: uuid.UUID | None = Query(default=None),
     db: Session = Depends(get_db),
     current_user: AuthenticatedUser = Depends(get_current_user),
     _perm=Depends(require_permission("create")),
 ):
     """Creates an empty draft immediately so images/OCR have a real record to
     attach to from the moment the wizard opens. Untouched drafts are cleaned
-    up on Cancel via DELETE /{id}/if-blank."""
+    up on Cancel via DELETE /{id}/if-blank.
+
+    When source_goods_receipt_entry_id is given, everything the Goods
+    Receipt entry already knows (category, vendor, shipment number, SKU) is
+    pre-filled here rather than left for the operator to re-enter -- see
+    GrInwardWizard.tsx, which shows those fields read-only. Idempotent: a
+    second call for the same entry (e.g. a double-click) returns the
+    existing inspection instead of erroring or creating a duplicate --
+    matching the entry_id's own DB-level unique constraint."""
+    if source_goods_receipt_entry_id is not None:
+        existing = (
+            db.query(models.InwardVehicleInspection)
+            .filter(models.InwardVehicleInspection.source_goods_receipt_entry_id == source_goods_receipt_entry_id)
+            .first()
+        )
+        if existing:
+            return _serialize_detail(db, _get_or_404(db, existing.id))
+        entry = (
+            db.query(models.GoodsReceiptEntry)
+            .join(models.GoodsReceipt, models.GoodsReceiptEntry.goods_receipt_id == models.GoodsReceipt.id)
+            .filter(models.GoodsReceiptEntry.id == source_goods_receipt_entry_id)
+            .first()
+        )
+        if not entry:
+            raise HTTPException(status_code=404, detail="Goods Receipt entry not found.")
+        # A synced-from-Zoho tray row with no category yet (Base Tray/LNP
+        # Tray decided at inward time -- see needsStage() in
+        # GoodsReceiptDetailPanel.tsx) starts as a placeholder "tray" here;
+        # GrInwardWizard.tsx's own Category picker (shown only in this case)
+        # PATCHes the real choice via the ordinary PUT /{id} route.
+        entry_category = entry.category or "tray"
+        inspection = models.InwardVehicleInspection(
+            shipment_number=entry.shipment_number,
+            is_auto_shipment_number=True,  # inherited from the entry, not typed by this operator
+            category=entry_category,
+            vendor_name=entry.goods_receipt.vendor_name,
+            vendor_id=entry.goods_receipt.vendor_id,
+            source_goods_receipt_entry_id=entry.id,
+            status="draft",
+            created_by=current_user.user_id,
+            updated_by=current_user.user_id,
+        )
+        db.add(inspection)
+        db.commit()
+        return _serialize_detail(db, _get_or_404(db, inspection.id))
+
     shipment_number, is_auto = svc.next_shipment_number(db, category)
     inspection = models.InwardVehicleInspection(
         shipment_number=shipment_number,

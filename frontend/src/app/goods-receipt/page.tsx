@@ -223,12 +223,13 @@ export default function GoodsReceiptPage() {
         />
       )}
 
-      {detail && (
+      {detail && perms && (
         <GoodsReceiptDetailPanel
           key={detail.id}
           detail={detail}
-          canEdit={!!perms?.can_edit}
-          canReceive={!!perms?.can_fill_section}
+          canEdit={!!perms.can_edit}
+          canReceive={!!perms.can_fill_section}
+          permissions={perms}
           onClose={() => setDetail(null)}
           onEdit={() => openRecord(detail.id, "edit")}
           onChanged={refreshAfterMutation}

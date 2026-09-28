@@ -32,6 +32,14 @@ FACTORY_PERMISSION_MAP = {
     "fg_storage": "factory_fg_storage",
     "customer_shipment": "factory_goods_outward",
     "shipment_picking": "factory_goods_outward",
+    # 2026-09-28 -- Goods Outward's "pick pallets -> Outward Vehicle
+    # Inspection" flow (migration 0067) routes Factory into this same
+    # US-Factory table/router; without this remap, a Factory user with
+    # Goods Outward access but no separate "Outward Vehicle Inspection"
+    # permission row would get 403s from save_ovi_record's can_fill_section
+    # check (and image upload/delete), same reasoning as customer_shipment/
+    # shipment_picking above.
+    "outward_vehicle_inspection": "factory_goods_outward",
 }
 
 

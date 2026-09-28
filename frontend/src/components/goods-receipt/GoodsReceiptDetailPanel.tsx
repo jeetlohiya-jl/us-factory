@@ -1,9 +1,10 @@
 "use client";
 import { Fragment, useState } from "react";
 import { api } from "@/lib/api";
-import type { GoodsReceiptDetail, GoodsReceiptEntry, QrGenerationDetail } from "@/lib/types";
+import type { Category, GoodsReceiptDetail, GoodsReceiptEntry, InspectionDetail, Permissions, QrGenerationDetail } from "@/lib/types";
 import { INWARD_CATEGORY_LABELS, TRAY_FAMILY_QC_CATEGORIES } from "@/lib/types";
 import QrGenerationPanel from "@/components/qr-generation/QrGenerationPanel";
+import GrInwardWizard from "./GrInwardWizard";
 import { GoodsReceiptStatusBadge } from "./GoodsReceiptStatusBadge";
 import { T } from "@/lib/terms";
 
@@ -27,8 +28,9 @@ type InwardForm = { quantity: string; pallets: string; stage: "" | "tray" | "lnp
 // A row with no category is a tray synced from Zoho whose stage (Base Tray /
 // LNP Tray) is chosen at inward -- synced rows of any other material always
 // carry their SKU's category.
-const needsStage = (e: GoodsReceiptEntry) => !e.category;
-const isTray = (e: GoodsReceiptEntry) => needsStage(e) || TRAY_FAMILY_QC_CATEGORIES.includes(e.category as string);
+// Exported for GrInwardWizard, which needs the same predicates.
+export const needsStage = (e: GoodsReceiptEntry) => !e.category;
+export const isTray = (e: GoodsReceiptEntry) => needsStage(e) || TRAY_FAMILY_QC_CATEGORIES.includes(e.category as string);
 
 /**
  * Goods Receipt detail -- the receiving screen. Every container x SKU entry
@@ -42,24 +44,33 @@ const isTray = (e: GoodsReceiptEntry) => needsStage(e) || TRAY_FAMILY_QC_CATEGOR
  * directly to local state -- no follow-up fetch, no page reload.
  */
 export default function GoodsReceiptDetailPanel({
-  detail, canEdit, canReceive, onClose, onEdit, onChanged,
+  detail, canEdit, canReceive, permissions, onClose, onEdit, onChanged,
 }: {
   detail: GoodsReceiptDetail;
   canEdit: boolean;
   canReceive: boolean;
+  // The goods_receipt module's full Permissions object (already remapped
+  // from Factory's own row by lib/currentProduct.ts, same as canEdit/
+  // canReceive above) -- GrInwardWizard needs the full shape, not just
+  // these two derived booleans, because it reuses Wizard.tsx's exact
+  // can_edit/can_fill_section-driven read-only logic.
+  permissions: Permissions;
   onClose: () => void;
   onEdit: () => void;
   onChanged: (next: GoodsReceiptDetail) => void;
 }) {
   const [record, setRecord] = useState(detail);
+  // The inline quick-form below is now only for "Inward remaining" -- a
+  // later top-up delivery on a container that's already completed its
+  // Inward Inspection. The first inward opens the wizard instead (below).
   const [inwardingId, setInwardingId] = useState<string | null>(null);
-  // "first" = the container's first inward; "remaining" = a later delivery
-  // of a container that arrived short (optional -- it may never come).
-  const [inwardMode, setInwardMode] = useState<"first" | "remaining">("first");
   const [form, setForm] = useState<InwardForm | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [qr, setQr] = useState<{ entry: GoodsReceiptEntry; detail: QrGenerationDetail } | null>(null);
+  // The "first inward" flow now goes through the Inward Inspection wizard
+  // (2026-09-28) instead of completing the inward directly.
+  const [inwardWizard, setInwardWizard] = useState<{ entry: GoodsReceiptEntry; inspectionId: string; detail: InspectionDetail; isNew: boolean } | null>(null);
 
   const inwarded = record.entries.filter((e) => e.status === "inwarded");
   const isDraft = record.status === "draft";
@@ -73,28 +84,13 @@ export default function GoodsReceiptDetailPanel({
 
   function startInwardRemaining(e: GoodsReceiptEntry) {
     setError(null);
-    setInwardMode("remaining");
     setInwardingId(e.id);
     const left = leftToReceive(e);
     setForm({ quantity: isTray(e) ? "" : String(left), pallets: isTray(e) ? String(left) : "", stage: "" });
   }
 
-  function startInward(e: GoodsReceiptEntry) {
-    setError(null);
-    setInwardMode("first");
-    setInwardingId(e.id);
-    setForm({
-      // Default to the ordered quantity -- the common case is a full
-      // container -- but it stays editable for a short delivery.
-      quantity: isTray(e) ? "" : String(e.po_quantity),
-      pallets: isTray(e) ? String(e.po_quantity) : "",
-      stage: "",
-    });
-  }
-
   async function confirmInward(e: GoodsReceiptEntry) {
     if (!form) return;
-    if (inwardMode === "first" && needsStage(e) && !form.stage) { setError(`${e.shipment_number}: choose Base Tray or LNP Tray.`); return; }
     const pallets = Number(form.pallets);
     const qty = isTray(e) ? pallets : Number(form.quantity);
     if (!isTray(e) && !(qty > 0)) { setError(`${e.shipment_number}: Quantity Received must be greater than 0.`); return; }
@@ -105,22 +101,72 @@ export default function GoodsReceiptDetailPanel({
     setBusy(e.id);
     setError(null);
     try {
-      if (inwardMode === "remaining" && qty > leftToReceive(e)) {
+      if (qty > leftToReceive(e)) {
         setError(`${e.shipment_number}: only ${fmt(leftToReceive(e))} ${e.unit} left to receive on this PO.`);
         setBusy(null);
         return;
       }
-      const next = inwardMode === "remaining"
-        ? await api.inwardRemainingGoodsReceiptEntry(e.id, { received_quantity: qty, pallet_count: pallets })
-        : await api.inwardGoodsReceiptEntry(record.id, e.id, {
-            received_quantity: qty, unit: isTray(e) ? "Pallets" : e.unit, pallet_count: pallets,
-            ...(needsStage(e) && form.stage ? { category: form.stage } : {}),
-          });
+      const next = await api.inwardRemainingGoodsReceiptEntry(e.id, { received_quantity: qty, pallet_count: pallets });
       apply(next);
       setInwardingId(null);
       setForm(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to inward container");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  // Opens (creating or resuming) the Inward Inspection wizard for this
+  // entry's first inward. `create_draft` is idempotent (backend migration
+  // 0066): if an inspection is already linked to this entry, resume it
+  // instead of creating a second one.
+  async function openInwardWizard(e: GoodsReceiptEntry) {
+    setError(null);
+    setBusy(e.id);
+    try {
+      const insp = e.inward_inspection
+        ? await api.getInspection(e.inward_inspection.id)
+        : await api.createDraft((needsStage(e) ? "tray" : (e.category as Category)), e.id);
+      setInwardWizard({ entry: e, inspectionId: insp.id, detail: insp, isNew: !e.inward_inspection });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to open Inward Inspection");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  // Refetches the full record after the wizard closes without an approval
+  // (Save Draft, a Hold submit, or a Cancel that left an existing draft in
+  // place) so the row's inward_inspection status picks up immediately.
+  async function refreshRecord() {
+    try {
+      apply(await api.getGoodsReceipt(record.id));
+    } catch { /* best-effort -- the row just won't refresh until the next open */ }
+  }
+
+  // Called by the wizard the moment its Inward Inspection is Approved.
+  // Performs the actual Goods Receipt inward (never before this point --
+  // "Do not generate RM QRs for entries that have not successfully
+  // completed the inward process"), then auto-opens RM QR Generation for
+  // that same entry, exactly like the pre-existing "Generate QRs" button.
+  async function handleInspectionApproved(e: GoodsReceiptEntry, inspection: InspectionDetail) {
+    setBusy(e.id);
+    setError(null);
+    try {
+      const pallets = Number(inspection.total_quantity) || 0;
+      const stage = needsStage(e) ? (inspection.category as InwardForm["stage"]) : undefined;
+      const next = await api.inwardGoodsReceiptEntry(record.id, e.id, {
+        received_quantity: isTray(e) ? pallets : e.po_quantity,
+        unit: isTray(e) ? "Pallets" : e.unit,
+        pallet_count: pallets,
+        ...(stage ? { category: stage } : {}),
+      });
+      apply(next);
+      const updatedEntry = next.entries.find((x) => x.id === e.id);
+      if (updatedEntry) await openOrGenerateQr(updatedEntry);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Inspection approved, but the inward could not be completed");
     } finally {
       setBusy(null);
     }
@@ -238,8 +284,13 @@ export default function GoodsReceiptDetailPanel({
                           {e.status === "pending" && canReceive && !isDraft && !record.zoho_cancelled && !e.shipment_number && (
                             <span className="hint-text" style={{ margin: 0 }}>Add its Shipment Number (Edit) to inward</span>
                           )}
-                          {e.status === "pending" && canReceive && !isDraft && !record.zoho_cancelled && !!e.shipment_number && inwardingId !== e.id && (
-                            <button className="btn btn-secondary" onClick={() => startInward(e)}>Inward</button>
+                          {e.status === "pending" && canReceive && !isDraft && !record.zoho_cancelled && !!e.shipment_number && (
+                            <button className="btn btn-secondary" disabled={busy === e.id} onClick={() => openInwardWizard(e)}>
+                              {busy === e.id ? "Opening…"
+                                : !e.inward_inspection ? "Inward"
+                                : e.inward_inspection.status === "draft" ? "Resume Inspection"
+                                : "View Inspection"}
+                            </button>
                           )}
                           {e.status === "inwarded" && (e.qr_batch?.status === "generated" || canReceive) && (
                             <button
@@ -276,22 +327,10 @@ export default function GoodsReceiptDetailPanel({
                                   </div>
                                 </>
                               )}
-                              {inwardMode === "remaining" && (
-                                <div className="field">
-                                  <label>Still to receive</label>
-                                  <div className="readonly-val">{fmt(leftToReceive(e))} {e.unit} of {fmt(e.po_quantity)} {e.unit}</div>
-                                </div>
-                              )}
-                              {inwardMode === "first" && needsStage(e) && (
-                                <div className="field">
-                                  <label>Category</label>
-                                  <select value={form.stage} autoFocus onChange={(ev) => setForm({ ...form, stage: ev.target.value as InwardForm["stage"] })}>
-                                    <option value="">Select</option>
-                                    <option value="tray">Base Tray</option>
-                                    <option value="lnp_tray">LNP Tray</option>
-                                  </select>
-                                </div>
-                              )}
+                              <div className="field">
+                                <label>Still to receive</label>
+                                <div className="readonly-val">{fmt(leftToReceive(e))} {e.unit} of {fmt(e.po_quantity)} {e.unit}</div>
+                              </div>
                               <div className="field">
                                 <label>{isTray(e) ? "Pallets Received" : "Number of Pallets"}</label>
                                 <input type="number" min={1} step={1} value={form.pallets} autoFocus={isTray(e)}
@@ -303,7 +342,7 @@ export default function GoodsReceiptDetailPanel({
                             </div>
                             <div style={{ display: "flex", gap: 10, marginBottom: 8 }}>
                               <button className="btn btn-primary" disabled={busy === e.id} onClick={() => confirmInward(e)}>
-                                {busy === e.id ? "Inwarding…" : inwardMode === "remaining" ? `Confirm Remaining · ${e.shipment_number}` : `Confirm Inward · ${e.shipment_number}`}
+                                {busy === e.id ? "Inwarding…" : `Confirm Remaining · ${e.shipment_number}`}
                               </button>
                               <button className="btn btn-ghost" disabled={busy === e.id} onClick={() => { setInwardingId(null); setForm(null); }}>Cancel</button>
                             </div>
@@ -334,6 +373,22 @@ export default function GoodsReceiptDetailPanel({
           canGenerate={canReceive}
           onGenerate={async () => { await openOrGenerateQr(qr.entry); }}
           onClose={() => setQr(null)}
+        />
+      )}
+
+      {inwardWizard && (
+        <GrInwardWizard
+          key={inwardWizard.inspectionId}
+          entry={inwardWizard.entry}
+          poNumber={record.po_number}
+          vendorName={record.vendor_name}
+          inspectionId={inwardWizard.inspectionId}
+          initialDetail={inwardWizard.detail}
+          permissions={permissions}
+          isNew={inwardWizard.isNew}
+          onApproved={(inspection) => { handleInspectionApproved(inwardWizard.entry, inspection); }}
+          onSaved={refreshRecord}
+          onClose={() => setInwardWizard(null)}
         />
       )}
     </>

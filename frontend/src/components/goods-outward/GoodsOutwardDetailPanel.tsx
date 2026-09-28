@@ -1,10 +1,20 @@
 "use client";
 import { useState } from "react";
 import { api, ApiError } from "@/lib/api";
-import type { GoodsOutwardDetail } from "@/lib/types";
+import type { GoodsOutwardDetail, OviDetail } from "@/lib/types";
 import CameraQrScanner from "@/components/storage/CameraQrScanner";
 import PackingListPanel from "@/components/goods-outward/PackingListPanel";
+import OviPanel from "@/components/outward-vehicle-inspection/OviPanel";
 import { T } from "@/lib/terms";
+
+// Exactly the OVI list page's own canView(): Pending/Draft opens editable
+// (there's nothing finished yet to just review), Hold/Approved opens
+// read-only (Hold is resolved via HoldReleaseSection inside that view, not
+// by re-editing the checklist). Kept as one function so the auto-open-
+// after-picking path and the manual button below never disagree.
+function oviModeFor(status: string): "view" | "edit" {
+  return status === "hold" || status === "approved" ? "view" : "edit";
+}
 
 function Kv({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -42,11 +52,15 @@ function StatusBadge({ status }: { status: string }) {
  * call returns.
  */
 export default function GoodsOutwardDetailPanel({
-  detail, canPick, canEdit, onClose, onChanged, onEdit,
+  detail, canPick, canEdit, canFillOvi, onClose, onChanged, onEdit,
 }: {
   detail: GoodsOutwardDetail;
   canPick: boolean;
   canEdit?: boolean;
+  // me.permissions.outward_vehicle_inspection (remapped to Factory's own
+  // Goods Outward permission by lib/currentProduct.ts) -- gates OviPanel's
+  // own can_fill_section-driven read-only logic, same as canPick/canEdit above.
+  canFillOvi: boolean;
   onClose: () => void;
   onChanged: () => void;
   onEdit?: () => void;
@@ -57,12 +71,39 @@ export default function GoodsOutwardDetailPanel({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [packingListOpen, setPackingListOpen] = useState(false);
+  // The Outward Vehicle Inspection record is auto-created (always exists)
+  // for this shipment -- record.outward_inspection already carries its
+  // {id,status} from the same read that loaded this panel, so opening it
+  // costs exactly one more call (api.getOvi, for the full record), never a
+  // create. reusing OviPanel.tsx completely unmodified: this is Goods
+  // Outward's entry point into that existing system, not a new one.
+  const [oviRecord, setOviRecord] = useState<OviDetail | null>(null);
+  const [oviError, setOviError] = useState<string | null>(null);
 
   const allComplete = record.status === "complete";
 
+  async function openOvi() {
+    if (!record.outward_inspection) return;
+    setOviError(null);
+    try {
+      setOviRecord(await api.getOvi(record.outward_inspection.id));
+    } catch (e) {
+      setOviError(e instanceof Error ? e.message : "Failed to load Outward Vehicle Inspection record");
+    }
+  }
+
   async function refresh() {
     const rec = await api.getGoodsOutward(record.id);
+    const justCompleted = rec.status === "complete" && record.status !== "complete";
     setRecord(rec);
+    // The one bit of automation the spec asked for: the moment the last
+    // pallet is picked, go straight into the inspection instead of leaving
+    // the user to find their own way to it.
+    if (justCompleted && rec.outward_inspection) {
+      try {
+        setOviRecord(await api.getOvi(rec.outward_inspection.id));
+      } catch { /* best-effort -- the manual button below still works */ }
+    }
   }
 
   async function handleScan(payload?: string) {
@@ -134,6 +175,7 @@ export default function GoodsOutwardDetailPanel({
           <button className="sp-close" onClick={onClose}>×</button>
         </div>
         <div className="sp-body">
+          {oviError && <div className="error-banner">{oviError}</div>}
           <div className="detail-card">
             <h3>Shipment Details</h3>
             <div className="detail-grid">
@@ -235,6 +277,14 @@ export default function GoodsOutwardDetailPanel({
           <button className="btn btn-ghost" onClick={onClose}>Close</button>
           <div className="sp-foot-right">
             <button className="btn btn-secondary" onClick={() => setPackingListOpen(true)}>Print Packing List</button>
+            {record.outward_inspection && (
+              <button className="btn btn-secondary" onClick={openOvi}>
+                {record.outward_inspection.status === "pending" ? "Outward Vehicle Inspection"
+                  : record.outward_inspection.status === "draft" ? "Resume Vehicle Inspection"
+                  : record.outward_inspection.status === "hold" ? "Vehicle Inspection · On Hold"
+                  : "View Vehicle Inspection"}
+              </button>
+            )}
             {canEdit && onEdit && (
               <button className="btn btn-primary" onClick={onEdit}>Edit</button>
             )}
@@ -246,6 +296,15 @@ export default function GoodsOutwardDetailPanel({
           shipmentId={record.id}
           shipmentNumber={record.shipment_number}
           onClose={() => setPackingListOpen(false)}
+        />
+      )}
+      {oviRecord && (
+        <OviPanel
+          record={oviRecord}
+          mode={oviModeFor(oviRecord.status)}
+          canFill={canFillOvi}
+          onClose={() => setOviRecord(null)}
+          onSaved={() => { onChanged(); refresh(); }}
         />
       )}
     </>

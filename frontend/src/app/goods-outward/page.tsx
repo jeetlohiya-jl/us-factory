@@ -39,6 +39,9 @@ export default function GoodsOutwardPage() {
   // -- both already exist and are unchanged, so this page just checks both.
   const csPerms = me?.permissions.customer_shipment;
   const spPerms = me?.permissions.shipment_picking;
+  // Remapped to Factory's own Goods Outward permission by
+  // lib/currentProduct.ts, same as csPerms/spPerms above.
+  const oviPerms = me?.permissions.outward_vehicle_inspection;
 
   const [skuCodes, setSkuCodes] = useState<SkuCode[]>([]);
   const [items, setItems] = useState<GoodsOutwardListItem[]>([]);
@@ -235,6 +238,7 @@ export default function GoodsOutwardPage() {
           detail={detail}
           canPick={!!spPerms?.can_create}
           canEdit={!!csPerms?.can_edit}
+          canFillOvi={!!oviPerms?.can_fill_section}
           onClose={() => setDetail(null)}
           onChanged={refreshAfterMutation}
           onEdit={() => { ensureSkuCodesLoaded(); setEditTarget(detail); setDetail(null); }}

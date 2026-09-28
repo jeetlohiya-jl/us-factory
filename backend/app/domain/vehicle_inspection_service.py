@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session, joinedload
 
+from app.core.product import current_unit
 from app.db import models
 from app.domain.id_counters import next_seq
 from app.domain.inward_qc_service import TRAY_FAMILY_CATEGORIES
@@ -51,12 +52,21 @@ def recompute_total_quantity(inspection: models.InwardVehicleInspection):
 # every field the callers below read (id, label, sort_order, affects_status)
 # is already loaded by the query itself, nothing lazy-loads afterward. A
 # fresh deploy/restart naturally picks up any future migration change.
-_active_checklist_items_cache: list[models.ChecklistItem] | None = None
+#
+# Migration 0066 made ChecklistItem per-unit (ProductScoped) -- Factory and
+# US Factory now have two different item lists on this one table, filtered
+# transparently by product_scope.py's with_loader_criteria. A single
+# process serves both products' requests (current_unit() is a per-request
+# contextvar, not a per-process constant), so this cache MUST be keyed by
+# unit -- a single unkeyed cache would freeze in whichever unit's items
+# happened to populate it first and silently serve those to the other unit
+# forever after.
+_active_checklist_items_cache: dict[str, list[models.ChecklistItem]] = {}
 
 
 def get_active_checklist_items(db: Session) -> list[models.ChecklistItem]:
-    global _active_checklist_items_cache
-    if _active_checklist_items_cache is None:
+    unit = current_unit()
+    if unit not in _active_checklist_items_cache:
         items = (
             db.query(models.ChecklistItem)
             .filter(models.ChecklistItem.is_active.is_(True))
@@ -65,8 +75,8 @@ def get_active_checklist_items(db: Session) -> list[models.ChecklistItem]:
         )
         for i in items:
             db.expunge(i)
-        _active_checklist_items_cache = items
-    return _active_checklist_items_cache
+        _active_checklist_items_cache[unit] = items
+    return _active_checklist_items_cache[unit]
 
 
 def required_checklist_ids(db: Session) -> list[uuid.UUID]:
@@ -120,7 +130,16 @@ def propagate_to_qc(db: Session, inspection: models.InwardVehicleInspection) -> 
     LNP Tray are genuinely different materials (today only LNP Tray is an
     active workflow; Base Tray is wired up for future use), so each gets
     its own correctly-labeled QC record rather than being collapsed into a
-    single shared category."""
+    single shared category.
+
+    Never fires for a Goods-Receipt-linked inspection (migration 0066,
+    source_goods_receipt_entry_id set) -- Inward QC is a US Factory-only
+    downstream module that doesn't exist in Factory's product at all
+    (Factory's own Goods Receipt module replaces both Inward Vehicle
+    Inspection and Inward QC as separate stages), so creating one here
+    would be a stray, meaningless record."""
+    if inspection.source_goods_receipt_entry_id is not None:
+        return None
     if inspection.category not in TRAY_FAMILY_CATEGORIES or inspection.status != "approved":
         return None
     existing = (
