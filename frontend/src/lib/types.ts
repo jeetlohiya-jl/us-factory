@@ -1245,6 +1245,16 @@ export interface CustomerShipmentListItem {
   created_at: string;
 }
 
+// 2026-09-28 -- the Production Run(s) actually linked to a line item, so
+// Trays (pcs) can be derived (SUM(total_fg_pallets) x Trays per Sleeve)
+// instead of hand-typed -- see customer_shipment_service.
+// compute_pcs_from_production_runs.
+export interface LinkedProductionRun {
+  id: string;
+  run_number: string;
+  total_fg_pallets: number;
+}
+
 export interface CustomerShipmentLineItem {
   id: string;
   sku_code_id: string | null;
@@ -1255,6 +1265,7 @@ export interface CustomerShipmentLineItem {
   // Section 13.
   pcs: number | null;
   pcs_per_sleeve: string | null;
+  production_runs: LinkedProductionRun[];
 }
 
 export interface ShipmentPickingRequestSummary {
@@ -1291,12 +1302,18 @@ export interface CustomerShipmentLineItemDraft {
   // Section 13.
   pcs: string | number;
   pcs_per_sleeve: string;
+  // 2026-09-28 -- Production Run(s) this line item's Trays are derived
+  // from; empty means Trays stays a manual, hand-typed value.
+  production_run_ids: string[];
 }
 
 export interface CustomerShipmentCreatePayload {
   customer: string;
   shipment_number: string; // user-entered, not system-generated
-  line_items: { sku_code_id: string; sku_version_id: string; pallets_required: number; pcs?: number | null; pcs_per_sleeve?: string | null }[];
+  line_items: {
+    sku_code_id: string; sku_version_id: string; pallets_required: number;
+    pcs?: number | null; pcs_per_sleeve?: string | null; production_run_ids?: string[];
+  }[];
 }
 
 // 2026-09-24 -- Goods Outward Edit payload (api.updateCustomerShipment,
@@ -1313,6 +1330,7 @@ export interface CustomerShipmentUpdatePayload {
     pallets_required: number;
     pcs?: number | null;
     pcs_per_sleeve?: string | null;
+    production_run_ids?: string[];
   }[];
 }
 
@@ -1388,6 +1406,7 @@ export interface GoodsOutwardLineItem {
   pallets_required: number;
   pcs: number | null;
   pcs_per_sleeve: string | null;
+  production_runs: LinkedProductionRun[];
   // The 1:1 ShipmentPickingRequest fanned out for this line item at create
   // time (always present -- see customer_shipment_service.create_
   // customer_shipment). Null only in the impossible case of a line item

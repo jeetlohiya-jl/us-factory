@@ -877,6 +877,11 @@ class CustomerShipmentLineItemIn(BaseModel):
     # Section 13.
     pcs: Optional[int] = None
     pcs_per_sleeve: Optional[str] = None
+    # 2026-09-28 -- when non-empty, `pcs` (Trays) is recomputed server-side
+    # from these runs' total_fg_pallets x pcs_per_sleeve, overriding
+    # whatever `pcs` value was sent (see customer_shipment_service.py).
+    # Empty/omitted keeps `pcs` as a manual, hand-typed value.
+    production_run_ids: list[uuid.UUID] = []
 
 
 class CustomerShipmentCreateIn(BaseModel):
@@ -888,6 +893,12 @@ class CustomerShipmentCreateIn(BaseModel):
     line_items: list[CustomerShipmentLineItemIn] = []
 
 
+class LinkedProductionRunOut(BaseModel):
+    id: uuid.UUID
+    run_number: str
+    total_fg_pallets: int
+
+
 class CustomerShipmentLineItemOut(BaseModel):
     id: uuid.UUID
     sku_code: Optional[str] = None
@@ -895,6 +906,7 @@ class CustomerShipmentLineItemOut(BaseModel):
     pallets_required: int
     pcs: Optional[int] = None
     pcs_per_sleeve: Optional[str] = None
+    production_runs: list[LinkedProductionRunOut] = []
 
 
 class CustomerShipmentCreateOut(BaseModel):
@@ -920,6 +932,7 @@ class CustomerShipmentLineItemUpdateIn(BaseModel):
     pallets_required: int
     pcs: Optional[int] = None
     pcs_per_sleeve: Optional[str] = None
+    production_run_ids: list[uuid.UUID] = []
 
 
 class CustomerShipmentUpdateIn(BaseModel):

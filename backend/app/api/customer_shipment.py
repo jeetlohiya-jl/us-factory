@@ -85,6 +85,13 @@ def create(
                 sku_version=li.sku_version_snapshot,
                 pallets_required=li.pallets_required,
                 pcs=li.pcs, pcs_per_sleeve=li.pcs_per_sleeve,
+                production_runs=[
+                    schemas.LinkedProductionRunOut(
+                        id=link.production_run.id, run_number=link.production_run.run_number,
+                        total_fg_pallets=link.production_run.total_fg_pallets,
+                    )
+                    for link in li.production_run_links if link.production_run
+                ],
             )
             for li in shipment.line_items
         ],
@@ -150,6 +157,13 @@ def update(
                 sku_version=li.sku_version_snapshot,
                 pallets_required=li.pallets_required,
                 pcs=li.pcs, pcs_per_sleeve=li.pcs_per_sleeve,
+                production_runs=[
+                    schemas.LinkedProductionRunOut(
+                        id=link.production_run.id, run_number=link.production_run.run_number,
+                        total_fg_pallets=link.production_run.total_fg_pallets,
+                    )
+                    for link in li.production_run_links if link.production_run
+                ],
             )
             for li in shipment.line_items
         ],

@@ -10,7 +10,7 @@ import type {
   MaterialConsumptionPalletRow, ProductionListItem, ProductionDetail, ProductionMachineEntry, ProductionSavePayload,
   IpqcListItem, IpqcDetail, IpqcSavePayload,
   RqcListItem, RqcDetail, RqcSavePayload, RqcApprovalEntryPayload, RqcCoaEntry, RqcCoaObservation,
-  CustomerShipmentListItem, CustomerShipmentDetail, CustomerShipmentCreatePayload, CustomerShipmentCreateResult, CustomerShipmentUpdatePayload,
+  CustomerShipmentListItem, CustomerShipmentDetail, CustomerShipmentCreatePayload, CustomerShipmentCreateResult, CustomerShipmentUpdatePayload, LinkedProductionRun,
   ShipmentPickingListItem, ShipmentPickingDetail, PalletLifecycleStatus,
   GoodsOutwardListItem, GoodsOutwardDetail, GoodsOutwardLineItem, GoodsOutwardScannedPallet,
   PackingListData, PackingListLineItem, PackingListSavePayload,
@@ -1415,10 +1415,20 @@ async function listCustomerShipmentsSb(
   return { items: rows, matched_count: count ?? rows.length };
 }
 
+type RawLinkedRun = { production_run: { id: string; run_number: string; total_fg_pallets: number } | { id: string; run_number: string; total_fg_pallets: number }[] | null };
+
+function flattenLinkedRuns(raw: RawLinkedRun[] | undefined): LinkedProductionRun[] {
+  return (raw || [])
+    .map((r) => (Array.isArray(r.production_run) ? r.production_run[0] : r.production_run))
+    .filter((r): r is { id: string; run_number: string; total_fg_pallets: number } => !!r)
+    .map((r) => ({ id: r.id, run_number: r.run_number, total_fg_pallets: r.total_fg_pallets }));
+}
+
 type RawCsLineItem = {
   id: string; sku_code_id: string | null; sku_version_id: string | null;
   sku_code_snapshot: string | null; sku_version_snapshot: string | null; pallets_required: number;
   pcs: number | null; pcs_per_sleeve: string | null;
+  production_runs?: RawLinkedRun[];
 };
 type RawCsPickingRequest = {
   id: string; sku_code_snapshot: string | null; sku_version_snapshot: string | null;
@@ -1434,7 +1444,8 @@ type RawCsDetail = {
 // line items + linked Shipment Picking requests, for traceability.
 const CS_DETAIL_SELECT =
   "id,shipment_number,container_number,customer,created_at," +
-  "line_items:customer_shipment_line_items(id,sku_code_id,sku_version_id,sku_code_snapshot,sku_version_snapshot,pallets_required,pcs,pcs_per_sleeve)," +
+  "line_items:customer_shipment_line_items(id,sku_code_id,sku_version_id,sku_code_snapshot,sku_version_snapshot,pallets_required,pcs,pcs_per_sleeve," +
+  "production_runs:customer_shipment_line_item_production_runs(production_run:production_runs(id,run_number,total_fg_pallets)))," +
   "picking_requests:shipment_picking_requests(id,sku_code_snapshot,sku_version_snapshot,pallets_required,status,picks:shipment_picking_picks(id))";
 
 function flattenCsDetail(raw: RawCsDetail): CustomerShipmentDetail {
@@ -1445,6 +1456,7 @@ function flattenCsDetail(raw: RawCsDetail): CustomerShipmentDetail {
       id: li.id, sku_code_id: li.sku_code_id, sku_version_id: li.sku_version_id,
       sku_code: li.sku_code_snapshot, sku_version: li.sku_version_snapshot, pallets_required: li.pallets_required,
       pcs: li.pcs, pcs_per_sleeve: li.pcs_per_sleeve,
+      production_runs: flattenLinkedRuns(li.production_runs),
     })),
     picking_requests: (raw.picking_requests || []).map((r) => ({
       id: r.id, sku_code: r.sku_code_snapshot, sku_version: r.sku_version_snapshot,
@@ -1572,6 +1584,7 @@ type RawGoLineItem = {
   id: string; sku_code_id: string | null; sku_version_id: string | null;
   sku_code_snapshot: string | null; sku_version_snapshot: string | null;
   pallets_required: number; pcs: number | null; pcs_per_sleeve: string | null;
+  production_runs?: RawLinkedRun[];
   picking_request: RawGoPickingRequest;
 };
 type RawGoShipment = {
@@ -1581,6 +1594,7 @@ type RawGoShipment = {
 
 const GO_LINE_ITEM_SELECT =
   "id,sku_code_id,sku_version_id,sku_code_snapshot,sku_version_snapshot,pallets_required,pcs,pcs_per_sleeve," +
+  "production_runs:customer_shipment_line_item_production_runs(production_run:production_runs(id,run_number,total_fg_pallets))," +
   "picking_request:shipment_picking_requests(id,status,picks:shipment_picking_picks(id,pallet_id,picked_at,pallet:pallets(display_id,batch_code)))";
 
 /** A shipment's aggregate status: complete only once every line item's own
@@ -1605,6 +1619,7 @@ function flattenGoLineItem(raw: RawGoLineItem): GoodsOutwardLineItem {
     id: raw.id, sku_code_id: raw.sku_code_id, sku_version_id: raw.sku_version_id,
     sku_code: raw.sku_code_snapshot, sku_version: raw.sku_version_snapshot,
     pallets_required: raw.pallets_required, pcs: raw.pcs, pcs_per_sleeve: raw.pcs_per_sleeve,
+    production_runs: flattenLinkedRuns(raw.production_runs),
     picking_request_id: req?.id ?? null,
     status: (req?.status as GoodsOutwardLineItem["status"]) || "pending",
     picks,
