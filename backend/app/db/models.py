@@ -1592,6 +1592,14 @@ class GoodsReceiptEntry(Base):
     # The PO line's own identifier (HA1, V6, ...) -- this IS the shipment
     # number used downstream (migration 0046 renamed it from container_name).
     shipment_number = Column(Text, nullable=False)
+    # Added by migration 0050 (multi-category PO) -- was missing from this
+    # model entirely until 2026-09-28 (found via a production AttributeError:
+    # 'GoodsReceiptEntry' object has no attribute 'category', the first time
+    # any FastAPI/ORM code -- create_draft in inward_vehicle_inspections.py --
+    # ever read this column; every other reader had always gone straight
+    # through Supabase, bypassing the ORM). Null for a tray row synced from
+    # Zoho with no stage chosen yet (see needsStage in GoodsReceiptDetailPanel.tsx).
+    category = Column(Text, nullable=True)
     sku_code_id = Column(UUID(as_uuid=True), ForeignKey("sku_codes.id"), nullable=False)
     sku_version_id = Column(UUID(as_uuid=True), ForeignKey("sku_versions.id"), nullable=True)
     sku_code_snapshot = Column(Text, nullable=True)
