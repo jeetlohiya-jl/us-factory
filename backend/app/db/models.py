@@ -205,7 +205,7 @@ class Machine(ProductScoped, Base):
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
 
-class InwardVehicleInspection(Base):
+class InwardVehicleInspection(ProductScoped, Base):
     __tablename__ = "inward_vehicle_inspections"
     id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
     shipment_number = Column(Text, nullable=False)
@@ -214,6 +214,15 @@ class InwardVehicleInspection(Base):
     truck_number = Column(Text, nullable=True)
     container_number = Column(Text, nullable=True)
     vendor_name = Column(Text, nullable=True)
+    # Migration 0066 -- set only when this inspection was opened from
+    # Factory's own Goods Receipt "Inward" action (never by US Factory's own
+    # Vehicle Inspection flow). One inspection per entry (unique, enforced
+    # in SQL too) -- re-clicking "Inward" resumes this same record instead
+    # of creating a second one. See goods_receipt's GrInwardWizard.tsx and
+    # this file's product-scoping note just below (ProductScoped): this is
+    # also the first time this table is ever written from Factory, hence
+    # the mixin.
+    source_goods_receipt_entry_id = Column(UUID(as_uuid=True), ForeignKey("goods_receipt_entries.id"), nullable=True, unique=True)
     # Nullable FK alongside vendor_name (see migration 0010): vendor_name
     # stays the permanent display snapshot; vendor_id is the real
     # relationship, resolved at write time from the same vendors dropdown
@@ -233,6 +242,7 @@ class InwardVehicleInspection(Base):
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
     vendor = relationship("Vendor", foreign_keys=[vendor_id])
+    source_goods_receipt_entry = relationship("GoodsReceiptEntry")
     line_items = relationship(
         "InwardVehicleInspectionLineItem", back_populates="inspection",
         cascade="all, delete-orphan", order_by="InwardVehicleInspectionLineItem.sort_order",
@@ -281,7 +291,13 @@ class InwardVehicleInspectionImage(Base):
     inspection = relationship("InwardVehicleInspection", back_populates="images")
 
 
-class ChecklistItem(Base):
+class ChecklistItem(ProductScoped, Base):
+    # Migration 0066 -- per-unit master data (same treatment as Vendors/SKU
+    # Names/Machines): Factory's own 7-item Inward Inspection checklist is a
+    # different list from US Factory's original 8, not a shared one. The
+    # ProductScoped mixin's automatic query filtering (product_scope.py) is
+    # what makes vehicle_inspection_service.get_active_checklist_items()
+    # transparently return only the current unit's own items.
     __tablename__ = "inward_vehicle_inspection_checklist_items"
     id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
     label = Column(Text, nullable=False)

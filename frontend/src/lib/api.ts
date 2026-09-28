@@ -2107,13 +2107,15 @@ const GR_DETAIL_SELECT =
   "sku_code:sku_code_snapshot,sku_version:sku_version_snapshot,po_quantity,received_quantity,unit,pallet_count," +
   "status,inwarded_at,sort_order," +
   "inward_events:goods_receipt_inward_events(received_quantity,pallet_count,unit,kind,inwarded_at)," +
-  "qr_batch:qr_generation_records!qr_generation_records_source_goods_receipt_entry_id_fkey(id,batch_display_id,status,quantity))";
+  "qr_batch:qr_generation_records!qr_generation_records_source_goods_receipt_entry_id_fkey(id,batch_display_id,status,quantity)," +
+  "inward_inspection:inward_vehicle_inspections!inward_vehicle_inspections_source_goods_receipt_entry_id_fkey(id,status))";
 
-type RawGrEntry = Omit<GoodsReceiptEntry, "qr_batch" | "po_quantity" | "received_quantity"> & {
+type RawGrEntry = Omit<GoodsReceiptEntry, "qr_batch" | "po_quantity" | "received_quantity" | "inward_inspection"> & {
   sort_order: number;
   po_quantity: number | string;
   received_quantity: number | string | null;
   qr_batch: GoodsReceiptEntry["qr_batch"][] | GoodsReceiptEntry["qr_batch"];
+  inward_inspection: NonNullable<GoodsReceiptEntry["inward_inspection"]>[] | GoodsReceiptEntry["inward_inspection"];
 };
 
 function flattenGoodsReceipt(raw: Omit<GoodsReceiptDetail, "entries"> & { entries: RawGrEntry[] }): GoodsReceiptDetail {
@@ -2124,6 +2126,7 @@ function flattenGoodsReceipt(raw: Omit<GoodsReceiptDetail, "entries"> & { entrie
       po_quantity: Number(e.po_quantity),
       received_quantity: e.received_quantity == null ? null : Number(e.received_quantity),
       qr_batch: Array.isArray(e.qr_batch) ? e.qr_batch[0] ?? null : e.qr_batch ?? null,
+      inward_inspection: Array.isArray(e.inward_inspection) ? e.inward_inspection[0] ?? null : e.inward_inspection ?? null,
     }));
   return { ...raw, entries };
 }
@@ -2357,8 +2360,12 @@ export const api = {
     return { items: (data || []) as InspectionListItem[], matched_count: count ?? 0, total_count };
   },
 
-  createDraft: (category: Category) =>
-    request<InspectionDetail>(`/api/v1/inward-vehicle-inspections/draft?category=${category}`, { method: "POST" }),
+  createDraft: (category: Category, sourceGoodsReceiptEntryId?: string) =>
+    request<InspectionDetail>(
+      `/api/v1/inward-vehicle-inspections/draft?category=${category}` +
+        (sourceGoodsReceiptEntryId ? `&source_goods_receipt_entry_id=${sourceGoodsReceiptEntryId}` : ""),
+      { method: "POST" }
+    ),
 
   getInspection: (id: string) =>
     sbRequest<InspectionDetail>(async () => {
@@ -2368,7 +2375,7 @@ export const api = {
           .select(
             "id,shipment_number,is_auto_shipment_number,category,truck_number,container_number,vendor_name," +
               "invoice_number,transporter_name,seal_number,total_quantity,inspection_passed_quantity,remarks," +
-              "status,created_at,updated_at," +
+              "status,created_at,updated_at,source_goods_receipt_entry_id," +
               "line_items:inward_vehicle_inspection_line_items(id,sku_code_id,sku_version_id,quantity,unit,sku_code:sku_codes(code),sku_version:sku_versions(version))," +
               "images:inward_vehicle_inspection_images(id,image_type,public_url,ocr_extracted_value,ocr_confidence,ocr_status,sort_order)," +
               "checklist_answers:inward_vehicle_inspection_checklist_answers(checklist_item_id,answer)"

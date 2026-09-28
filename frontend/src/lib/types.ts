@@ -187,6 +187,9 @@ export interface InspectionDetail {
   checklist_answers: ChecklistAnswer[];
   linked_qc_id: string | null;
   linked_qc_shipment_number: string | null;
+  // 2026-09-28 -- set only for an inspection opened from Factory's own
+  // Goods Receipt "Inward" action (migration 0066).
+  source_goods_receipt_entry_id: string | null;
 }
 
 export interface Permissions {
@@ -1782,6 +1785,13 @@ export interface GoodsReceiptEntry {
   // "Inward remaining" (migration 0056).
   inward_events?: { received_quantity: number; pallet_count: number; unit: string; kind: "initial" | "remaining"; inwarded_at: string }[];
   qr_batch: { id: string; batch_display_id: string; status: "pending" | "generated"; quantity: number } | null;
+  // 2026-09-28 -- the Inward Inspection this entry's "Inward" click opened
+  // (see GrInwardWizard.tsx), if any. Draft/Hold means the entry is still
+  // Pending and the row shows "Resume Inspection"/"View Inspection" instead
+  // of "Inward"; an inspection reaching Approved is what actually performs
+  // the real inward (status flips to "inwarded" separately, at that point)
+  // -- this field itself doesn't change once Approved.
+  inward_inspection?: { id: string; status: InspectionStatus } | null;
 }
 
 export interface GoodsReceiptDetail {

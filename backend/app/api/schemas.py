@@ -191,6 +191,9 @@ class InspectionDetailOut(BaseModel):
     checklist_answers: list[ChecklistAnswerOut]
     linked_qc_id: Optional[uuid.UUID] = None
     linked_qc_shipment_number: Optional[str] = None
+    # Migration 0066 -- set only for an inspection opened from Factory's own
+    # Goods Receipt "Inward" action.
+    source_goods_receipt_entry_id: Optional[uuid.UUID] = None
 
 
 # ---------------------------------------------------------------------------
