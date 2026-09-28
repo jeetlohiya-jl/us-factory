@@ -215,14 +215,20 @@ class InwardVehicleInspection(ProductScoped, Base):
     container_number = Column(Text, nullable=True)
     vendor_name = Column(Text, nullable=True)
     # Migration 0066 -- set only when this inspection was opened from
-    # Factory's own Goods Receipt "Inward" action (never by US Factory's own
-    # Vehicle Inspection flow). One inspection per entry (unique, enforced
-    # in SQL too) -- re-clicking "Inward" resumes this same record instead
-    # of creating a second one. See goods_receipt's GrInwardWizard.tsx and
+    # Factory's own Goods Receipt "Inward" / "Inward remaining" action
+    # (never by US Factory's own Vehicle Inspection flow). Migration 0068
+    # relaxed the plain unique constraint this column started with to a
+    # partial unique index (source_goods_receipt_entry_id, enforced in SQL)
+    # scoped to status <> 'approved': only one inspection may be IN
+    # PROGRESS for a given entry at a time -- re-clicking "Inward"/"Inward
+    # remaining" resumes that one instead of creating a second -- but once
+    # it's approved, a fresh inspection can be opened for the entry's next
+    # delivery, so an entry accumulates one approved inspection per
+    # delivery over its lifetime. See goods_receipt's GrInwardWizard.tsx and
     # this file's product-scoping note just below (ProductScoped): this is
     # also the first time this table is ever written from Factory, hence
     # the mixin.
-    source_goods_receipt_entry_id = Column(UUID(as_uuid=True), ForeignKey("goods_receipt_entries.id"), nullable=True, unique=True)
+    source_goods_receipt_entry_id = Column(UUID(as_uuid=True), ForeignKey("goods_receipt_entries.id"), nullable=True)
     # Nullable FK alongside vendor_name (see migration 0010): vendor_name
     # stays the permanent display snapshot; vendor_id is the real
     # relationship, resolved at write time from the same vendors dropdown

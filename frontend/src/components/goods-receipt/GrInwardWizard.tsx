@@ -6,7 +6,7 @@ import ImageField from "@/components/inward-vehicle-inspection/ImageField";
 import MultiImageField from "@/components/inward-vehicle-inspection/MultiImageField";
 import ChecklistStep from "@/components/inward-vehicle-inspection/ChecklistStep";
 import { statusLabel } from "@/lib/terms";
-import { needsStage } from "./GoodsReceiptDetailPanel";
+import { isTray, needsStage } from "./GoodsReceiptDetailPanel";
 
 /**
  * Goods Receipt's own "Inward" flow (2026-09-28) -- a fork of
@@ -91,6 +91,13 @@ export default function GrInwardWizard({
   const isFinalized = detail.status === "approved" || detail.status === "hold";
   const readOnlyStep1 = isFinalized && !permissions.can_edit;
   const canFillSection = permissions.can_fill_section || permissions.can_create || permissions.can_edit;
+  // This same wizard reopens for a later "Inward remaining" delivery once
+  // the entry is already inwarded (2026-09-28) -- entry.po_quantity there
+  // is the container's FULL PO quantity, which would read as "the operator
+  // must enter that many pallets again" if shown alone, so the header adds
+  // how much is actually still left to receive in that case.
+  const isRemainingDelivery = entry.status === "inwarded";
+  const leftToReceive = Math.max(0, entry.po_quantity - (entry.received_quantity ?? 0));
 
   function buildBasicPayload() {
     return {
@@ -150,6 +157,18 @@ export default function GrInwardWizard({
   function validatePallets(): string | null {
     const n = Number(pallets);
     if (!(n >= 1) || !Number.isInteger(n)) return "Quantity (Pallets) must be a whole number of at least 1.";
+    // A tray's pallet count IS its received quantity (see buildBasicPayload
+    // and GoodsReceiptDetailPanel's handleInspectionApproved), so on a
+    // remaining delivery it can't exceed what's actually still left to
+    // receive -- caught here rather than only after Submit. Non-tray
+    // materials always receive their full remaining quantity in one
+    // delivery regardless of pallet count entered (leftToReceive is in the
+    // PO's own unit there, not pallets, so it isn't a meaningful cap on
+    // pallet count for them -- and in practice they never reach a second
+    // delivery, since first inward always receives them in full).
+    if (isRemainingDelivery && isTray(entry) && n > leftToReceive) {
+      return `Only ${leftToReceive} pallet${leftToReceive === 1 ? "" : "s"} left to receive on this PO.`;
+    }
     return null;
   }
 
@@ -281,6 +300,12 @@ export default function GrInwardWizard({
                     <div className="detail-kv-label">PO Quantity</div>
                     <div className="detail-kv-value">{entry.po_quantity} {entry.unit}</div>
                   </div>
+                  {isRemainingDelivery && (
+                    <div>
+                      <div className="detail-kv-label">Left to Receive</div>
+                      <div className="detail-kv-value">{leftToReceive} {entry.unit}</div>
+                    </div>
+                  )}
                 </div>
               </div>
 
