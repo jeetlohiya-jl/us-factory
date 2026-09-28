@@ -127,6 +127,15 @@ def save_packing_list_fields(
 
 
 def _kv_row_style():
+    # 2026-09-28 -- padding/leading re-tuned against a real reference copy
+    # ("Last mile packing list D61.pdf"), measured row-by-row with
+    # pdfplumber: a single-line row (Consignee/PO No./PO Date/PI No.) there
+    # is consistently ~19pt tall and a 3-line one (Address/Ship To) ~36pt.
+    # Row height here is (line count x leading) + top/bottom padding, and
+    # the label column's leading (12, reportlab's un-overridden default)
+    # is what a single-line row's height is actually driven by -- solving
+    # both measurements together gives ~3.5/3.5 padding plus a tightened
+    # 9.5 leading on the (multi-line) value cells, see _addr_paragraph.
     return TableStyle([
         ("FONTNAME", (0, 0), (0, -1), "Times-Bold"),
         ("FONTNAME", (1, 0), (1, -1), "Times-Roman"),
@@ -135,26 +144,31 @@ def _kv_row_style():
         ("GRID", (0, 0), (-1, -1), 0.75, BLACK),
         ("LEFTPADDING", (0, 0), (-1, -1), 6),
         ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-        ("TOPPADDING", (0, 0), (-1, -1), 2.5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5),
+        ("TOPPADDING", (0, 0), (-1, -1), 3.5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3.5),
     ])
 
 
 def _section_bar(title: str, width: float):
+    # 2026-09-28 -- same re-tuning pass: the reference's "SHIPMENT DETAILS"/
+    # "GOODS DETAILS" bars measure ~22.5pt tall, not this function's
+    # original 19pt (13pt leading + 3+3 padding) -- bumped to 4.5/4.5.
     style = ParagraphStyle("section", fontName="Helvetica-Bold", fontSize=11, textColor=NAVY, leading=13)
     t = Table([[Paragraph(title, style)]], colWidths=[width])
     t.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, -1), SECTION_BG),
         ("GRID", (0, 0), (-1, -1), 0.75, BLACK),
         ("LEFTPADDING", (0, 0), (-1, -1), 6),
-        ("TOPPADDING", (0, 0), (-1, -1), 3),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ("TOPPADDING", (0, 0), (-1, -1), 4.5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4.5),
     ]))
     return t
 
 
 def _addr_paragraph(text: str | None, bold_first_line: bool = False):
-    style = ParagraphStyle("addr", fontName="Times-Roman", fontSize=10, leading=12)
+    # leading tightened 12 -> 9.5 (see _kv_row_style's comment) so a 3-line
+    # address block doesn't dwarf the reference's own compact one.
+    style = ParagraphStyle("addr", fontName="Times-Roman", fontSize=10, leading=9.5)
     if not text:
         return Paragraph("—", style)
     lines = [l.strip() for l in text.replace("\r\n", "\n").split("\n") if l.strip()]
@@ -201,11 +215,23 @@ def generate_packing_list_pdf(db: Session, shipment: models.CustomerShipment) ->
     ]))
 
     # -- Title band -----------------------------------------------------------
-    title_style = ParagraphStyle("title", fontName="Helvetica-Bold", fontSize=20, textColor=NAVY, alignment=TA_CENTER)
+    # 2026-09-28 -- the reference's title band measures ~57pt tall, noticeably
+    # more breathing room than this originally shipped with (9/9 padding).
+    # 2026-09-28 -- reportlab's un-set Paragraph leading defaults to a flat 12pt
+    # regardless of fontSize (it is NOT auto-scaled to ~1.2x), so a 20pt title
+    # left at the default was only ever going to render a 12pt-tall text line
+    # no matter how much TOPPADDING/BOTTOMPADDING got added around it. Measured
+    # against the reference ("Last mile packing list D61.pdf") with pdfplumber,
+    # the title band there is ~57.2pt tall; an explicit leading=24 (the usual
+    # ~1.2x for a 20pt font) plus 16.5/16.5 padding lands at 24+16.5+16.5=57,
+    # matching that target almost exactly.
+    title_style = ParagraphStyle(
+        "title", fontName="Helvetica-Bold", fontSize=20, leading=24, textColor=NAVY, alignment=TA_CENTER
+    )
     title_table = Table([[Paragraph("PACKING LIST", title_style)]], colWidths=[usable_width])
     title_table.setStyle(TableStyle([
-        ("TOPPADDING", (0, 0), (-1, -1), 9),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 9),
+        ("TOPPADDING", (0, 0), (-1, -1), 16.5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 16.5),
     ]))
 
     # -- Shipment Details -------------------------------------------------
@@ -293,6 +319,9 @@ def generate_packing_list_pdf(db: Session, shipment: models.CustomerShipment) ->
     ])
     last_row = len(goods_data) - 1
 
+    # 2026-09-28 -- the reference's own goods-table rows measure noticeably
+    # taller than this shipped with (a 2-line data row ~36.65pt vs. this
+    # table's original 31pt at 3.5/3.5 padding) -- bumped to 6/6.
     goods_table = Table(goods_data, colWidths=goods_widths, repeatRows=1)
     goods_table.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), SECTION_BG),
@@ -301,8 +330,8 @@ def generate_packing_list_pdf(db: Session, shipment: models.CustomerShipment) ->
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("LEFTPADDING", (0, 0), (-1, -1), 5),
         ("RIGHTPADDING", (0, 0), (-1, -1), 5),
-        ("TOPPADDING", (0, 0), (-1, -1), 3.5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 3.5),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
     ]))
 
     # -- Footer: signature line -------------------------------------------
@@ -321,7 +350,10 @@ def generate_packing_list_pdf(db: Session, shipment: models.CustomerShipment) ->
         _section_bar("SHIPMENT DETAILS", usable_width),
         shipment_table,
         _section_bar("GOODS DETAILS", usable_width),
-        Spacer(1, 0),
+        # 2026-09-28 -- the reference has a real ~7pt gap here (measured
+        # directly, not just visual guesswork) between the bar and the
+        # table it labels; this was a placeholder 0 before.
+        Spacer(1, 7),
         goods_table,
         *footer_flowables,
     ]

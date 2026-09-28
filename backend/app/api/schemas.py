@@ -458,6 +458,15 @@ class ProductionMachineEntryAttributesIn(BaseModel):
     rejection_glue_on_pad: Optional[str] = None
     rejection_pad_placement_direction: Optional[str] = None
     rejection_adhesion_issue: Optional[str] = None
+    # Factory-only Rejection Classification (migration 0065) -- same
+    # None-means-"don't touch", empty-means-0 convention as the US
+    # Factory rejection_* fields above. A US Factory save never sends
+    # these; a Factory save never sends the six above.
+    rejection_foreign_material: Optional[str] = None
+    rejection_glue_strings: Optional[str] = None
+    rejection_pad_direction: Optional[str] = None
+    rejection_pad_placement: Optional[str] = None
+    rejection_stickiness: Optional[str] = None
     # Migration 0039, task section 1 -- FG pallets actually produced on this
     # machine entry (per shift + machine, same "one column per machine"
     # pattern as Rejection Classification). None-means-"don't touch",
@@ -497,6 +506,14 @@ class ProductionSaveOut(BaseModel):
     rejection_glue_on_pad: Decimal
     rejection_pad_placement_direction: Decimal
     rejection_adhesion_issue: Decimal
+    # Factory-only Rejection Classification (migration 0065) -- same
+    # not-actually-consumed-by-the-frontend aggregate-response convention
+    # as the six fields above (see _sum_rejections).
+    rejection_foreign_material: Decimal
+    rejection_glue_strings: Decimal
+    rejection_pad_direction: Decimal
+    rejection_pad_placement: Decimal
+    rejection_stickiness: Decimal
     wastage_entries: list[ProductionWastageEntryOut] = []
 
 

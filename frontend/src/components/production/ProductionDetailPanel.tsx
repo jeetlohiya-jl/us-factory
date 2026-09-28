@@ -7,6 +7,7 @@ import { formatTime12h, nowHHMM } from "@/components/material-consumption/Wizard
 import { api } from "@/lib/api";
 import ConsumptionConfirmModal from "@/components/production/ConsumptionConfirmModal";
 import { T } from "@/lib/terms";
+import { useProduct } from "@/lib/productContext";
 
 const CATEGORY_LABELS = QC_CATEGORY_LABELS;
 
@@ -26,7 +27,9 @@ function StatusBadge({ status }: { status: string }) {
 
 // Rejection Classification field order/labels, matching the prototype's
 // #prod-rc-* inputs exactly (Damage, Misplaced glue, Misplaced pad, Glue on
-// pad, Pad placement direction, Adhesion issue).
+// pad, Pad placement direction, Adhesion issue). US Factory only as of
+// migration 0065 -- see FACTORY_REJECTION_FIELDS below for Factory's own
+// replacement list.
 const REJECTION_FIELDS: { key: keyof ProductionDetail["rejection_classification"]; label: string }[] = [
   { key: "damage", label: "Damage" },
   { key: "misplaced_glue", label: "Misplaced glue" },
@@ -34,6 +37,21 @@ const REJECTION_FIELDS: { key: keyof ProductionDetail["rejection_classification"
   { key: "glue_on_pad", label: "Glue on pad" },
   { key: "pad_placement_direction", label: "Pad placement direction" },
   { key: "adhesion_issue", label: "Adhesion issue" },
+];
+
+// 2026-09-28 -- Factory-only replacement for Rejection Classification
+// (migration 0065), matching the "FINISHED GOODS RANDOM QUALITY ASSURANCE
+// PLAN -- PADDED TRAYS" sheet's defect list exactly -- the same 5 items
+// Factory RQC's own defect classification already uses (see
+// FactoryRqcDetailPanel/Wizard's RQC_DEFECT_ITEMS_FACTORY), kept here with
+// identical wording for consistency across the two screens. US Factory is
+// completely untouched -- it keeps REJECTION_FIELDS above.
+const FACTORY_REJECTION_FIELDS: { key: keyof ProductionDetail["rejection_classification"]; label: string }[] = [
+  { key: "foreign_material", label: "Foreign material (insects, hair, dust)" },
+  { key: "glue_strings", label: "Glue strings / glue on side walls" },
+  { key: "pad_direction", label: "Direction of the pad" },
+  { key: "pad_placement", label: "Placement / offset of the pad" },
+  { key: "stickiness", label: "Stickiness of the pad" },
 ];
 
 type EditableWastage = { machine_id: string | null; trays: number | null; reason: string | null };
@@ -47,6 +65,8 @@ type EditableWastage = { machine_id: string | null; trays: number | null; reason
 // the exact same shape (one value per machine entry per field).
 type AttrKey = "machine_no" | "auto_padding" | "container_order_no" | "weight" | "pcs_per_sleeve" | "sleeve_per_case" | "total_pcs_per_pallet" | "pad_type" | "pad_color"
   | "rejection_damage" | "rejection_misplaced_glue" | "rejection_misplaced_pad" | "rejection_glue_on_pad" | "rejection_pad_placement_direction" | "rejection_adhesion_issue"
+  // Factory-only Rejection Classification (migration 0065).
+  | "rejection_foreign_material" | "rejection_glue_strings" | "rejection_pad_direction" | "rejection_pad_placement" | "rejection_stickiness"
   | "pallets_produced";
 
 // Production Details rows, matching the prototype's PROD_ATTRIBUTES exactly
@@ -86,8 +106,11 @@ function sumProductionDetails(entries: ProductionDetail["machine_entries"], key:
   return any ? total : null;
 }
 
-function sumRejections(rc: ProductionDetail["rejection_classification"]): number {
-  return REJECTION_FIELDS.reduce((sum, f) => sum + (Number(rc[f.key]) || 0), 0);
+function sumRejections(
+  rc: ProductionDetail["rejection_classification"],
+  fields: { key: keyof ProductionDetail["rejection_classification"]; label: string }[],
+): number {
+  return fields.reduce((sum, f) => sum + (Number(rc[f.key]) || 0), 0);
 }
 
 /**
@@ -138,6 +161,14 @@ export default function ProductionDetailPanel({
           rejection_glue_on_pad: e.rejection_classification.glue_on_pad ? String(e.rejection_classification.glue_on_pad) : "",
           rejection_pad_placement_direction: e.rejection_classification.pad_placement_direction ? String(e.rejection_classification.pad_placement_direction) : "",
           rejection_adhesion_issue: e.rejection_classification.adhesion_issue ? String(e.rejection_classification.adhesion_issue) : "",
+          // Factory-only Rejection Classification (migration 0065) -- seeded
+          // unconditionally like the six above; harmless to seed on a US
+          // Factory record too, since those fields are always 0 there.
+          rejection_foreign_material: e.rejection_classification.foreign_material ? String(e.rejection_classification.foreign_material) : "",
+          rejection_glue_strings: e.rejection_classification.glue_strings ? String(e.rejection_classification.glue_strings) : "",
+          rejection_pad_direction: e.rejection_classification.pad_direction ? String(e.rejection_classification.pad_direction) : "",
+          rejection_pad_placement: e.rejection_classification.pad_placement ? String(e.rejection_classification.pad_placement) : "",
+          rejection_stickiness: e.rejection_classification.stickiness ? String(e.rejection_classification.stickiness) : "",
           pallets_produced: e.pallets_produced ? String(e.pallets_produced) : "",
         },
       ])
@@ -163,8 +194,10 @@ export default function ProductionDetailPanel({
   // log rejections.
   const isEdit = mode === "edit";
   const editable = isEdit && canEdit;
+  const isFactory = useProduct() === "factory";
+  const rejectionFields = isFactory ? FACTORY_REJECTION_FIELDS : REJECTION_FIELDS;
   const totalPcsPerPallet = sumProductionDetails(record.machine_entries, "prod_total_pcs_per_pallet");
-  const totalRejections = sumRejections(record.rejection_classification);
+  const totalRejections = sumRejections(record.rejection_classification, rejectionFields);
   const totalPalletsProduced = record.total_pallets_produced;
 
   const runMachines = Array.from(new Set(record.machine_entries.map((e) => e.machine).filter((m): m is string => !!m)));
@@ -346,8 +379,10 @@ export default function ProductionDetailPanel({
           )}
 
           {/* Migration 0038: one column per selected machine, same pattern
-              as Production Details below -- rows = REJECTION_FIELDS,
-              columns = record.machine_entries. */}
+              as Production Details below -- rows = rejectionFields
+              (REJECTION_FIELDS for US Factory, FACTORY_REJECTION_FIELDS
+              for Factory as of migration 0065), columns =
+              record.machine_entries. */}
           {record.machine_entries.length > 0 && (
             <div className="detail-card">
               <h3>Rejection Classification</h3>
@@ -360,7 +395,7 @@ export default function ProductionDetailPanel({
                     </tr>
                   </thead>
                   <tbody>
-                    {REJECTION_FIELDS.map((f) => (
+                    {rejectionFields.map((f) => (
                       <tr key={f.key}>
                         <td>{f.label}</td>
                         {record.machine_entries.map((e) => {

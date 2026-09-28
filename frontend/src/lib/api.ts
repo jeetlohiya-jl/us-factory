@@ -754,6 +754,11 @@ type RawProdMcShallowEntry = {
   // Rejection Classification, per machine entry (migration 0038).
   rejection_damage: number | string; rejection_misplaced_glue: number | string; rejection_misplaced_pad: number | string;
   rejection_glue_on_pad: number | string; rejection_pad_placement_direction: number | string; rejection_adhesion_issue: number | string;
+  // Factory-only Rejection Classification (migration 0065) -- always 0 for
+  // a US Factory run, so summing both sets together below is safe: only
+  // one set is ever nonzero for any given run.
+  rejection_foreign_material: number | string; rejection_glue_strings: number | string;
+  rejection_pad_direction: number | string; rejection_pad_placement: number | string; rejection_stickiness: number | string;
 };
 type RawProdMcShallow = { machine_entries: RawProdMcShallowEntry[] };
 
@@ -774,13 +779,17 @@ const PRODUCTION_LIST_SELECT =
   "material_consumptions(machine_entries:material_consumption_machine_entries(" +
   "pallets:material_consumption_pallets(role,pallet:pallets(shipment_number))," +
   "sku_version_ref:sku_versions(prod_total_pcs_per_pallet)," +
-  "rejection_damage,rejection_misplaced_glue,rejection_misplaced_pad,rejection_glue_on_pad,rejection_pad_placement_direction,rejection_adhesion_issue" +
+  "rejection_damage,rejection_misplaced_glue,rejection_misplaced_pad,rejection_glue_on_pad,rejection_pad_placement_direction,rejection_adhesion_issue," +
+  "rejection_foreign_material,rejection_glue_strings,rejection_pad_direction,rejection_pad_placement,rejection_stickiness" +
   "))";
 
 /** Total Rejections for a run's list row: sum of every machine entry's own
  * Rejection Classification fields (migration 0038 -- was a single flat
  * value on production_runs, now per machine entry, same aggregation shape
- * as sumTotalPcsPerPallet above it). */
+ * as sumTotalPcsPerPallet above it). Migration 0065 added a second,
+ * Factory-only 5-field set alongside the original 6 -- summed in here too
+ * rather than branched on product, since a given run only ever populates
+ * one set (the other stays 0), so adding both together is always correct. */
 function sumRejections(mcs: RawProdMcShallow[]): number {
   let total = 0;
   for (const mc of mcs || []) {
@@ -788,6 +797,8 @@ function sumRejections(mcs: RawProdMcShallow[]): number {
       total += [
         e.rejection_damage, e.rejection_misplaced_glue, e.rejection_misplaced_pad,
         e.rejection_glue_on_pad, e.rejection_pad_placement_direction, e.rejection_adhesion_issue,
+        e.rejection_foreign_material, e.rejection_glue_strings, e.rejection_pad_direction,
+        e.rejection_pad_placement, e.rejection_stickiness,
       ].reduce((sum: number, v) => sum + (Number(v) || 0), 0);
     }
   }
@@ -962,6 +973,9 @@ type RawProdMachineEntry = {
   // Rejection Classification, per machine entry (migration 0038).
   rejection_damage: number | string; rejection_misplaced_glue: number | string; rejection_misplaced_pad: number | string;
   rejection_glue_on_pad: number | string; rejection_pad_placement_direction: number | string; rejection_adhesion_issue: number | string;
+  // Factory-only Rejection Classification (migration 0065).
+  rejection_foreign_material: number | string; rejection_glue_strings: number | string;
+  rejection_pad_direction: number | string; rejection_pad_placement: number | string; rejection_stickiness: number | string;
   // Pallets Produced, per machine entry (migration 0039, task section 1).
   pallets_produced: number | string;
 };
@@ -978,6 +992,7 @@ const PRODUCTION_MACHINE_ENTRY_SELECT =
   "override_weight,override_pcs_per_sleeve,override_sleeve_per_case,override_total_pcs_per_pallet,override_pad_type,override_pad_color,override_case_type," +
   "machine_no,auto_padding,container_order_no," +
   "rejection_damage,rejection_misplaced_glue,rejection_misplaced_pad,rejection_glue_on_pad,rejection_pad_placement_direction,rejection_adhesion_issue," +
+  "rejection_foreign_material,rejection_glue_strings,rejection_pad_direction,rejection_pad_placement,rejection_stickiness," +
   "pallets_produced";
 
 type RawProdMc = { id: string; status: string; machine_entries: RawProdMachineEntry[] };
@@ -1071,6 +1086,11 @@ function flattenProductionDetail(raw: RawProductionRunDetail): ProductionDetail 
           glue_on_pad: Number(e.rejection_glue_on_pad) || 0,
           pad_placement_direction: Number(e.rejection_pad_placement_direction) || 0,
           adhesion_issue: Number(e.rejection_adhesion_issue) || 0,
+          foreign_material: Number(e.rejection_foreign_material) || 0,
+          glue_strings: Number(e.rejection_glue_strings) || 0,
+          pad_direction: Number(e.rejection_pad_direction) || 0,
+          pad_placement: Number(e.rejection_pad_placement) || 0,
+          stickiness: Number(e.rejection_stickiness) || 0,
         },
         pallets_produced: Number(e.pallets_produced) || 0,
       });
@@ -1098,8 +1118,16 @@ function flattenProductionDetail(raw: RawProductionRunDetail): ProductionDetail 
         glue_on_pad: sum.glue_on_pad + e.rejection_classification.glue_on_pad,
         pad_placement_direction: sum.pad_placement_direction + e.rejection_classification.pad_placement_direction,
         adhesion_issue: sum.adhesion_issue + e.rejection_classification.adhesion_issue,
+        foreign_material: sum.foreign_material + e.rejection_classification.foreign_material,
+        glue_strings: sum.glue_strings + e.rejection_classification.glue_strings,
+        pad_direction: sum.pad_direction + e.rejection_classification.pad_direction,
+        pad_placement: sum.pad_placement + e.rejection_classification.pad_placement,
+        stickiness: sum.stickiness + e.rejection_classification.stickiness,
       }),
-      { damage: 0, misplaced_glue: 0, misplaced_pad: 0, glue_on_pad: 0, pad_placement_direction: 0, adhesion_issue: 0 },
+      {
+        damage: 0, misplaced_glue: 0, misplaced_pad: 0, glue_on_pad: 0, pad_placement_direction: 0, adhesion_issue: 0,
+        foreign_material: 0, glue_strings: 0, pad_direction: 0, pad_placement: 0, stickiness: 0,
+      },
     ),
     wastage_entries: sortedBySortOrder(raw.wastage_entries || []).map((w) => ({
       id: w.id, machine_id: w.machine_id, machine: w.machine?.code ?? null,

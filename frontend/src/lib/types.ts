@@ -762,6 +762,16 @@ export interface ProductionRejectionClassification {
   glue_on_pad: number;
   pad_placement_direction: number;
   adhesion_issue: number;
+  // Factory-only Rejection Classification (migration 0065) -- Foreign
+  // material / Glue strings / Direction of the pad / Placement of the
+  // pad / Stickiness of the pad, replacing the 6 fields above for Factory
+  // only. Always 0 for a US Factory run, same coexistence as the 6 fields
+  // above are always 0 for a Factory run.
+  foreign_material: number;
+  glue_strings: number;
+  pad_direction: number;
+  pad_placement: number;
+  stickiness: number;
 }
 
 export interface ProductionWastageEntry {
@@ -799,6 +809,9 @@ export interface ProductionSavePayload {
     machine_no?: string; auto_padding?: string; container_order_no?: string;
     rejection_damage?: string; rejection_misplaced_glue?: string; rejection_misplaced_pad?: string;
     rejection_glue_on_pad?: string; rejection_pad_placement_direction?: string; rejection_adhesion_issue?: string;
+    // Factory-only Rejection Classification (migration 0065).
+    rejection_foreign_material?: string; rejection_glue_strings?: string; rejection_pad_direction?: string;
+    rejection_pad_placement?: string; rejection_stickiness?: string;
     pallets_produced?: string;
   }[];
   // This device's own clock ("HH:MM") -- saving this record now stamps

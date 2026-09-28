@@ -1156,6 +1156,19 @@ class MaterialConsumptionMachineEntry(Base):
     rejection_glue_on_pad = Column(Numeric, nullable=False, default=0)
     rejection_pad_placement_direction = Column(Numeric, nullable=False, default=0)
     rejection_adhesion_issue = Column(Numeric, nullable=False, default=0)
+    # Migration 0065 -- Factory's OWN 5-field Rejection Classification
+    # (Foreign material / Glue strings / Direction of the pad / Placement
+    # of the pad / Stickiness of the pad), replacing the 6 fields above for
+    # Factory only -- US Factory keeps using the 6 fields above unchanged.
+    # Both sets coexist on this one row; whichever product a run belongs to
+    # determines which set actually gets written (see product_scope.py --
+    # this table isn't itself ProductScoped, it's reached through its
+    # parent material_consumption -> production_run.product).
+    rejection_foreign_material = Column(Numeric, nullable=False, default=0)
+    rejection_glue_strings = Column(Numeric, nullable=False, default=0)
+    rejection_pad_direction = Column(Numeric, nullable=False, default=0)
+    rejection_pad_placement = Column(Numeric, nullable=False, default=0)
+    rejection_stickiness = Column(Numeric, nullable=False, default=0)
     # Migration 0039 -- FG pallets actually produced on THIS machine, for
     # THIS Material Consumption record's shift (MaterialConsumption.shift
     # is the shift, shared by every machine entry on that record). This is
