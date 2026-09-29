@@ -5,7 +5,7 @@
  *   RM                      Raw Material -- the short form is the name, never spelled out
  *   FG                      Finished Goods -- likewise
  *   LNP Tray                never "LNP Tray" / "LNPG" / "LNPG"
- *   Base Tray
+ *   RM                      also the label for the "tray" category (see 2026-09-29 note below)
  *   SKU                     the product (e.g. 3P) -- never "SKU Name" / "SKU Code" for it
  *   SKU Code                only the item code (e.g. CMP0003P)
  *   Shipment Number         never "Shipment No."
@@ -22,12 +22,22 @@
  * list of tables touched. "SKU Version" is no longer shown in the UI at all
  * (removed, not renamed) -- the constant is kept only for any internal code
  * that still needs the words for logic, not display.
+ *
+ * 2026-09-29 -- the "tray" category, previously labeled "Base Tray", is now
+ * labeled plain "RM" (`T.baseTray`), on request, even though `T.rawMaterial`
+ * is also "RM". This is an intentional exception to "every concept has
+ * exactly one name": the two constants stay separate in code (`rawMaterial`
+ * vs `baseTray`) so a future change to either doesn't have to touch the
+ * other, but they render identically, so "RM" now appears both as the
+ * general Raw Material label and as this one specific tray category. No
+ * stored data changes: the "tray" category code and the "TRAY" location
+ * zone code are untouched, this is a display-label-only rename.
  */
 
 export const T = {
   rawMaterial: "RM",
   finishedGoods: "FG",
-  baseTray: "Base Tray",
+  baseTray: "RM",
   lnpTray: "LNP Tray",
   sku: "SKU",
   skus: "SKUs",

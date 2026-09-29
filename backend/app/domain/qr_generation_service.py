@@ -29,7 +29,7 @@ def _resolve_qc_sku(qc: models.InwardQcRecord) -> tuple[str | None, str | None, 
     """
     Manual QC categories (Glue, Soaker Pad, Polybag, CFB) carry their single
     SKU directly on the InwardQcRecord row (sku_code_id/sku_code_snapshot).
-    Base Tray / LNP Tray QC — auto-created from an approved Vehicle
+    RM / LNP Tray QC — auto-created from an approved Vehicle
     Inspection, which can list multiple SKU line items — carries its SKU(s)
     in the separate line_item_snapshots table instead; the top-level columns
     are never populated for that category. Fall back to the first line-item

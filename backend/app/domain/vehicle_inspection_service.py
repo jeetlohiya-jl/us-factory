@@ -15,9 +15,9 @@ from app.domain.id_counters import next_seq
 from app.domain.inward_qc_service import TRAY_FAMILY_CATEGORIES
 
 CATEGORY_PREFIX = {
-    "tray": None,  # manual shipment number for tray (renamed "Base Tray" in the UI)
-    "lnp_tray": None,  # "LNP Tray" -- new material option, same manual-shipment-number rule as Base Tray
-    "film": None,  # new material option, same manual-shipment-number rule as Base Tray
+    "tray": None,  # manual shipment number for tray (renamed "RM" in the UI)
+    "lnp_tray": None,  # "LNP Tray" -- new material option, same manual-shipment-number rule as RM
+    "film": None,  # new material option, same manual-shipment-number rule as RM
     "pad": "US-PAD",
     "polybag": "US-PB",
     "cfb": "US-CFB",
@@ -120,15 +120,15 @@ def compute_status(db: Session, inspection: models.InwardVehicleInspection) -> s
 
 def propagate_to_qc(db: Session, inspection: models.InwardVehicleInspection) -> models.InwardQcRecord | None:
     """When an approved Inward Vehicle Inspection for a Tray-family category
-    (Base Tray or LNP Tray -- see inward_qc_service.TRAY_FAMILY_CATEGORIES)
+    (RM or LNP Tray -- see inward_qc_service.TRAY_FAMILY_CATEGORIES)
     reaches Approved, ensure exactly one linked Inward QC record exists.
     Never creates a duplicate.
 
     The downstream QC record's category is always the SAME value the
-    inspection itself used (Base Tray stays "tray", LNP Tray stays
-    "lnp_tray") -- it is never remapped to a different label. Base Tray and
+    inspection itself used (RM stays "tray", LNP Tray stays
+    "lnp_tray") -- it is never remapped to a different label. RM and
     LNP Tray are genuinely different materials (today only LNP Tray is an
-    active workflow; Base Tray is wired up for future use), so each gets
+    active workflow; RM is wired up for future use), so each gets
     its own correctly-labeled QC record rather than being collapsed into a
     single shared category.
 

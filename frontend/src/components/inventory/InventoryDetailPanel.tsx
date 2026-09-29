@@ -54,7 +54,7 @@ export default function InventoryDetailPanel({
   }
 
   useEffect(() => {
-    // Tray-family SKUs (Base Tray / LNP Tray / FG) for the "Compatible
+    // Tray-family SKUs (RM / LNP Tray / FG) for the "Compatible
     // Tray SKU" dropdown -- same family filter skus/page.tsx and Goods
     // Receipt use for tray rows.
     api.skus({ category: "tray" }).then(setTraySkus).catch(() => {});

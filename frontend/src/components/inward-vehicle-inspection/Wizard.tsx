@@ -15,7 +15,7 @@ const CATEGORY_LABELS: Record<Category, string> = INWARD_CATEGORY_LABELS;
 
 // Categories whose Shipment Number is manually entered by the user rather
 // than auto-generated (mirrors backend CATEGORY_PREFIX's None entries in
-// vehicle_inspection_service.py -- Base Tray/LNP Tray/Film all arrive with
+// vehicle_inspection_service.py -- RM/LNP Tray/Film all arrive with
 // their own real-world shipment number, unlike Soaker Pad/Polybag/CFB/Glue).
 const MANUAL_SHIPMENT_CATEGORIES: Category[] = ["tray", "lnp_tray", "film"];
 

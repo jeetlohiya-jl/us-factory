@@ -314,7 +314,7 @@ export default function GrInwardWizard({
                   <div className="field">
                     <label>Category</label>
                     <select disabled={readOnlyStep1} value={stage} onChange={(e) => markTouched(setStage)(e.target.value as "tray" | "lnp_tray")}>
-                      <option value="tray">Base Tray</option>
+                      <option value="tray">RM</option>
                       <option value="lnp_tray">LNP Tray</option>
                     </select>
                   </div>

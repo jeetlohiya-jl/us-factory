@@ -1,5 +1,5 @@
 import { CATEGORY_LABELS } from "./terms";
-// "tray" displays as "Base Tray" and "lnp_tray" as "LNP Tray" -- together
+// "tray" displays as "RM" and "lnp_tray" as "LNP Tray" -- together
 // these are Inward Vehicle Inspection's "tray options" (renamed/expanded
 // per the updated spec); "film" is a new material option alongside them.
 // See components/inward-vehicle-inspection/Wizard.tsx's CATEGORY_LABELS.
@@ -16,13 +16,13 @@ export type InspectionStatus = "draft" | "hold" | "approved";
 // ever created with that value. Every place that used to special-case
 // `category === "fgtray"` should check `TRAY_FAMILY_QC_CATEGORIES.includes(category)`
 // instead, and every category label lookup should go through
-// QC_CATEGORY_LABELS so "Base Tray"/"LNP Tray" are never spelled a second,
+// QC_CATEGORY_LABELS so "RM"/"LNP Tray" are never spelled a second,
 // inconsistent way (the old "FG Non-Padded Tray" / "FG NonPadded Tray" /
 // "LNPG" wording is retired).
 export const TRAY_FAMILY_QC_CATEGORIES: string[] = ["tray", "lnp_tray", "fgtray"];
 
 /** SKUs belong to a material FAMILY, not a stage: the same tray (3P) is a
- * Base Tray when raw, an LNP Tray with film attached and FG once padded --
+ * RM when raw, an LNP Tray with film attached and FG once padded --
  * one SKU. Every SKU picker matches on family (migration 0049). */
 export function skuFamily(category: string | null | undefined): string {
   return category && TRAY_FAMILY_QC_CATEGORIES.includes(category) ? "tray" : (category || "");
@@ -1851,7 +1851,7 @@ export interface GoodsReceiptEntryDraft {
   id: string | null;
   locked: boolean;
   shipment_number: string;
-  // Only chosen by hand for a Tray SKU (Base Tray / LNP Tray); any other
+  // Only chosen by hand for a Tray SKU (RM / LNP Tray); any other
   // SKU's material is its category.
   category: Category | "";
   sku_code_id: string | null;
@@ -1874,6 +1874,6 @@ export interface GoodsReceiptInwardPayload {
   received_quantity: number;
   unit: QuantityUnit;
   pallet_count: number;
-  // Tray rows synced from Zoho have no stage yet: Base Tray / LNP Tray.
+  // Tray rows synced from Zoho have no stage yet: RM / LNP Tray.
   category?: Category;
 }

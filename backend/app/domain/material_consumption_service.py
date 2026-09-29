@@ -10,7 +10,7 @@ One record spans one or more MACHINES (MaterialConsumptionMachineEntry) --
 each machine has its own pallet set, its own Category/SKU/SKU Version, and
 its own start_time/end_time. Shift is shared across the whole record.
 
-Primary categories consumed into production: 'tray' (Base Tray) and
+Primary categories consumed into production: 'tray' (RM) and
 'lnp_tray' (LNP Tray) -- the same tray-family RM categories the rest of the
 app already treats as tray variants (see pallet_service.CATEGORY_SUFFIX,
 where both map to the "PLT" suffix; 'fgtray' is also kept here for RM

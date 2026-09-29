@@ -22,7 +22,7 @@ function fmt(n: number | null | undefined) {
 }
 
 type Stage = "" | "tray" | "lnp_tray";
-// A row with no category is a tray synced from Zoho whose stage (Base Tray /
+// A row with no category is a tray synced from Zoho whose stage (RM /
 // LNP Tray) is chosen at inward -- synced rows of any other material always
 // carry their SKU's category.
 // Exported for GrInwardWizard, which needs the same predicates.

@@ -157,7 +157,7 @@ function MaterialConsumptionPageContent() {
                   <label>Category</label>
                   <select value={category} onChange={(e) => setCategory(e.target.value)}>
                     <option value="">All</option>
-                    <option value="tray">Base Tray</option>
+                    <option value="tray">RM</option>
                     <option value="lnp_tray">LNP Tray</option>
                   </select>
                 </div>
