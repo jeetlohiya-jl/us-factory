@@ -127,10 +127,10 @@ function SkuVersionDetailsModal({
 }
 
 // An SKU belongs to a material FAMILY, not a stage (migration 0049): one
-// Tray SKU (e.g. 3P) serves Base Tray, LNP Tray and FG -- the stage is
+// Tray SKU (e.g. 3P) serves RM, LNP Tray and FG -- the stage is
 // chosen on each record, never here.
 const MATERIAL_LABELS: Record<string, string> = {
-  tray: "Tray (Base Tray / LNP Tray / FG)", film: "Film", pad: "Soaker Pad", polybag: "Polybag", cfb: "CFB", glue: "Glue",
+  tray: "Tray (RM / LNP Tray / FG)", film: "Film", pad: "Soaker Pad", polybag: "Polybag", cfb: "CFB", glue: "Glue",
 };
 const MANAGED_CATEGORIES: Category[] = ["tray", "film", "pad", "polybag", "cfb", "glue"];
 const MATERIAL_SHORT: Record<string, string> = { ...MATERIAL_LABELS, tray: "Tray" };
@@ -293,7 +293,7 @@ export default function SkusPage() {
       <div className="page-head2">
         <div>
           <h1>{MODULE_NAMES.skus}</h1>
-          <div className="desc">One SKU per product — a Tray SKU (e.g. 3P) is used for Base Tray, LNP Tray and FG alike.</div>
+          <div className="desc">One SKU per product — a Tray SKU (e.g. 3P) is used for RM, LNP Tray and FG alike.</div>
         </div>
       </div>
 

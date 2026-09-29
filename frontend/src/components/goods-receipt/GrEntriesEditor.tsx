@@ -4,7 +4,7 @@ import type { Category, GoodsReceiptEntryDraft, QuantityUnit, SkuCode } from "@/
 import { INWARD_CATEGORY_LABELS, QUANTITY_UNITS, skuFamily } from "@/lib/types";
 import { T } from "@/lib/terms";
 
-/** Category follows the SKU: a Tray SKU is chosen as Base Tray or LNP Tray
+/** Category follows the SKU: a Tray SKU is chosen as RM or LNP Tray
  * (the same tray, two stages); any other SKU's material is its category. */
 function categoryForSku(sku: SkuCode | undefined): Category | "" {
   if (!sku) return "";

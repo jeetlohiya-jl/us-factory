@@ -182,7 +182,7 @@ def create_draft(
         )
         if not entry:
             raise HTTPException(status_code=404, detail="Goods Receipt entry not found.")
-        # A synced-from-Zoho tray row with no category yet (Base Tray/LNP
+        # A synced-from-Zoho tray row with no category yet (RM/LNP
         # Tray decided at inward time -- see needsStage() in
         # GoodsReceiptDetailPanel.tsx) starts as a placeholder "tray" here;
         # GrInwardWizard.tsx's own Category picker (shown only in this case)
@@ -243,7 +243,7 @@ def update_inspection(
         shipment_number, is_auto = svc.next_shipment_number(db, inspection.category)
         # Section 14: never auto-overwrite a shipment number the user
         # actually typed in. Before this check, switching FROM a manual
-        # category (e.g. Base Tray, where the operator types their own
+        # category (e.g. RM, where the operator types their own
         # Shipment Number) TO an auto-numbered one (Pad/Polybag/CFB/Glue)
         # would unconditionally stomp whatever the user had entered with a
         # freshly generated auto number -- silently discarding real data.
