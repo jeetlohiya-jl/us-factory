@@ -47,7 +47,7 @@ SECTION_BG = colors.HexColor("#D9E2F3")
 BLACK = colors.black
 
 COMPANY_NAME = "Cirkla Inc."
-COMPANY_ADDRESS_LINES = ["16192 Coastal Highway, Lewes, Delaware 19958,", "U.S.A"]
+COMPANY_ADDRESS_LINES = ["1950 Fulenwider Rd, Gainesville, GA 30507"]
 
 GOODS_COL_WIDTHS_PCT = [0.07, 0.19, 0.08, 0.07, 0.07, 0.13, 0.08, 0.08, 0.08, 0.15]
 
@@ -198,15 +198,24 @@ def generate_packing_list_pdf(db: Session, shipment: models.CustomerShipment) ->
     )
 
     # -- Header: logo left, company name/address centered -------------------
+    # 2026-09-29 -- previously a 2-column table (logo | company text), which
+    # left-shifted the "centered" company paragraph: centered within its own
+    # cell (from the logo's right edge to the page edge) is not the same as
+    # centered on the page. Fixed with a 3-column layout, logo | company text
+    # | blank spacer the same width as the logo column, so the middle
+    # column's own center lands on the true page center.
+    LOGO_COL_WIDTH = 45 * mm
     company_style = ParagraphStyle("company", fontName="Times-Bold", fontSize=11, leading=14, alignment=TA_CENTER)
     company_html = "<br/>".join([COMPANY_NAME] + COMPANY_ADDRESS_LINES)
-    header_cells = []
     if os.path.exists(LOGO_PATH):
-        header_cells.append(_sized_image(LOGO_PATH, 34 * mm))
+        logo_cell = _sized_image(LOGO_PATH, 34 * mm)
     else:
-        header_cells.append(Paragraph("CIRKLA", ParagraphStyle("logo", fontName="Helvetica-Bold", fontSize=16)))
-    header_cells.append(Paragraph(company_html, company_style))
-    header_table = Table([header_cells], colWidths=[45 * mm, usable_width - 45 * mm])
+        logo_cell = Paragraph("CIRKLA", ParagraphStyle("logo", fontName="Helvetica-Bold", fontSize=16))
+    header_cells = [logo_cell, Paragraph(company_html, company_style), ""]
+    header_table = Table(
+        [header_cells],
+        colWidths=[LOGO_COL_WIDTH, usable_width - 2 * LOGO_COL_WIDTH, LOGO_COL_WIDTH],
+    )
     header_table.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("LEFTPADDING", (0, 0), (-1, -1), 6),
