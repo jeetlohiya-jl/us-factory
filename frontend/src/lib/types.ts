@@ -123,8 +123,16 @@ export interface ChecklistItemRef {
 // dropdown, used wherever the app records a quantity (see api.ts's various
 // Unit fields and QUANTITY_UNITS below). "Bags" added for the Material
 // Consumption scanning redesign (partial-consumption quantity entry).
-export type QuantityUnit = "Pallets" | "Kgs" | "Units" | "Bags";
-export const QUANTITY_UNITS: QuantityUnit[] = ["Pallets", "Kgs", "Units", "Bags"];
+// "Rolls" | "Pairs" | "Sets" added 2026-09-30 for the new packaging/PPE/
+// pallet secondary materials (PET Strap, Corner Protector, Shoe Cover,
+// etc.) synced in from Zoho -- see zoho_unit() in migration 0054, extended
+// the same day to map Zoho's own unit text onto these. zoho_unit() maps
+// any kg-like unit to the existing "Kgs" (not a new "Kg"), to avoid two
+// near-duplicate options here. The backend stores `unit` as plain text
+// with no matching enum, so this list is the only thing that has to stay
+// in sync with zoho_unit()'s mapping.
+export type QuantityUnit = "Pallets" | "Kgs" | "Units" | "Bags" | "Rolls" | "Pairs" | "Sets";
+export const QUANTITY_UNITS: QuantityUnit[] = ["Pallets", "Kgs", "Units", "Bags", "Rolls", "Pairs", "Sets"];
 
 export interface LineItem {
   id: string;
