@@ -4,8 +4,6 @@ import type { QrGenerationDetail, Pallet } from "@/lib/types";
 import { PALLET_STAGE_LABELS, PALLET_STAGE_BADGE_CLASS } from "@/lib/types";
 import PalletTile, { fallbackPayload } from "./PalletTile";
 import { T } from "@/lib/terms";
-import PrintLabels from "@/components/PrintLabels";
-import { downloadQrLabelsPdf } from "@/lib/qrLabels";
 import LabelImageButtons from "@/components/LabelImageButtons";
 
 /**
@@ -16,16 +14,10 @@ import LabelImageButtons from "@/components/LabelImageButtons";
  * content plus each pallet's live lifecycle status, matching section E's
  * "Generated Pallets: every pallet ID, lifecycle status, storage status".
  *
- * Printing: the physical printer is a 2in x 2in label printer — one QR
- * per label, fed one at a time (a roll/peel-stack printer, not a sheet
- * printer) — so "the whole page as shown on screen" must never print.
- * The on-screen pallet grid (with checkboxes + a quantity shortcut to
- * choose which/how many pallets go to this run) is a separate DOM subtree
- * from what actually prints. `.no-print` hides all screen chrome under
- * print media; `.print-only` — normally hidden — becomes the only visible
- * content: one `.qr-print-page` per selected pallet, each sized to exactly
- * 2in x 2in via `@page` in globals.css, `page-break-after` between them so
- * each pallet comes out as its own label.
+ * Labels: the MakeID D50 prints from the Android tablet through MakeID Label
+ * Pro ("Print by Photo"), so the selected pallets go out as label images --
+ * "Send to printer app" (Share menu) or "Download images"
+ * (components/LabelImageButtons.tsx, lib/qrLabels.ts).
  */
 export default function QrGenerationPanel({
   title, detail, canGenerate, onGenerate, onClose,
@@ -36,7 +28,6 @@ export default function QrGenerationPanel({
   onGenerate: () => Promise<void>;
   onClose: () => void;
 }) {
-  const [pdfBusy, setPdfBusy] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -74,8 +65,8 @@ export default function QrGenerationPanel({
 
   return (
     <>
-      <div className="panel-overlay open no-print" onClick={onClose} />
-      <div className="side-panel open no-print">
+      <div className="panel-overlay open" onClick={onClose} />
+      <div className="side-panel open">
         <div className="sp-head">
           <div>
             <h2>{title}</h2>
@@ -163,23 +154,6 @@ export default function QrGenerationPanel({
                   disabled={selected.size === 0}
                   labels={() => selectedPallets.map((p) => ({ payload: p.qr_payload || fallbackPayload(p), text: p.display_id }))}
                 />
-                <button
-                  className="btn btn-secondary" disabled={selected.size === 0 || pdfBusy}
-                  onClick={async () => {
-                    setPdfBusy(true);
-                    try {
-                      await downloadQrLabelsPdf(
-                        selectedPallets.map((p) => ({ payload: p.qr_payload || fallbackPayload(p), text: p.display_id })),
-                        `${detail.batch_display_id || "qr-labels"}-2x2`,
-                      );
-                    } finally { setPdfBusy(false); }
-                  }}
-                >
-                  {pdfBusy ? "Preparing PDF…" : "Download PDF (2×2)"}
-                </button>
-                <button className="btn btn-secondary" disabled={selected.size === 0} onClick={() => window.print()}>
-                  Print {selected.size === detail.pallets.length ? "All" : `Selected (${selected.size})`} QR Codes
-                </button>
               </>
             )}
             {!isGenerated && (
@@ -193,17 +167,7 @@ export default function QrGenerationPanel({
 
       {/* Print-only output: one 2in x 2in label per selected pallet, one
           physical label per page. Invisible on screen. */}
-      {isGenerated && (
-        <PrintLabels>
-          {selectedPallets.map((p) => (
-            <div className="qr-print-page" key={p.id}>
-              <div className="qr-print-label">
-                <PalletTile pallet={p} />
-              </div>
-            </div>
-          ))}
-        </PrintLabels>
-      )}
+
     </>
   );
 }
