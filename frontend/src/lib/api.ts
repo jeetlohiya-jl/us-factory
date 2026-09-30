@@ -2128,7 +2128,7 @@ const GR_DETAIL_SELECT =
   "id,po_number,category,vendor_id,vendor_name,status,created_at,updated_at," +
   "zoho_purchaseorder_id,zoho_cancelled,zoho_synced_at,zoho_sync_notes," +
   "entries:goods_receipt_entries(id,shipment_number,category,sku_code_id,sku_version_id," +
-  "sku_code:sku_code_snapshot,sku_version:sku_version_snapshot,po_quantity,received_quantity,unit,pallet_count," +
+  "sku_code:sku_code_snapshot,sku_version:sku_version_snapshot,sku_name:sku_codes(code),po_quantity,received_quantity,unit,pallet_count," +
   "status,inwarded_at,sort_order," +
   "inward_events:goods_receipt_inward_events(received_quantity,pallet_count,unit,kind,inwarded_at)," +
   "qr_batch:qr_generation_records!qr_generation_records_source_goods_receipt_entry_id_fkey(id,batch_display_id,status,quantity)," +
@@ -2136,12 +2136,13 @@ const GR_DETAIL_SELECT =
 
 type RawInwardInspectionRef = { id: string; status: InspectionStatus; created_at: string };
 
-type RawGrEntry = Omit<GoodsReceiptEntry, "qr_batch" | "po_quantity" | "received_quantity" | "inward_inspection"> & {
+type RawGrEntry = Omit<GoodsReceiptEntry, "qr_batch" | "po_quantity" | "received_quantity" | "inward_inspection" | "sku_name"> & {
   sort_order: number;
   po_quantity: number | string;
   received_quantity: number | string | null;
   qr_batch: GoodsReceiptEntry["qr_batch"][] | GoodsReceiptEntry["qr_batch"];
   inward_inspection: RawInwardInspectionRef[] | RawInwardInspectionRef | null;
+  sku_name: { code: string | null } | null;
 };
 
 // Migration 0068 -- an entry can now have MORE THAN ONE inspection over its
@@ -2171,6 +2172,7 @@ function flattenGoodsReceipt(raw: Omit<GoodsReceiptDetail, "entries"> & { entrie
       received_quantity: e.received_quantity == null ? null : Number(e.received_quantity),
       qr_batch: Array.isArray(e.qr_batch) ? e.qr_batch[0] ?? null : e.qr_batch ?? null,
       inward_inspection: currentInwardInspection(e.inward_inspection),
+      sku_name: e.sku_name?.code ?? null,
     }));
   return { ...raw, entries };
 }

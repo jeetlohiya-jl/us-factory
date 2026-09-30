@@ -1801,6 +1801,16 @@ export interface GoodsReceiptEntry {
   sku_version_id: string | null;
   sku_code: string | null;
   sku_version: string | null;
+  // 2026-09-30 -- the SKU's own descriptive name (sku_codes.code, e.g. "PET
+  // Strap", "Corner Protector"). For the 7 real QC categories this is
+  // redundant with the category label (every SKU tagged "polybag" really
+  // is a polybag), but for the newer catch-all categories (packaging/ppe/
+  // pallet) many different, unrelated SKUs share one category -- "Packaging"
+  // on every row of a PO with PET Strap, Corner Protector and Stretch wrap
+  // tells you nothing. See goodsReceiptCategoryLabel in
+  // GoodsReceiptDetailPanel.tsx, which prefers this over the category label
+  // for exactly those catch-all categories.
+  sku_name: string | null;
   po_quantity: number;
   received_quantity: number | null;
   unit: QuantityUnit;

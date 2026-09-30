@@ -14,8 +14,24 @@ import { T, categoryLabel } from "@/lib/terms";
 // synced in from Zoho the same way RM is, but never routed through Inward
 // Vehicle Inspection / Inward QC). categoryLabel() falls back to the raw
 // value for anything unmapped, so nothing here ever silently disappears.
+// Used for the header's aggregated "Categories" field, which summarizes
+// across every row on the PO -- a bucket label is the right thing there.
 const goodsReceiptCategoryLabel = (c: string): string =>
   (INWARD_CATEGORY_LABELS as Record<string, string>)[c] ?? categoryLabel(c);
+
+// 2026-09-30 -- the per-row "Category" column, by contrast, should identify
+// THAT row's material. For the 7 real QC categories the bucket label already
+// does that (every "polybag" row really is a polybag). For the newer
+// catch-all categories (packaging/ppe/pallet and anything else outside the
+// QC set) many unrelated SKUs share one bucket -- a PO with PET Strap,
+// Corner Protector and Stretch wrap would show "Packaging" on all three
+// rows, telling you nothing. Prefer the SKU's own name there instead.
+const entryCategoryLabel = (e: Pick<GoodsReceiptEntry, "category" | "sku_name">): string => {
+  const c = e.category;
+  if (!c) return "";
+  const qcLabel = (INWARD_CATEGORY_LABELS as Record<string, string>)[c];
+  return qcLabel ?? e.sku_name ?? categoryLabel(c);
+};
 
 function Kv({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -279,7 +295,7 @@ export default function GoodsReceiptDetailPanel({
                       <tr>
                         <td className="mono">{e.shipment_number || <span className="badge partial">Missing</span>}</td>
                         <td className="mono">{e.sku_code || "—"}</td>
-                        <td>{e.category ? goodsReceiptCategoryLabel(e.category) : <span className="hint-text" style={{ margin: 0 }}>Choose at inward</span>}</td>
+                        <td>{e.category ? entryCategoryLabel(e) : <span className="hint-text" style={{ margin: 0 }}>Choose at inward</span>}</td>
                         <td>{fmt(e.po_quantity)} {e.unit}</td>
                         <td>
                           {/* A tray's received quantity IS its pallet count; other
