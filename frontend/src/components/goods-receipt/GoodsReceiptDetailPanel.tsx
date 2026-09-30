@@ -6,7 +6,16 @@ import { INWARD_CATEGORY_LABELS, TRAY_FAMILY_QC_CATEGORIES } from "@/lib/types";
 import QrGenerationPanel from "@/components/qr-generation/QrGenerationPanel";
 import GrInwardWizard from "./GrInwardWizard";
 import { GoodsReceiptStatusBadge } from "./GoodsReceiptStatusBadge";
-import { T } from "@/lib/terms";
+import { T, categoryLabel } from "@/lib/terms";
+
+// Display only -- INWARD_CATEGORY_LABELS is typed for just the 7 Inward
+// QC categories (tray/lnp_tray/film/pad/polybag/cfb/glue), so it renders
+// blank for a category outside that set (e.g. "packaging"/"ppe"/"pallet",
+// synced in from Zoho the same way RM is, but never routed through Inward
+// Vehicle Inspection / Inward QC). categoryLabel() falls back to the raw
+// value for anything unmapped, so nothing here ever silently disappears.
+const goodsReceiptCategoryLabel = (c: string): string =>
+  (INWARD_CATEGORY_LABELS as Record<string, string>)[c] ?? categoryLabel(c);
 
 function Kv({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -238,7 +247,7 @@ export default function GoodsReceiptDetailPanel({
             <h3>General Information</h3>
             <div className="detail-grid">
               <Kv label="PO Number" value={<span className="mono">{record.po_number}</span>} />
-              <Kv label="Categories" value={Array.from(new Set(record.entries.map((e) => e.category).filter(Boolean))).map((c) => INWARD_CATEGORY_LABELS[c!]).join(", ") || "—"} />
+              <Kv label="Categories" value={Array.from(new Set(record.entries.map((e) => e.category).filter(Boolean))).map((c) => goodsReceiptCategoryLabel(c!)).join(", ") || "—"} />
               <Kv label="Vendor" value={record.vendor_name} />
               <Kv label="Shipment Inwarded" value={`${inwarded.length} of ${record.entries.length}`} />
               <Kv label="Created" value={new Date(record.created_at).toLocaleString()} />
@@ -270,7 +279,7 @@ export default function GoodsReceiptDetailPanel({
                       <tr>
                         <td className="mono">{e.shipment_number || <span className="badge partial">Missing</span>}</td>
                         <td className="mono">{e.sku_code || "—"}</td>
-                        <td>{e.category ? INWARD_CATEGORY_LABELS[e.category] : <span className="hint-text" style={{ margin: 0 }}>Choose at inward</span>}</td>
+                        <td>{e.category ? goodsReceiptCategoryLabel(e.category) : <span className="hint-text" style={{ margin: 0 }}>Choose at inward</span>}</td>
                         <td>{fmt(e.po_quantity)} {e.unit}</td>
                         <td>
                           {/* A tray's received quantity IS its pallet count; other
