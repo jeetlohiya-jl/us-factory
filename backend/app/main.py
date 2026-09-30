@@ -11,7 +11,7 @@ from app.api import (
     rm_qr, rm_storage, fg_qr, fg_storage, production, ipqc, rqc, rqc_coa, locations, vendors, skus,
     machines, material_consumption, users, customer_shipment, shipment_picking,
     outward_vehicle_inspection, traceability, hold_release, portfolio_access, customers,
-    inventory,
+    inventory, goods_receipt_coa,
 )
 
 settings = get_settings()
@@ -74,6 +74,7 @@ app.include_router(hold_release.router)
 app.include_router(portfolio_access.router)
 app.include_router(customers.router)
 app.include_router(inventory.router)
+app.include_router(goods_receipt_coa.router)
 
 
 @app.api_route("/api/v1/health", methods=["GET", "HEAD"])

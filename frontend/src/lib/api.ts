@@ -2129,6 +2129,7 @@ const GR_DETAIL_SELECT =
   "zoho_purchaseorder_id,zoho_cancelled,zoho_synced_at,zoho_sync_notes," +
   "entries:goods_receipt_entries(id,shipment_number,category,sku_code_id,sku_version_id," +
   "sku_code:sku_code_snapshot,sku_version:sku_version_snapshot,sku_name:sku_codes(code),po_quantity,received_quantity,unit,pallet_count," +
+  "qr_quantity,coa_storage_path,coa_filename," +
   "status,inwarded_at,sort_order," +
   "inward_events:goods_receipt_inward_events(received_quantity,pallet_count,unit,kind,inwarded_at)," +
   "qr_batch:qr_generation_records!qr_generation_records_source_goods_receipt_entry_id_fkey(id,batch_display_id,status,quantity)," +
@@ -3299,7 +3300,7 @@ export const api = {
   },
   // A short container's later delivery (optional): adds to its totals and
   // grows its one RM QR batch; the new pallets' QRs are generated next.
-  inwardRemainingGoodsReceiptEntry: async (entryId: string, payload: { received_quantity?: number; pallet_count: number }) => {
+  inwardRemainingGoodsReceiptEntry: async (entryId: string, payload: { received_quantity?: number; pallet_count: number; qr_quantity?: number }) => {
     const res = await goodsReceiptRpc("goods_receipt_inward_remaining", { _entry_id: entryId, _payload: payload });
     invalidateListCache("goods-receipt");
     return res;
@@ -3322,6 +3323,21 @@ export const api = {
     invalidateListCache("rm-qr");
     return res;
   },
+  // COA upload for Polybag/Soaker Pad/CFB Goods Receipt entries (2026-09-30,
+  // migration 0080) -- a real file (PDF/Word/image), so this goes through
+  // FastAPI rather than Supabase-direct, same as Inward QC's own COA
+  // (uploadQcCoa above). Written straight onto the goods_receipt_entries
+  // row, independent of the inward RPCs -- it can be uploaded any time
+  // before Generate QRs, not only during the Inward wizard.
+  uploadGoodsReceiptCoa: (entryId: string, file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return request<{ coa_storage_path: string; coa_filename: string; coa_url: string }>(
+      `/api/v1/goods-receipt-entries/${entryId}/coa`, { method: "POST", body: form }
+    );
+  },
+  deleteGoodsReceiptCoa: (entryId: string) =>
+    request<void>(`/api/v1/goods-receipt-entries/${entryId}/coa`, { method: "DELETE" }),
   deleteGoodsReceipt: async (id: string) => {
     await sbRequest<null>(() =>
       supabase.rpc("goods_receipt_delete", { _id: id }) as unknown as Promise<{ data: null; error: { message: string; code?: string } | null }>

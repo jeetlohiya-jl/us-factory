@@ -1619,6 +1619,10 @@ class GoodsReceiptEntry(Base):
     received_quantity = Column(Numeric, nullable=True)
     unit = Column(Text, nullable=False, default="Units")
     pallet_count = Column(Integer, nullable=True)
+    # 2026-09-30 (migration 0080) -- see GoodsReceiptEntry in frontend/src/lib/types.ts.
+    qr_quantity = Column(Integer, nullable=True)
+    coa_storage_path = Column(Text, nullable=True)
+    coa_filename = Column(Text, nullable=True)
     status = Column(Text, nullable=False, default="pending")
     inwarded_at = Column(DateTime(timezone=True), nullable=True)
     inwarded_by = Column(UUID(as_uuid=True), ForeignKey("app_users.id"), nullable=True)
