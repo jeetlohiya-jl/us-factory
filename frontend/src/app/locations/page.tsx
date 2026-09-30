@@ -6,8 +6,6 @@ import { useMe } from "@/lib/useMe";
 import type { LocationAdmin } from "@/lib/types";
 import { MODULE_NAMES } from "@/lib/terms";
 import { T } from "@/lib/terms";
-import PrintLabels from "@/components/PrintLabels";
-import { downloadQrLabelsPdf } from "@/lib/qrLabels";
 import LabelImageButtons from "@/components/LabelImageButtons";
 
 // One zone per material. "LNPG" belongs only to LNP Trays -- secondary
@@ -53,7 +51,6 @@ function LocationQr({ loc }: { loc: LocationAdmin }) {
  * Gated on RM Storage edit, the module that uses them.
  */
 export default function LocationsPage() {
-  const [pdfBusy, setPdfBusy] = useState(false);
   const me = useMe();
   const canEdit = !!me?.permissions.rm_storage?.can_edit;
   const [locations, setLocations] = useState<LocationAdmin[]>([]);
@@ -116,7 +113,7 @@ export default function LocationsPage() {
 
   return (
     <>
-      <div className="no-print">
+      <div>
         <div className="page-head2">
           <div>
             <h1>{MODULE_NAMES.locations}</h1>
@@ -126,23 +123,6 @@ export default function LocationsPage() {
             disabled={toPrint.length === 0}
             labels={() => toPrint.map((l) => ({ payload: l.qr_payload || JSON.stringify({ t: "location", id: l.display_id, zone: l.zone }), text: l.display_id }))}
           />
-          <button
-            className="btn btn-secondary" disabled={toPrint.length === 0 || pdfBusy}
-            onClick={async () => {
-              setPdfBusy(true);
-              try {
-                await downloadQrLabelsPdf(
-                  toPrint.map((l) => ({ payload: l.qr_payload || JSON.stringify({ t: "location", id: l.display_id, zone: l.zone }), text: l.display_id })),
-                  "location-labels-2x2",
-                );
-              } finally { setPdfBusy(false); }
-            }}
-          >
-            {pdfBusy ? "Preparing PDF…" : "Download PDF (2×2)"}
-          </button>
-          <button className="btn btn-secondary" disabled={toPrint.length === 0} onClick={() => window.print()}>
-            Print {toPrint.length || ""} QR Label{toPrint.length === 1 ? "" : "s"}
-          </button>
         </div>
 
         {error && <div className="error-banner">{error}</div>}
@@ -215,13 +195,7 @@ export default function LocationsPage() {
       </div>
 
       {/* One 2in x 2in label per selected location (globals.css print rules). */}
-      <PrintLabels>
-        {toPrint.map((l) => (
-          <div className="qr-print-page" key={l.id}>
-            <div className="qr-print-label"><LocationQr loc={l} /></div>
-          </div>
-        ))}
-      </PrintLabels>
+
     </>
   );
 }
