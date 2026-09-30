@@ -172,12 +172,16 @@ table.data.compact thead th, table.data.compact tbody td{padding:11px 12px;}
 .print-only{display:none;}
 @media print{
   @page{size:2in 2in;margin:0;}
-  body *{visibility:hidden;}
-  .print-only, .print-only *{visibility:visible;}
+  /* Only the labels print. They are rendered straight under <body>
+     (components/PrintLabels.tsx), so everything else is REMOVED from the
+     print layout -- display:none, not visibility:hidden, which kept the
+     page's full height and printed it as blank pages. */
+  html, body{margin:0 !important;padding:0 !important;height:auto !important;min-height:0 !important;background:#fff !important;}
+  body > *:not(.print-only){display:none !important;}
   .no-print{display:none !important;}
-  .print-only{display:block;position:absolute;top:0;left:0;width:100%;margin:0;padding:0;}
+  .print-only{display:block;position:static;width:2in;margin:0;padding:0;}
   .qr-print-page{
-    width:2in;height:2in;box-sizing:border-box;
+    width:2in;height:2in;box-sizing:border-box;overflow:hidden;
     display:flex;align-items:center;justify-content:center;
     page-break-after:always;break-after:page;
   }

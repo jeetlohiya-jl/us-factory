@@ -7,7 +7,7 @@ import { PALLET_STAGE_LABELS, PALLET_STAGE_BADGE_CLASS } from "@/lib/types";
 
 /** The same JSON every pallet QR encodes (pallet_service.build_pallet_qr) --
  * used when a pallet row has no stored payload. */
-function fallbackPayload(p: Pallet): string {
+export function fallbackPayload(p: Pallet): string {
   return JSON.stringify({ t: p.pallet_type === "rm" ? "rm_pallet" : "fg_pallet", id: p.display_id, shipment: p.shipment_number, sku: p.sku_code });
 }
 
