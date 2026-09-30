@@ -6,6 +6,7 @@ import PalletTile, { fallbackPayload } from "./PalletTile";
 import { T } from "@/lib/terms";
 import PrintLabels from "@/components/PrintLabels";
 import { downloadQrLabelsPdf } from "@/lib/qrLabels";
+import LabelImageButtons from "@/components/LabelImageButtons";
 
 /**
  * "New RM/FG QR Generation Record" side panel from the prototype
@@ -158,6 +159,10 @@ export default function QrGenerationPanel({
           <div className="sp-foot-right">
             {isGenerated && (
               <>
+                <LabelImageButtons
+                  disabled={selected.size === 0}
+                  labels={() => selectedPallets.map((p) => ({ payload: p.qr_payload || fallbackPayload(p), text: p.display_id }))}
+                />
                 <button
                   className="btn btn-secondary" disabled={selected.size === 0 || pdfBusy}
                   onClick={async () => {
