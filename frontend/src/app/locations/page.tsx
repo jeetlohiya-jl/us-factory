@@ -8,6 +8,7 @@ import { MODULE_NAMES } from "@/lib/terms";
 import { T } from "@/lib/terms";
 import PrintLabels from "@/components/PrintLabels";
 import { downloadQrLabelsPdf } from "@/lib/qrLabels";
+import LabelImageButtons from "@/components/LabelImageButtons";
 
 // One zone per material. "LNPG" belongs only to LNP Trays -- secondary
 // materials are not LNP, so their zones are just the material.
@@ -121,6 +122,10 @@ export default function LocationsPage() {
             <h1>{MODULE_NAMES.locations}</h1>
             <div className="desc">Storage locations scanned in RM Storage and FG Storage, with their QR labels.</div>
           </div>
+          <LabelImageButtons
+            disabled={toPrint.length === 0}
+            labels={() => toPrint.map((l) => ({ payload: l.qr_payload || JSON.stringify({ t: "location", id: l.display_id, zone: l.zone }), text: l.display_id }))}
+          />
           <button
             className="btn btn-secondary" disabled={toPrint.length === 0 || pdfBusy}
             onClick={async () => {
