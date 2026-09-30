@@ -5,8 +5,9 @@ import type { Category, GoodsReceiptEntry, InspectionDetail, Permissions } from 
 import ImageField from "@/components/inward-vehicle-inspection/ImageField";
 import MultiImageField from "@/components/inward-vehicle-inspection/MultiImageField";
 import ChecklistStep from "@/components/inward-vehicle-inspection/ChecklistStep";
+import GrCoaField from "./GrCoaField";
 import { statusLabel } from "@/lib/terms";
-import { isTray, needsStage } from "./GoodsReceiptDetailPanel";
+import { isTray, needsCoa, needsStage } from "./GoodsReceiptDetailPanel";
 
 /**
  * Goods Receipt's own "Inward" flow (2026-09-28) -- a fork of
@@ -59,6 +60,14 @@ export default function GrInwardWizard({
   const [transporter, setTransporter] = useState(initialDetail.transporter_name || "");
   const [seal, setSeal] = useState(initialDetail.seal_number || "");
   const [remarks, setRemarks] = useState(initialDetail.remarks || "");
+  // 2026-09-30 -- Polybag/Soaker Pad/CFB entries need a COA even when they
+  // do have a real shipment number (and so still go through this wizard,
+  // unlike the common auto-shipment case handled by GrQuickInwardForm --
+  // see needsCoa's own comment). Rare in practice (these materials are
+  // usually the ones Zoho sends no container for), but independent of
+  // shipment-number type, so it's checked here too.
+  const requiresCoa = needsCoa(entry);
+  const [coaFilename, setCoaFilename] = useState(entry.coa_filename);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [touched, setTouched] = useState(false);
@@ -216,7 +225,8 @@ export default function GrInwardWizard({
     }
   }
 
-  const complete = detail.checklist_answers.length > 0 && detail.checklist_answers.every((a) => a.answer === "ok" || a.answer === "not_ok");
+  const complete = detail.checklist_answers.length > 0 && detail.checklist_answers.every((a) => a.answer === "ok" || a.answer === "not_ok")
+    && (!requiresCoa || !!coaFilename);
 
   async function handleSubmit() {
     setSaving(true);
@@ -364,6 +374,16 @@ export default function GrInwardWizard({
                 <label>Other Remarks (if any)</label>
                 <textarea rows={2} value={remarks} placeholder="No remarks" onChange={(e) => markTouched(setRemarks)(e.target.value)} />
               </div>
+              {requiresCoa && (
+                <div style={{ marginTop: 16 }}>
+                  <GrCoaField
+                    entryId={entry.id}
+                    filename={coaFilename}
+                    disabled={!canFillSection}
+                    onChange={(next) => setCoaFilename(next.coa_filename)}
+                  />
+                </div>
+              )}
             </div>
           )}
         </div>

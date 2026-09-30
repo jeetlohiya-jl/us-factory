@@ -5,6 +5,7 @@ import type { Category, GoodsReceiptDetail, GoodsReceiptEntry, InspectionDetail,
 import { INWARD_CATEGORY_LABELS, TRAY_FAMILY_QC_CATEGORIES } from "@/lib/types";
 import QrGenerationPanel from "@/components/qr-generation/QrGenerationPanel";
 import GrInwardWizard from "./GrInwardWizard";
+import GrQuickInwardForm from "./GrQuickInwardForm";
 import { GoodsReceiptStatusBadge } from "./GoodsReceiptStatusBadge";
 import { T, categoryLabel } from "@/lib/terms";
 
@@ -54,6 +55,18 @@ type Stage = "" | "tray" | "lnp_tray";
 export const needsStage = (e: GoodsReceiptEntry) => !e.category;
 export const isTray = (e: GoodsReceiptEntry) => needsStage(e) || TRAY_FAMILY_QC_CATEGORIES.includes(e.category as string);
 
+// 2026-09-30 -- Inward Vehicle Inspection is only required for a container
+// with a real Container/Shipment Number (from Zoho, or entered by hand). A
+// row whose shipment number is one of these auto-generated placeholders
+// (created by zoho_upsert_purchase_order when Zoho sends no "Container:")
+// skips the inspection entirely -- see GrQuickInwardForm.tsx.
+export const isAutoShipment = (e: GoodsReceiptEntry) => (e.shipment_number || "").startsWith("AUTO-");
+
+// 2026-09-30 -- Polybag/Soaker Pad/CFB entries need a COA (PDF, Word doc, or
+// image) uploaded before their QR codes can be generated, independent of
+// shipment-number type (see goods_receipt_generate_pallets' own guard).
+export const needsCoa = (e: GoodsReceiptEntry) => ["pad", "polybag", "cfb"].includes(e.category as string);
+
 /**
  * Goods Receipt detail -- the receiving screen. Every container x SKU entry
  * is its own row with its own status; "Inward" opens the Inward Inspection
@@ -91,6 +104,11 @@ export default function GoodsReceiptDetailPanel({
   // The "first inward" flow now goes through the Inward Inspection wizard
   // (2026-09-28) instead of completing the inward directly.
   const [inwardWizard, setInwardWizard] = useState<{ entry: GoodsReceiptEntry; inspectionId: string; detail: InspectionDetail; isNew: boolean } | null>(null);
+  // 2026-09-30 -- an auto-shipment entry (no real Container/Shipment Number)
+  // never gets an Inward Vehicle Inspection record at all: this is the
+  // lightweight alternative (pallets + QR quantity + COA if needed), opened
+  // instead of the wizard above. See isAutoShipment/GrQuickInwardForm.tsx.
+  const [quickInward, setQuickInward] = useState<GoodsReceiptEntry | null>(null);
 
   const inwarded = record.entries.filter((e) => e.status === "inwarded");
   const isDraft = record.status === "draft";
@@ -121,6 +139,12 @@ export default function GoodsReceiptDetailPanel({
   // is resumed instead of creating a second one; a delivery whose
   // inspection is already approved always gets a fresh one.
   async function openInwardWizard(e: GoodsReceiptEntry) {
+    // No real Container/Shipment Number -- skip Inward Vehicle Inspection
+    // entirely and use the lightweight quick-inward form instead.
+    if (isAutoShipment(e)) {
+      setQuickInward(e);
+      return;
+    }
     setError(null);
     setBusy(e.id);
     try {
@@ -131,6 +155,40 @@ export default function GoodsReceiptDetailPanel({
       setInwardWizard({ entry: e, inspectionId: insp.id, detail: insp, isNew: !resumable });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to open Inward Inspection");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  // Called by GrQuickInwardForm on Submit -- performs the inward (or
+  // "Inward remaining" top-up) directly, with no Inward Vehicle Inspection
+  // record involved, then auto-opens QR generation exactly like the IVI
+  // path's handleInspectionApproved does.
+  async function handleQuickInward(e: GoodsReceiptEntry, pallets: number, qrQuantity: number) {
+    setBusy(e.id);
+    setError(null);
+    try {
+      let next: GoodsReceiptDetail;
+      if (e.status === "inwarded") {
+        next = await api.inwardRemainingGoodsReceiptEntry(e.id, {
+          received_quantity: leftToReceive(e),
+          pallet_count: pallets,
+          qr_quantity: qrQuantity,
+        });
+      } else {
+        next = await api.inwardGoodsReceiptEntry(record.id, e.id, {
+          received_quantity: e.po_quantity,
+          unit: e.unit,
+          pallet_count: pallets,
+          qr_quantity: qrQuantity,
+        });
+      }
+      apply(next);
+      setQuickInward(null);
+      const updatedEntry = next.entries.find((x) => x.id === e.id);
+      if (updatedEntry) await openOrGenerateQr(updatedEntry);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to inward this container");
     } finally {
       setBusy(null);
     }
@@ -329,7 +387,14 @@ export default function GoodsReceiptDetailPanel({
                                 : "View Inspection"}
                             </button>
                           )}
-                          {e.status === "inwarded" && (e.qr_batch?.status === "generated" || canReceive) && (
+                          {/* Shouldn't normally be reachable -- both Inward flows require the
+                              COA before Submit for this category -- but QR generation itself
+                              also refuses without one (goods_receipt_generate_pallets), so this
+                              is a plain explanation rather than a dead button if it ever is. */}
+                          {e.status === "inwarded" && e.qr_batch?.status !== "generated" && needsCoa(e) && !e.coa_storage_path && (
+                            <span className="hint-text" style={{ margin: 0 }}>COA missing -- QR generation is blocked until one is uploaded.</span>
+                          )}
+                          {e.status === "inwarded" && (e.qr_batch?.status === "generated" || canReceive) && !(needsCoa(e) && !e.coa_storage_path && e.qr_batch?.status !== "generated") && (
                             <button
                               className={`btn ${e.qr_batch?.status === "generated" ? "btn-secondary" : "btn-primary"}`}
                               disabled={busy === e.id}
@@ -339,7 +404,7 @@ export default function GoodsReceiptDetailPanel({
                                 ? `View QRs · ${e.qr_batch.batch_display_id}`
                                 : busy === e.id ? "Generating…"
                                 : e.qr_batch ? "Generate remaining QRs"   // batch grew after an "Inward remaining"
-                                : `Generate ${e.pallet_count} QRs`}
+                                : `Generate ${e.qr_quantity ?? e.pallet_count} QRs`}
                             </button>
                           )}
                           {e.status === "inwarded" && canReceive && !record.zoho_cancelled && leftToReceive(e) > 0 && (
@@ -392,6 +457,19 @@ export default function GoodsReceiptDetailPanel({
           onApproved={(inspection) => { handleInspectionApproved(inwardWizard.entry, inspection); }}
           onSaved={refreshRecord}
           onClose={() => setInwardWizard(null)}
+        />
+      )}
+
+      {quickInward && (
+        <GrQuickInwardForm
+          entry={quickInward}
+          poNumber={record.po_number}
+          vendorName={record.vendor_name}
+          canEdit={canReceive}
+          busy={busy === quickInward.id}
+          error={error}
+          onClose={() => setQuickInward(null)}
+          onSubmit={(pallets, qrQuantity) => handleQuickInward(quickInward, pallets, qrQuantity)}
         />
       )}
     </>

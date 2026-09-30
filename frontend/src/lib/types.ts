@@ -139,8 +139,16 @@ export interface ChecklistItemRef {
 // near-duplicate options here. The backend stores `unit` as plain text
 // with no matching enum, so this list is the only thing that has to stay
 // in sync with zoho_unit()'s mapping.
-export type QuantityUnit = "Pallets" | "Kgs" | "Units" | "Bags" | "Rolls" | "Pairs" | "Sets";
-export const QUANTITY_UNITS: QuantityUnit[] = ["Pallets", "Kgs", "Units", "Bags", "Rolls", "Pairs", "Sets"];
+// "Pcs" added 2026-09-30 (migration 0080) -- zoho_unit() has mapped
+// pcs/piece/pieces/nos/no/unit/units to 'Pcs' since migration 0076, and
+// several SKUs' Setup > SKUs Default Unit were backfilled to 'Pcs' by
+// migration 0077, but this type (and the backend's own unit whitelists in
+// goods_receipt_save/goods_receipt_inward) never actually gained it --
+// meaning any of those entries would have failed to save or inward with
+// "unknown unit" the moment someone tried. Added here, and to both SQL
+// whitelists, together.
+export type QuantityUnit = "Pallets" | "Kgs" | "Units" | "Bags" | "Rolls" | "Pairs" | "Sets" | "Pcs";
+export const QUANTITY_UNITS: QuantityUnit[] = ["Pallets", "Kgs", "Units", "Bags", "Rolls", "Pairs", "Sets", "Pcs"];
 
 export interface LineItem {
   id: string;
@@ -1823,6 +1831,22 @@ export interface GoodsReceiptEntry {
   received_quantity: number | null;
   unit: QuantityUnit;
   pallet_count: number | null;
+  // 2026-09-30 -- for a container with no real Container/Shipment Number
+  // from Zoho (shipment_number is an auto-generated "AUTO-####"), Quantity
+  // (Pallets) no longer decides how many QR codes get printed: the boxes
+  // configuration behind that number is unknown, so it's asked separately
+  // at Inward. Null means "not asked" (a manual-shipment entry, or an
+  // auto-shipment entry inwarded before this field existed) -- QR
+  // generation falls back to pallet_count in that case. See
+  // goods_receipt_generate_pallets (migration 0080) and GrQuickInwardForm.tsx.
+  qr_quantity: number | null;
+  // 2026-09-30 (migration 0080) -- Certificate of Analysis upload, required
+  // before QR generation for Polybag/Soaker Pad/CFB entries specifically
+  // (see GrCoaField.tsx / needsCoa()). Uploaded via FastAPI (not
+  // Supabase-direct, matching the existing Inward QC COA pattern) since it's
+  // a real file, not a jsonb-friendly value.
+  coa_storage_path: string | null;
+  coa_filename: string | null;
   status: GoodsReceiptEntryStatus;
   inwarded_at: string | null;
   // Every delivery of this container: the first inward, then any
@@ -1902,4 +1926,7 @@ export interface GoodsReceiptInwardPayload {
   pallet_count: number;
   // Tray rows synced from Zoho have no stage yet: RM / LNP Tray.
   category?: Category;
+  // 2026-09-30 -- see GoodsReceiptEntry.qr_quantity. Only ever sent for an
+  // auto-shipment entry (GrQuickInwardForm.tsx); omitted otherwise.
+  qr_quantity?: number;
 }
