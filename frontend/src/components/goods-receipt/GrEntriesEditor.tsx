@@ -2,7 +2,17 @@
 import { useState } from "react";
 import type { Category, GoodsReceiptEntryDraft, QuantityUnit, SkuCode } from "@/lib/types";
 import { INWARD_CATEGORY_LABELS, QUANTITY_UNITS, skuFamily } from "@/lib/types";
-import { T } from "@/lib/terms";
+import { T, categoryLabel } from "@/lib/terms";
+
+// 2026-09-30 -- same reasoning as GoodsReceiptDetailPanel's entryCategoryLabel:
+// INWARD_CATEGORY_LABELS only covers the 7 real QC categories, so a catch-all
+// category (packaging/ppe/pallet, or anything else added later) rendered
+// blank here too. Prefer that SKU's own name (many unrelated SKUs share one
+// catch-all category, so the bucket label alone doesn't distinguish rows).
+function categoryDisplay(category: Category | "", sku: SkuCode | undefined): string {
+  if (!category) return "—";
+  return (INWARD_CATEGORY_LABELS as Record<string, string>)[category] ?? sku?.code ?? categoryLabel(category);
+}
 
 /** Category follows the SKU: a Tray SKU is chosen as RM or LNP Tray
  * (the same tray, two stages); any other SKU's material is its category. */
@@ -109,7 +119,7 @@ export default function GrEntriesEditor({
                 <tr key={item.key}>
                   <td className="mono">{item.shipment_number}</td>
                   <td className="mono">{skuCodes.find((s) => s.id === item.sku_code_id)?.code || "—"}</td>
-                  <td>{item.category ? INWARD_CATEGORY_LABELS[item.category as Category] : "—"}</td>
+                  <td>{categoryDisplay(item.category, skuCodes.find((s) => s.id === item.sku_code_id))}</td>
                   <td>{Number(item.po_quantity).toLocaleString()}</td>
                   <td>{item.unit}</td>
                   <td><span className="badge approved">Inwarded</span></td>
@@ -130,7 +140,7 @@ export default function GrEntriesEditor({
                         {TRAY_STAGES.map((c) => <option key={c} value={c}>{INWARD_CATEGORY_LABELS[c]}</option>)}
                       </select>
                     ) : (
-                      <div className="readonly-val">{item.category ? INWARD_CATEGORY_LABELS[item.category as Category] : "—"}</div>
+                      <div className="readonly-val">{categoryDisplay(item.category, skuById(item.sku_code_id))}</div>
                     )}
                   </td>
                   <td>
