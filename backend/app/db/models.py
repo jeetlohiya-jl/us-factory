@@ -99,6 +99,11 @@ class SkuCode(ProductScoped, Base):
     # -only, FG Storage Batch Code segment). Nullable/optional, same pattern
     # as batch_number.
     sku_code = Column(Text, nullable=True)
+    # 2026-09-30 (migration 0077) -- fallback unit for this SKU's Zoho-synced
+    # Goods Receipt lines, used only when Zoho's own line carries no usable
+    # unit (an empty "unit" field on the Zoho Item, not just an unrecognized
+    # value). Zoho's own unit always wins when it sends one.
+    default_unit = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
     # cascade="all, delete-orphan" so deleting a SkuCode via the ORM (see

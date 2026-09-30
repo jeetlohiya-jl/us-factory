@@ -2051,7 +2051,7 @@ async function saveHoldReleaseSb(id: string, payload: HoldReleaseSavePayload): P
 // exact same "all versions, not just active ones" shape (see LineItemsEditor,
 // which itself does no active-filtering on the versions it's handed).
 const SKU_SELECT =
-  "id, code, category, is_active, batch_number, sku_code, description, " +
+  "id, code, category, is_active, batch_number, sku_code, default_unit, description, " +
   "versions:sku_versions(id, version, is_active, prod_weight, prod_pcs_per_sleeve, prod_sleeve_per_case, " +
   "prod_total_pcs_per_pallet, prod_total_pallets, prod_target_shots, prod_pad_type, prod_pad_color, prod_case_type, " +
   "prod_dimensions, prod_absorption_rate)";
@@ -2305,7 +2305,7 @@ export const api = {
       () => supabase.from("sku_codes").insert({ category, code, is_active: true }).select("id").single() as unknown as Promise<{ data: { id: string } | null; error: { message: string; code?: string } | null }>,
       { conflict: `"${code}" already exists.` }
     ).then((created) => { invalidateSkuCaches(); return created; }),
-  updateSku: (id: string, patch: { code?: string; is_active?: boolean; batch_number?: string | null; sku_code?: string | null; description?: string | null }) =>
+  updateSku: (id: string, patch: { code?: string; is_active?: boolean; batch_number?: string | null; sku_code?: string | null; default_unit?: import("./types").QuantityUnit | null; description?: string | null }) =>
     sbVoid(
       () => supabase.from("sku_codes").update(patch).eq("id", id),
       { conflict: `"${patch.code}" already exists.` }
