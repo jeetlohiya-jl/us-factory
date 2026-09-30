@@ -1923,7 +1923,11 @@ export interface GoodsReceiptSavePayload {
 export interface GoodsReceiptInwardPayload {
   received_quantity: number;
   unit: QuantityUnit;
-  pallet_count: number;
+  // 2026-09-30 -- optional: only materials that genuinely arrive on
+  // pallets (trays, via the full wizard; Soaker Pad, via GrQuickInwardForm)
+  // send this. Everything else auto-shipment (Polybag/CFB/Glue/...) has no
+  // meaningful pallet count, so it's omitted rather than faked.
+  pallet_count?: number;
   // Tray rows synced from Zoho have no stage yet: RM / LNP Tray.
   category?: Category;
   // 2026-09-30 -- see GoodsReceiptEntry.qr_quantity. Only ever sent for an

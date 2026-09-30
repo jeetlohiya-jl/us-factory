@@ -5,7 +5,7 @@ import type { Category, GoodsReceiptDetail, GoodsReceiptEntry, InspectionDetail,
 import { INWARD_CATEGORY_LABELS, TRAY_FAMILY_QC_CATEGORIES } from "@/lib/types";
 import QrGenerationPanel from "@/components/qr-generation/QrGenerationPanel";
 import GrInwardWizard from "./GrInwardWizard";
-import GrQuickInwardForm from "./GrQuickInwardForm";
+import GrQuickInwardForm, { type QuickInwardSubmission } from "./GrQuickInwardForm";
 import { GoodsReceiptStatusBadge } from "./GoodsReceiptStatusBadge";
 import { T, categoryLabel } from "@/lib/terms";
 
@@ -163,25 +163,25 @@ export default function GoodsReceiptDetailPanel({
   // Called by GrQuickInwardForm on Submit -- performs the inward (or
   // "Inward remaining" top-up) directly, with no Inward Vehicle Inspection
   // record involved, then auto-opens QR generation exactly like the IVI
-  // path's handleInspectionApproved does.
-  async function handleQuickInward(e: GoodsReceiptEntry, pallets: number, qrQuantity: number) {
+  // path's handleInspectionApproved does. Only Soaker Pad ("pallets" kind)
+  // still assumes a full-PO-quantity receipt counted in pallets, matching
+  // the full wizard's own non-tray assumption -- everything else
+  // ("quantity" kind) uses exactly what was typed in as the actual
+  // received quantity/unit, since it isn't palletized and may not match
+  // the PO quantity or unit exactly (e.g. glue received by weight).
+  async function handleQuickInward(e: GoodsReceiptEntry, submission: QuickInwardSubmission) {
     setBusy(e.id);
     setError(null);
     try {
       let next: GoodsReceiptDetail;
       if (e.status === "inwarded") {
-        next = await api.inwardRemainingGoodsReceiptEntry(e.id, {
-          received_quantity: leftToReceive(e),
-          pallet_count: pallets,
-          qr_quantity: qrQuantity,
-        });
+        next = await api.inwardRemainingGoodsReceiptEntry(e.id, submission.kind === "pallets"
+          ? { received_quantity: leftToReceive(e), pallet_count: submission.pallets, qr_quantity: submission.qrQuantity }
+          : { received_quantity: submission.receivedQuantity, unit: submission.unit, qr_quantity: submission.qrQuantity });
       } else {
-        next = await api.inwardGoodsReceiptEntry(record.id, e.id, {
-          received_quantity: e.po_quantity,
-          unit: e.unit,
-          pallet_count: pallets,
-          qr_quantity: qrQuantity,
-        });
+        next = await api.inwardGoodsReceiptEntry(record.id, e.id, submission.kind === "pallets"
+          ? { received_quantity: e.po_quantity, unit: e.unit, pallet_count: submission.pallets, qr_quantity: submission.qrQuantity }
+          : { received_quantity: submission.receivedQuantity, unit: submission.unit, qr_quantity: submission.qrQuantity });
       }
       apply(next);
       setQuickInward(null);
@@ -357,9 +357,12 @@ export default function GoodsReceiptDetailPanel({
                         <td>{fmt(e.po_quantity)} {e.unit}</td>
                         <td>
                           {/* A tray's received quantity IS its pallet count; other
-                              materials show their quantity plus the pallets it came on. */}
+                              materials show their quantity plus the pallets it came on --
+                              only when pallet_count is actually known (Soaker Pad and
+                              full-wizard materials); an auto-shipment entry received by
+                              Quantity + Unit instead (2026-09-30) has none to show. */}
                           {e.received_quantity == null ? "—"
-                            : isTray(e) ? `${fmt(e.received_quantity)} ${e.unit}`
+                            : isTray(e) || e.pallet_count == null ? `${fmt(e.received_quantity)} ${e.unit}`
                             : `${fmt(e.received_quantity)} ${e.unit} · ${e.pallet_count} pallet${e.pallet_count === 1 ? "" : "s"}`}
                           {e.received_quantity != null && e.received_quantity < e.po_quantity && (
                             <span className="badge partial" style={{ marginLeft: 6 }}>Short</span>
@@ -469,7 +472,7 @@ export default function GoodsReceiptDetailPanel({
           busy={busy === quickInward.id}
           error={error}
           onClose={() => setQuickInward(null)}
-          onSubmit={(pallets, qrQuantity) => handleQuickInward(quickInward, pallets, qrQuantity)}
+          onSubmit={(submission) => handleQuickInward(quickInward, submission)}
         />
       )}
     </>

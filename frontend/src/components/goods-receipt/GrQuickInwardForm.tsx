@@ -1,8 +1,13 @@
 "use client";
 import { useState } from "react";
-import type { GoodsReceiptEntry } from "@/lib/types";
+import type { GoodsReceiptEntry, QuantityUnit } from "@/lib/types";
+import { QUANTITY_UNITS } from "@/lib/types";
 import GrCoaField from "./GrCoaField";
 import { needsCoa } from "./GoodsReceiptDetailPanel";
+
+export type QuickInwardSubmission =
+  | { kind: "pallets"; pallets: number; qrQuantity: number }
+  | { kind: "quantity"; receivedQuantity: number; unit: QuantityUnit; qrQuantity: number };
 
 /**
  * Inward for a container with NO real Container/Shipment Number (2026-09-30)
@@ -13,12 +18,17 @@ import { needsCoa } from "./GoodsReceiptDetailPanel";
  * container does. Instead it asks for exactly what's needed to inward it
  * and print its QR codes:
  *
- *   - Quantity (Pallets) -- same field as the full wizard, still drives
- *     received_quantity / inventory the same way.
- *   - How many QR codes to generate -- separate from Quantity (Pallets):
- *     the real "boxes" configuration behind an auto-generated shipment
- *     number is unknown, so it's asked directly rather than assumed from
- *     pallet count.
+ *   - Quantity (Pallets) -- ONLY for Soaker Pad (the one auto-shipment
+ *     material that genuinely arrives on pallets); received_quantity is
+ *     then the full PO quantity, same assumption the full wizard makes for
+ *     every non-tray material. Everything else auto-shipment (Polybag,
+ *     CFB, Glue, ...) isn't palletized, so instead it asks the actual
+ *     Quantity Received plus its Unit (defaulting to the PO's own unit,
+ *     but editable -- what's physically received can differ, e.g. by
+ *     weight for glue).
+ *   - How many QR codes to generate -- always asked, independent of the
+ *     above: the real "boxes" configuration behind an auto-generated
+ *     shipment number is unknown either way.
  *   - COA upload -- compulsory, only for Polybag/Soaker Pad/CFB (needsCoa).
  *
  * Deliberately has no Save Draft / resume: unlike the full wizard, this is
@@ -36,9 +46,12 @@ export default function GrQuickInwardForm({
   busy: boolean;
   error: string | null;
   onClose: () => void;
-  onSubmit: (pallets: number, qrQuantity: number) => void;
+  onSubmit: (submission: QuickInwardSubmission) => void;
 }) {
+  const usesPallets = entry.category === "pad";
   const [pallets, setPallets] = useState("");
+  const [receivedQuantity, setReceivedQuantity] = useState("");
+  const [unit, setUnit] = useState<QuantityUnit>(entry.unit);
   const [qrQuantity, setQrQuantity] = useState("");
   const [coaFilename, setCoaFilename] = useState(entry.coa_filename);
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -47,8 +60,13 @@ export default function GrQuickInwardForm({
   const isRemainingDelivery = entry.status === "inwarded";
 
   function validate(): string | null {
-    const p = Number(pallets);
-    if (!(p >= 1) || !Number.isInteger(p)) return "Quantity (Pallets) must be a whole number of at least 1.";
+    if (usesPallets) {
+      const p = Number(pallets);
+      if (!(p >= 1) || !Number.isInteger(p)) return "Quantity (Pallets) must be a whole number of at least 1.";
+    } else {
+      const q = Number(receivedQuantity);
+      if (!(q > 0)) return "Quantity Received must be greater than 0.";
+    }
     const q = Number(qrQuantity);
     if (!(q >= 1) || !Number.isInteger(q)) return "Number of QR codes to generate must be a whole number of at least 1.";
     if (requiresCoa && !coaFilename) return "Upload the COA before submitting.";
@@ -59,7 +77,11 @@ export default function GrQuickInwardForm({
     const invalid = validate();
     if (invalid) { setValidationError(invalid); return; }
     setValidationError(null);
-    onSubmit(Number(pallets), Number(qrQuantity));
+    onSubmit(
+      usesPallets
+        ? { kind: "pallets", pallets: Number(pallets), qrQuantity: Number(qrQuantity) }
+        : { kind: "quantity", receivedQuantity: Number(receivedQuantity), unit, qrQuantity: Number(qrQuantity) }
+    );
   }
 
   return (
@@ -100,16 +122,32 @@ export default function GrQuickInwardForm({
             No Container/Shipment Number was provided for this line, so Inward Vehicle Inspection doesn't apply here.
           </div>
           <div className="form-grid" style={{ marginBottom: 18 }}>
-            <div className="field">
-              <label>Quantity (Pallets) <span style={{ color: "var(--red)" }}>*</span></label>
-              <input type="number" min={1} step={1} disabled={!canEdit || busy} value={pallets} placeholder="e.g. 20"
-                onChange={(e) => setPallets(e.target.value)} />
-            </div>
+            {usesPallets ? (
+              <div className="field">
+                <label>Quantity (Pallets) <span style={{ color: "var(--red)" }}>*</span></label>
+                <input type="number" min={1} step={1} disabled={!canEdit || busy} value={pallets} placeholder="e.g. 20"
+                  onChange={(e) => setPallets(e.target.value)} />
+              </div>
+            ) : (
+              <>
+                <div className="field">
+                  <label>Quantity Received <span style={{ color: "var(--red)" }}>*</span></label>
+                  <input type="number" min={0} step="any" disabled={!canEdit || busy} value={receivedQuantity} placeholder="e.g. 980"
+                    onChange={(e) => setReceivedQuantity(e.target.value)} />
+                </div>
+                <div className="field">
+                  <label>Unit <span style={{ color: "var(--red)" }}>*</span></label>
+                  <select disabled={!canEdit || busy} value={unit} onChange={(e) => setUnit(e.target.value as QuantityUnit)}>
+                    {QUANTITY_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+                  </select>
+                </div>
+              </>
+            )}
             <div className="field">
               <label>How many QR codes to generate? <span style={{ color: "var(--red)" }}>*</span></label>
               <input type="number" min={1} step={1} disabled={!canEdit || busy} value={qrQuantity} placeholder="e.g. 20"
                 onChange={(e) => setQrQuantity(e.target.value)} />
-              <div className="hint-text" style={{ margin: "4px 0 0" }}>The boxes configuration behind this line isn't known, so this is asked separately from Quantity (Pallets).</div>
+              <div className="hint-text" style={{ margin: "4px 0 0" }}>The boxes configuration behind this line isn't known, so this is asked separately.</div>
             </div>
           </div>
           {requiresCoa && (
