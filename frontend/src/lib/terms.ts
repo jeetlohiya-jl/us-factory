@@ -100,6 +100,14 @@ export const CATEGORY_LABELS: Record<string, string> = {
   cfb: "CFB",
   glue: "Glue",
   fg: T.finishedGoods,
+  // 2026-09-30 -- non-RM secondary materials that sync into Goods Receipt
+  // via Zoho the same way RM does, but never go through Inward Vehicle
+  // Inspection / Inward QC (see INWARD_CATEGORY_LABELS in lib/types.ts,
+  // which deliberately only covers the 7 QC categories -- these three are
+  // display-only labels for everywhere else, e.g. GoodsReceiptDetailPanel).
+  packaging: "Packaging",
+  ppe: "PPE",
+  pallet: "Pallets",
 };
 export const categoryLabel = (c: string | null | undefined): string => (c ? CATEGORY_LABELS[c] ?? c : "—");
 
