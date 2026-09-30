@@ -3300,7 +3300,7 @@ export const api = {
   },
   // A short container's later delivery (optional): adds to its totals and
   // grows its one RM QR batch; the new pallets' QRs are generated next.
-  inwardRemainingGoodsReceiptEntry: async (entryId: string, payload: { received_quantity?: number; pallet_count: number; qr_quantity?: number }) => {
+  inwardRemainingGoodsReceiptEntry: async (entryId: string, payload: { received_quantity?: number; unit?: import("./types").QuantityUnit; pallet_count?: number; qr_quantity?: number }) => {
     const res = await goodsReceiptRpc("goods_receipt_inward_remaining", { _entry_id: entryId, _payload: payload });
     invalidateListCache("goods-receipt");
     return res;
