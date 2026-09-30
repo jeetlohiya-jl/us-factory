@@ -2,8 +2,10 @@
 import { useEffect, useState } from "react";
 import type { QrGenerationDetail, Pallet } from "@/lib/types";
 import { PALLET_STAGE_LABELS, PALLET_STAGE_BADGE_CLASS } from "@/lib/types";
-import PalletTile from "./PalletTile";
+import PalletTile, { fallbackPayload } from "./PalletTile";
 import { T } from "@/lib/terms";
+import PrintLabels from "@/components/PrintLabels";
+import { downloadQrLabelsPdf } from "@/lib/qrLabels";
 
 /**
  * "New RM/FG QR Generation Record" side panel from the prototype
@@ -33,6 +35,7 @@ export default function QrGenerationPanel({
   onGenerate: () => Promise<void>;
   onClose: () => void;
 }) {
+  const [pdfBusy, setPdfBusy] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -154,9 +157,25 @@ export default function QrGenerationPanel({
           <button className="btn btn-ghost" onClick={onClose}>{isGenerated ? "Close" : "Cancel"}</button>
           <div className="sp-foot-right">
             {isGenerated && (
-              <button className="btn btn-secondary" disabled={selected.size === 0} onClick={() => window.print()}>
-                Print {selected.size === detail.pallets.length ? "All" : `Selected (${selected.size})`} QR Codes
-              </button>
+              <>
+                <button
+                  className="btn btn-secondary" disabled={selected.size === 0 || pdfBusy}
+                  onClick={async () => {
+                    setPdfBusy(true);
+                    try {
+                      await downloadQrLabelsPdf(
+                        selectedPallets.map((p) => ({ payload: p.qr_payload || fallbackPayload(p), text: p.display_id })),
+                        `${detail.batch_display_id || "qr-labels"}-2x2`,
+                      );
+                    } finally { setPdfBusy(false); }
+                  }}
+                >
+                  {pdfBusy ? "Preparing PDF…" : "Download PDF (2×2)"}
+                </button>
+                <button className="btn btn-secondary" disabled={selected.size === 0} onClick={() => window.print()}>
+                  Print {selected.size === detail.pallets.length ? "All" : `Selected (${selected.size})`} QR Codes
+                </button>
+              </>
             )}
             {!isGenerated && (
               <button className="btn btn-primary" disabled={busy || !canGenerate || detail.quantity <= 0} onClick={handleGenerate}>
@@ -170,7 +189,7 @@ export default function QrGenerationPanel({
       {/* Print-only output: one 2in x 2in label per selected pallet, one
           physical label per page. Invisible on screen. */}
       {isGenerated && (
-        <div className="print-only">
+        <PrintLabels>
           {selectedPallets.map((p) => (
             <div className="qr-print-page" key={p.id}>
               <div className="qr-print-label">
@@ -178,7 +197,7 @@ export default function QrGenerationPanel({
               </div>
             </div>
           ))}
-        </div>
+        </PrintLabels>
       )}
     </>
   );
