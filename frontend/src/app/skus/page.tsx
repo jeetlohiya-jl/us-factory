@@ -2,8 +2,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { useMe } from "@/lib/useMe";
-import type { Category, SkuCode, SkuVersion } from "@/lib/types";
-import { skuFamily } from "@/lib/types";
+import type { Category, QuantityUnit, SkuCode, SkuVersion } from "@/lib/types";
+import { QUANTITY_UNITS, skuFamily } from "@/lib/types";
 import { MODULE_NAMES, T } from "@/lib/terms";
 
 // Production Details reference attributes (migration 0013) -- entered once
@@ -244,6 +244,19 @@ export default function SkusPage() {
     }
   }
 
+  // 2026-09-30 -- fallback unit used only when a Zoho-synced line doesn't
+  // carry a usable unit of its own (see migration 0077 -- some Zoho Items
+  // have no Unit set at all, which no text-mapping fix can work around).
+  async function handleDefaultUnitChange(s: SkuCode, value: string) {
+    const default_unit = (value || null) as QuantityUnit | null;
+    try {
+      await api.updateSku(s.id, { default_unit });
+      refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to update SKU");
+    }
+  }
+
   async function handleDeleteSku(s: SkuCode) {
     if (!confirm(`Delete "${s.code}" and all its versions? This cannot be undone.`)) return;
     try {
@@ -356,10 +369,10 @@ export default function SkusPage() {
 
       <div className="card card-flush">
         <table className="data">
-          <thead><tr><th>Material</th><th>{T.sku}</th><th>{T.skuCode}</th><th>Name</th><th>Batch Number</th><th>Versions</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>Material</th><th>{T.sku}</th><th>{T.skuCode}</th><th>Default Unit</th><th>Name</th><th>Batch Number</th><th>Versions</th><th>Status</th><th></th></tr></thead>
           <tbody>
             {visible.length === 0 ? (
-              <tr className="empty-row"><td colSpan={8}>{loading ? "Loading…" : "No SKUs yet — add one above."}</td></tr>
+              <tr className="empty-row"><td colSpan={9}>{loading ? "Loading…" : "No SKUs yet — add one above."}</td></tr>
             ) : (
               visible.map((s) => (
                 <tr key={s.id}>
@@ -372,6 +385,14 @@ export default function SkusPage() {
                         onBlur={(e) => e.target.value !== (s.sku_code || "") && handleSkuCodeChange(s, e.target.value)}
                       />
                     ) : (s.sku_code || "—")}
+                  </td>
+                  <td title="Used only when a Zoho-synced line doesn't carry its own unit">
+                    {canEdit ? (
+                      <select value={s.default_unit || ""} onChange={(e) => handleDefaultUnitChange(s, e.target.value)}>
+                        <option value="">—</option>
+                        {QUANTITY_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+                      </select>
+                    ) : (s.default_unit || "—")}
                   </td>
                   <td>
                     {canEdit ? (

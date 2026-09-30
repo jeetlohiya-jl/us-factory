@@ -82,6 +82,14 @@ export interface SkuCode {
   // -only): "my sku code has numbers and alphabets : batch number is onky
   // the numbers without the alphabet."
   sku_code: string | null;
+  // 2026-09-30 -- fallback unit for this SKU's Zoho-synced Goods Receipt
+  // lines, used only when Zoho's own line doesn't carry a usable unit (an
+  // empty "unit" field on the Zoho Item -- confirmed on CIPO-00537's
+  // PET Strap/Corner Protector/Stretch wrap lines, not just an unrecognized
+  // value: zoho_unit() can't map a blank string no matter how many units it
+  // knows about). See migration 0077. Zoho's own unit always wins when it
+  // sends one -- this only fills the gap when it sends nothing.
+  default_unit: QuantityUnit | null;
   versions: SkuVersion[];
 }
 
