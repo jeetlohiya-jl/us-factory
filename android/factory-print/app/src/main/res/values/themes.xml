@@ -1,0 +1,10 @@
+<resources>
+    <!-- MaterialComponents: the MakeID SDK's own printer-picker dialogs expect it (as in its demo). -->
+    <style name="Theme.FactoryPrint" parent="Theme.MaterialComponents.Light.DarkActionBar">
+        <item name="colorPrimary">#1F3A2D</item>
+        <item name="colorPrimaryVariant">#16291F</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorSecondary">#C8A24B</item>
+        <item name="colorOnSecondary">#1F3A2D</item>
+    </style>
+</resources>
