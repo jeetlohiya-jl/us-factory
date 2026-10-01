@@ -121,6 +121,7 @@ export default function LocationsPage() {
           </div>
           <LabelImageButtons
             disabled={toPrint.length === 0}
+            source="Locations"
             labels={() => toPrint.map((l) => ({ payload: l.qr_payload || JSON.stringify({ t: "location", id: l.display_id, zone: l.zone }), text: l.display_id }))}
           />
         </div>

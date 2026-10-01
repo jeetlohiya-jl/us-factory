@@ -1,0 +1,43 @@
+plugins {
+    alias(libs.plugins.android.application)
+}
+
+android {
+    namespace 'com.cirkla.factoryprint'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId "com.cirkla.factoryprint"
+        minSdk 24
+        targetSdk 35
+        versionCode 1
+        versionName "1.0"
+    }
+
+    // One fixed key, so new versions install over old ones (internal app).
+    signingConfigs {
+        release {
+            storeFile file('factoryprint.keystore')
+            storePassword 'cirklaprint'
+            keyAlias 'factoryprint'
+            keyPassword 'cirklaprint'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+}
+
+dependencies {
+    implementation libs.appcompat
+    implementation libs.material
+    implementation files('libs/wewinPrinterExtapi.aar')
+}

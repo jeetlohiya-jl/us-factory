@@ -1,32 +1,22 @@
 "use client";
 import { useEffect, useState } from "react";
-import { canShareImages, downloadFiles, qrLabelImages, shareFiles, type QrLabel } from "@/lib/qrLabels";
+import { downloadFiles, qrLabelImages, type QrLabel } from "@/lib/qrLabels";
+import { FACTORY_PRINT_MAX_LABELS, isAndroid, openFactoryPrint } from "@/lib/factoryPrint";
 
 /**
- * "Send to printer app" + "Download images" for QR labels. On an Android
- * tablet, "Send to printer app" opens the Share menu with one 48x48 mm
- * label image per pallet/location -- pick MakeID Label Pro, then print them
- * with Print by Photo. Made on the device; no server call.
+ * Label buttons for the QR panel and Setup -> Locations:
+ *  - "Print on D50" (Android tablet): opens the Factory Print app, which
+ *    prints every selected label on the MakeID D50 in one job.
+ *  - "Download images": one 48x48 mm label image per pallet/location (for a
+ *    one-off label via MakeID Label Pro's Print by Photo, or another device).
+ * (The earlier "Send to printer app" share is gone: MakeID Label Pro opens
+ * shared files as an Excel import, not as labels to print.)
  */
-export default function LabelImageButtons({ labels, disabled }: { labels: () => QrLabel[]; disabled?: boolean }) {
-  const [busy, setBusy] = useState<"share" | "download" | null>(null);
-  const [pending, setPending] = useState<File[] | null>(null);   // ready, waiting for a fresh tap
+export default function LabelImageButtons({ labels, disabled, source = "" }: { labels: () => QrLabel[]; disabled?: boolean; source?: string }) {
+  const [busy, setBusy] = useState<"download" | null>(null);
   const [note, setNote] = useState<string | null>(null);
-  const [canShare, setCanShare] = useState(false);
-  useEffect(() => setCanShare(canShareImages()), []);
-
-  async function send(files?: File[]) {
-    setNote(null);
-    setBusy("share");
-    try {
-      const f = files ?? (await qrLabelImages(labels()));
-      const r = await shareFiles(f, "QR labels");
-      if (r === "needs-tap") { setPending(f); return; }   // the browser wants one more tap
-      setPending(null);
-    } catch (e) {
-      setNote(e instanceof Error ? e.message : "Couldn't open the Share menu -- use Download images instead.");
-    } finally { setBusy(null); }
-  }
+  const [android, setAndroid] = useState(false);
+  useEffect(() => { setAndroid(isAndroid()); }, []);
 
   async function download() {
     setNote(null);
@@ -38,13 +28,16 @@ export default function LabelImageButtons({ labels, disabled }: { labels: () => 
   const n = labels().length;
   return (
     <>
-      {canShare && (pending ? (
-        <button className="btn btn-primary" onClick={() => send(pending)}>Tap to share {pending.length} label{pending.length === 1 ? "" : "s"}</button>
-      ) : (
-        <button className="btn btn-secondary" disabled={disabled || n === 0 || !!busy} onClick={() => send()}>
-          {busy === "share" ? "Preparing…" : "Send to printer app"}
+      {/* Android tablet: straight to the MakeID D50 via the Factory Print app (all labels, one job). */}
+      {android && (
+        <button
+          className="btn btn-primary" disabled={disabled || n === 0 || n > FACTORY_PRINT_MAX_LABELS}
+          title={n > FACTORY_PRINT_MAX_LABELS ? `Select at most ${FACTORY_PRINT_MAX_LABELS} labels per print` : undefined}
+          onClick={() => openFactoryPrint(labels(), source)}
+        >
+          Print on D50 ({n})
         </button>
-      ))}
+      )}
       <button className="btn btn-secondary" disabled={disabled || n === 0 || !!busy} onClick={download}>
         {busy === "download" ? "Preparing…" : `Download image${n === 1 ? "" : "s"}`}
       </button>

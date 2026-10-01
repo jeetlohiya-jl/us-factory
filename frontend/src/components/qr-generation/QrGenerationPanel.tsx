@@ -152,6 +152,7 @@ export default function QrGenerationPanel({
               <>
                 <LabelImageButtons
                   disabled={selected.size === 0}
+                  source={detail.batch_display_id || ""}
                   labels={() => selectedPallets.map((p) => ({ payload: p.qr_payload || fallbackPayload(p), text: p.display_id }))}
                 />
               </>

@@ -1,0 +1,48 @@
+# Builds the Factory Print Android app (android/factory-print) -- prints
+# Factory QR labels on the MakeID D50 via MakeID's SDK.
+# Runs on every change to android/factory-print, or by hand:
+# GitHub -> Actions -> "Build Factory Print APK" -> Run workflow.
+# Download: the run's "Artifacts" -> factory-print-apk -> factory-print.apk
+name: Build Factory Print APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "android/factory-print/**"
+      - ".github/workflows/build-factory-print.yml"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Java 17 (needed by Android Gradle Plugin 8.10)
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # GitHub's ubuntu runners already include the Android SDK ($ANDROID_HOME).
+      - name: Android platform 35 + build tools
+        run: |
+          SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKM" --licenses > /dev/null || true
+          "$SDKM" --install "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Build Factory Print (signed release APK)
+        working-directory: android/factory-print
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleRelease
+          cp app/build/outputs/apk/release/app-release.apk factory-print.apk
+
+      - name: Upload the APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: factory-print-apk
+          path: android/factory-print/factory-print.apk
+          if-no-files-found: error

@@ -39,30 +39,6 @@ export async function qrLabelImages(labels: QrLabel[]): Promise<File[]> {
   return Promise.all(labels.map((l) => labelPngFile(l, `${safe(l.text)}.png`)));
 }
 
-/** Can this device hand image files to another app (Android / iPad share sheet)? */
-export function canShareImages(): boolean {
-  try {
-    const probe = new File([new Blob()], "x.png", { type: "image/png" });
-    return typeof navigator !== "undefined" && !!navigator.canShare && navigator.canShare({ files: [probe] });
-  } catch { return false; }
-}
-
-/** Open the device's Share menu with the label images (pick MakeID Label Pro).
- * Returns "shared", "cancelled", or "needs-tap" when the browser wants a fresh
- * tap (it only allows sharing right after one) -- the caller then offers a
- * second button that calls shareFiles(files) directly. */
-export async function shareFiles(files: File[], title: string): Promise<"shared" | "cancelled" | "needs-tap"> {
-  try {
-    await navigator.share({ files, title });
-    return "shared";
-  } catch (e) {
-    const name = (e as { name?: string })?.name;
-    if (name === "AbortError") return "cancelled";
-    if (name === "NotAllowedError") return "needs-tap";
-    throw e;
-  }
-}
-
 /** Save the label images as files (Downloads / Gallery). */
 export function downloadFiles(files: File[]): void {
   files.forEach((f, i) => {
