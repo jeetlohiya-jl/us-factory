@@ -72,10 +72,16 @@ public class MainActivity extends AppCompatActivity implements IPrintLabelCallba
     private TextView jobView, statusView;
     private RadioButton btBluetooth, btWifi;
     private EditText widthEdit, heightEdit;
-    private Spinner rotationSpinner;
+    private Spinner rotationSpinner, cutSpinner;
     private Button printButton, testButton, backButton;
 
     private static final String[] ROTATIONS = {"0°", "90°", "180°", "270°"};
+    // The D50's cutter (MakeID SDK CutOption): Option2 = continuous auto-cut
+    // (after every label), Option3 = one cut after the whole job, Option0 =
+    // stop at the tear-off position (no cut).
+    private static final String[] CUTS = {"Cut each label", "Cut once at the end", "No cut (tear off)"};
+    private static final WwCommon.CutOption[] CUT_OPTIONS = {
+            WwCommon.CutOption.Option2, WwCommon.CutOption.Option3, WwCommon.CutOption.Option0};
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -141,11 +147,12 @@ public class MainActivity extends AppCompatActivity implements IPrintLabelCallba
 
     /** One label: QR centred near the top, the ID under it, inside the
      * printable 48 mm of the 50 mm roll. Sizes in mm. */
-    private Label makeLabel(Item item, float w, float h, WwCommon.Oritention rotation) {
+    private Label makeLabel(Item item, float w, float h, WwCommon.Oritention rotation, WwCommon.CutOption cut) {
         Label label = new Label();
         label.labelWidth = w;
         label.labelHeight = h;
         label.oritention = rotation;
+        label.cutOption = cut;
 
         float side = Math.min(w, h);
         float qrSize = side * 0.68f;                 // 34 mm on a 50 mm label
@@ -177,11 +184,12 @@ public class MainActivity extends AppCompatActivity implements IPrintLabelCallba
     private List<Label> buildLabels(boolean testOnly) {
         float w = num(widthEdit, 50f), h = num(heightEdit, 50f);
         WwCommon.Oritention rotation = WwCommon.Oritention.values()[rotationSpinner.getSelectedItemPosition()];
+        WwCommon.CutOption cut = CUT_OPTIONS[cutSpinner.getSelectedItemPosition()];
         List<Label> out = new ArrayList<>();
         if (testOnly) {
-            out.add(makeLabel(new Item("FACTORY-PRINT-TEST", "TEST LABEL"), w, h, rotation));
+            out.add(makeLabel(new Item("FACTORY-PRINT-TEST", "TEST LABEL"), w, h, rotation, cut));
         } else {
-            for (Item i : items) out.add(makeLabel(i, w, h, rotation));
+            for (Item i : items) out.add(makeLabel(i, w, h, rotation, cut));
         }
         return out;
     }
@@ -301,6 +309,7 @@ public class MainActivity extends AppCompatActivity implements IPrintLabelCallba
                 .putFloat("w", num(widthEdit, 50f))
                 .putFloat("h", num(heightEdit, 50f))
                 .putInt("rotation", rotationSpinner.getSelectedItemPosition())
+                .putInt("cut", cutSpinner.getSelectedItemPosition())
                 .apply();
     }
 
@@ -382,6 +391,12 @@ public class MainActivity extends AppCompatActivity implements IPrintLabelCallba
         rotationSpinner.setAdapter(adapter);
         rotationSpinner.setSelection(prefs.getInt("rotation", 1));   // 90°, as in MakeID's demo
         root.addView(rotationSpinner);
+
+        root.addView(label("Cutting"));
+        cutSpinner = new Spinner(this);
+        cutSpinner.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, CUTS));
+        cutSpinner.setSelection(prefs.getInt("cut", 0));   // cut each label
+        root.addView(cutSpinner);
 
         printButton = new Button(this);
         printButton.setTextSize(16);
