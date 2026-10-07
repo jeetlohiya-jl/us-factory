@@ -29,6 +29,15 @@ def require(action: str):
     return _dep
 
 
+def require_any(*actions: str):
+    """Allowed if the person has ANY of the given actions."""
+    def _dep(perm: models.ModulePermission = Depends(get_perms)):
+        if not any(getattr(perm, f"can_{a}", False) for a in actions):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to add stock.")
+        return perm
+    return _dep
+
+
 @router.get("", response_model=schemas.InventoryListOut)
 def list_inventory(
     search: str = Query(""),
@@ -49,7 +58,9 @@ def get_inventory(item_id: uuid.UUID, db: Session = Depends(get_db), _perm=Depen
 
 @router.post("", response_model=schemas.InventoryDetailOut, status_code=status.HTTP_201_CREATED)
 def create_inventory(
-    payload: schemas.InventoryCreateIn, db: Session = Depends(get_db), _perm=Depends(require("create")),
+    # New Inventory items (a SKU not yet in Inventory) are set up by admins
+    # (or in Supabase) -- the "+ Add" screen only adds stock to existing items.
+    payload: schemas.InventoryCreateIn, db: Session = Depends(get_db), _admin=Depends(deps.require_admin),
 ):
     try:
         item = inventory_service.create_inventory_item(db, payload)
@@ -73,7 +84,9 @@ def update_inventory(
 
 @router.post("/{item_id}/sources", response_model=schemas.InventoryDetailOut, status_code=status.HTTP_201_CREATED)
 def add_source(
-    item_id: uuid.UUID, payload: schemas.InventorySourceIn, db: Session = Depends(get_db), _perm=Depends(require("edit")),
+    # Stock arriving for an existing item: "+ Add" (Create) or the item's own
+    # panel (Edit) -- either permission may record it.
+    item_id: uuid.UUID, payload: schemas.InventorySourceIn, db: Session = Depends(get_db), _perm=Depends(require_any("create", "edit")),
 ):
     try:
         inventory_service.add_manual_source(db, item_id, payload)
