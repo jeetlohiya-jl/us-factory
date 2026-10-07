@@ -10,6 +10,8 @@ from app.db import models
 from app.api import schemas
 from app.api.deps import require_permission, get_current_user
 from app.adapters.auth.base import AuthenticatedUser
+from starlette.concurrency import run_in_threadpool
+
 from app.adapters.ocr.factory import get_ocr_adapter
 from app.adapters.storage.factory import get_storage_adapter
 from app.domain import vehicle_inspection_service as svc
@@ -20,6 +22,17 @@ router = APIRouter(prefix="/api/v1/inward-vehicle-inspections", tags=["inward-ve
 OCR_FIELD_TYPES = {"container", "truck", "seal"}
 ALL_IMAGE_TYPES = {"container", "truck", "seal", "condition", "damage", "empty_container"}
 FIELD_BY_IMAGE_TYPE = {"container": "container_number", "truck": "truck_number", "seal": "seal_number"}
+
+
+def _apply_ocr(inspection, field: str, ocr) -> None:
+    """Fill the inspection field from OCR: a verified read ('success') always
+    fills it; an uncertain one ('low_confidence') only fills an EMPTY field --
+    so e.g. a second container photo that reads poorly never overwrites a
+    number already verified from the first photo (or typed in)."""
+    if not ocr.extracted_value:
+        return
+    if ocr.status == "success" or (ocr.status == "low_confidence" and not getattr(inspection, field, None)):
+        setattr(inspection, field, ocr.extracted_value)
 
 
 def _serialize_detail(db: Session, inspection: models.InwardVehicleInspection) -> dict:
@@ -434,10 +447,9 @@ async def upload_image(
 
     ocr_value, ocr_conf, ocr_status = None, None, None
     if image_type in OCR_FIELD_TYPES:
-        ocr = get_ocr_adapter().extract_identifier(content, image_type)
+        ocr = await run_in_threadpool(get_ocr_adapter().extract_identifier, content, image_type)
         ocr_value, ocr_conf, ocr_status = ocr.extracted_value, ocr.confidence, ocr.status
-        if ocr.extracted_value and ocr.status in ("success", "low_confidence"):
-            setattr(inspection, FIELD_BY_IMAGE_TYPE[image_type], ocr.extracted_value)
+        _apply_ocr(inspection, FIELD_BY_IMAGE_TYPE[image_type], ocr)
 
     image_row = models.InwardVehicleInspectionImage(
         inspection_id=inspection_id, image_type=image_type, storage_path=stored.storage_path,
@@ -467,12 +479,11 @@ async def replace_image(
     image_row.public_url = stored.public_url
 
     if image_row.image_type in OCR_FIELD_TYPES:
-        ocr = get_ocr_adapter().extract_identifier(content, image_row.image_type)
+        ocr = await run_in_threadpool(get_ocr_adapter().extract_identifier, content, image_row.image_type)
         image_row.ocr_extracted_value = ocr.extracted_value
         image_row.ocr_confidence = ocr.confidence
         image_row.ocr_status = ocr.status
-        if ocr.extracted_value and ocr.status in ("success", "low_confidence"):
-            setattr(inspection, FIELD_BY_IMAGE_TYPE[image_row.image_type], ocr.extracted_value)
+        _apply_ocr(inspection, FIELD_BY_IMAGE_TYPE[image_row.image_type], ocr)
 
     db.commit()
     return _serialize_detail(db, _get_or_404(db, inspection_id))

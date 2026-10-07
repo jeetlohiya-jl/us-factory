@@ -15,3 +15,7 @@ pdfplumber
 pdf2image
 httpx
 reportlab
+# OCR for Inward Vehicle Inspection photos (app/adapters/ocr/rapidocr_adapter.py)
+rapidocr_onnxruntime>=1.4.4,<2
+onnxruntime>=1.16
+opencv-python-headless
