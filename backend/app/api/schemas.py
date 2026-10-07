@@ -1063,6 +1063,9 @@ USER_MODULES = [
     # Factory's own permission rows (migration 0047).
     "factory_rm_storage", "factory_material_consumption", "factory_production",
     "factory_rqc_fg_qr", "factory_fg_storage", "factory_goods_outward",
+    # Inventory (migration 0059) -- missing here, so saving a permission set
+    # that included it failed with "Unknown module: inventory".
+    "inventory",
 ]
 
 
