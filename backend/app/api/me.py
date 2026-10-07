@@ -16,6 +16,9 @@ MODULES = [
     # Factory's own permission rows (migration 0047).
     "factory_rm_storage", "factory_material_consumption", "factory_production",
     "factory_rqc_fg_qr", "factory_fg_storage", "factory_goods_outward",
+    # Inventory (migration 0059) -- was missing here and in app_bootstrap's
+    # list (fixed in 0082), so the screen never saw the permission.
+    "inventory",
 ]
 
 

@@ -16,7 +16,6 @@ export default function InventoryFormPanel({ onClose, onSaved }: { onClose: () =
   const [vendors, setVendors] = useState<Vendor[]>([]);
 
   const [skuCodeId, setSkuCodeId] = useState("");
-  const [uom, setUom] = useState("Kgs");
   const [traySkuIds, setTraySkuIds] = useState<string[]>([]);
   const [initialQty, setInitialQty] = useState("");
   const [vendorId, setVendorId] = useState("");
@@ -36,14 +35,19 @@ export default function InventoryFormPanel({ onClose, onSaved }: { onClose: () =
     api.vendors({ includeInactive: false }).then(setVendors).catch(() => {});
   }, []);
 
+  // UOM (and SKU Code) come from the chosen SKU -- set in Setup -> SKUs.
+  const chosen = skus.find((s) => s.id === skuCodeId);
+  const uom = (chosen?.default_unit || "").trim();
+
   async function handleSave() {
     if (!skuCodeId) { setError("Choose a SKU."); return; }
+    if (!uom) { setError("This SKU has no UOM yet -- set it in Setup -> SKUs first."); return; }
     setSaving(true);
     setError(null);
     try {
       await api.createInventoryItem({
         sku_code_id: skuCodeId,
-        uom: uom.trim() || "Kgs",
+        uom,
         compatible_tray_sku_code_ids: traySkuIds,
         initial_quantity: initialQty ? Number(initialQty) : null,
         vendor_id: vendorId || null,
@@ -78,8 +82,12 @@ export default function InventoryFormPanel({ onClose, onSaved }: { onClose: () =
                 </select>
               </div>
               <div className="field">
+                <label>SKU Code</label>
+                <div className="readonly-val mono">{chosen ? chosen.sku_code || "—" : "—"}</div>
+              </div>
+              <div className="field">
                 <label>UOM</label>
-                <input value={uom} onChange={(e) => setUom(e.target.value)} placeholder="e.g. Kgs, Rolls, Pcs" />
+                <div className="readonly-val">{chosen ? uom || "Not set — set it in Setup → SKUs" : "—"}</div>
               </div>
               <div className="field" style={{ gridColumn: "1 / -1" }}>
                 <label>Compatible Tray SKU(s)</label>
@@ -102,7 +110,7 @@ export default function InventoryFormPanel({ onClose, onSaved }: { onClose: () =
             </div>
             <div className="form-grid">
               <div className="field">
-                <label>Quantity</label>
+                <label>Quantity{uom ? ` (${uom})` : ""}</label>
                 <input type="number" value={initialQty} onChange={(e) => setInitialQty(e.target.value)} />
               </div>
               <div className="field">
