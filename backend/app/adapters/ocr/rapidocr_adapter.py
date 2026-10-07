@@ -11,9 +11,6 @@ Truck: RapidOCR's words fed to the existing Indian-plate heuristics
 import logging
 import threading
 
-import cv2
-import numpy as np
-
 from app.adapters.ocr.base import OcrPort, OcrResult
 from app.adapters.ocr import identifier_heuristics
 
@@ -23,7 +20,17 @@ _lock = threading.Lock()   # one recognition at a time per process (engine isn't
 
 class RapidOcrAdapter(OcrPort):
     def extract_identifier(self, image_bytes: bytes, field_type: str) -> OcrResult:
-        from app.adapters.ocr import rapidocr_pipeline as p   # lazy: loads the models on first use
+        # Everything OCR needs (OpenCV, onnxruntime, the models) is loaded
+        # here, on the first photo -- never at server start -- and any failure
+        # becomes "OCR failed, enter manually": a broken image library must
+        # never stop the backend from starting (it did: libGL.so.1 missing).
+        try:
+            import cv2
+            import numpy as np
+            from app.adapters.ocr import rapidocr_pipeline as p
+        except Exception as e:
+            log.error("RapidOCR unavailable (%s) -- photos saved without OCR", e)
+            return OcrResult(raw_text="", extracted_value=None, confidence=0.0, status="failed")
         im = cv2.imdecode(np.frombuffer(image_bytes, np.uint8), cv2.IMREAD_COLOR)
         if im is None:
             return OcrResult(raw_text="", extracted_value=None, confidence=0.0, status="failed")
@@ -47,6 +54,7 @@ class RapidOcrAdapter(OcrPort):
         im = p._prep(im, 2400)
         best = None
         for variant in (im, p._clahe(im)):
+            import cv2
             for rot in (None, cv2.ROTATE_90_CLOCKWISE, cv2.ROTATE_90_COUNTERCLOCKWISE):
                 x = variant if rot is None else cv2.rotate(variant, rot)
                 words = [(b["t"], b["c"]) for b in p._boxes(x)]
