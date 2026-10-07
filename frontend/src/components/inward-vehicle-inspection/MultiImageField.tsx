@@ -4,6 +4,7 @@ import { api } from "@/lib/api";
 import type { ImageType, InspectionDetail, InspectionImage } from "@/lib/types";
 import Lightbox from "./Lightbox";
 import CameraCapture from "./CameraCapture";
+import { OCR_LABEL } from "./ImageField";
 
 export default function MultiImageField({
   inspectionId, imageType, images, disabled, onChange, label = "Damage Pictures",
@@ -135,6 +136,18 @@ export default function MultiImageField({
       )}
       {busyId && <div className="hint-text">Processing…</div>}
       {error && <div className="hint-text" style={{ color: "var(--red)" }}>{error}</div>}
+      {(() => {
+        // Same OCR badge as the Truck / Seal photos: a verified read from any
+        // container photo wins, otherwise the latest photo's result.
+        const read = images.filter((i) => i.ocr_status);
+        const shown = read.find((i) => i.ocr_status === "success") || read[read.length - 1];
+        return shown ? (
+          <span className={`ocr-badge ${shown.ocr_status}`}>
+            {OCR_LABEL[shown.ocr_status!] || shown.ocr_status}
+            {shown.ocr_extracted_value ? `: ${shown.ocr_extracted_value}` : ""}
+          </span>
+        ) : null;
+      })()}
       {lightboxSrc && <Lightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />}
     </div>
   );

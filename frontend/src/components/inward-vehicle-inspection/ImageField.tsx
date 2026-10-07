@@ -5,7 +5,7 @@ import type { ImageType, InspectionDetail, InspectionImage } from "@/lib/types";
 import Lightbox from "./Lightbox";
 import CameraCapture from "./CameraCapture";
 
-const OCR_LABEL: Record<string, string> = {
+export const OCR_LABEL: Record<string, string> = {
   success: "OCR matched",
   low_confidence: "Low confidence — please verify",
   failed: "OCR failed — enter manually",

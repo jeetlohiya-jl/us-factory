@@ -4,12 +4,18 @@ from app.core.config import get_settings
 from app.adapters.ocr.base import OcrPort
 from app.adapters.ocr.tesseract_adapter import TesseractOcrAdapter
 from app.adapters.ocr.google_vision_adapter import GoogleVisionOcrAdapter
+from app.adapters.ocr.rapidocr_adapter import RapidOcrAdapter
 
 log = logging.getLogger("factory_os.ocr")
 
 
 def get_ocr_adapter() -> OcrPort:
     settings = get_settings()
+    # "rapidocr" (default): local PaddleOCR models + container/seal pipeline,
+    # chosen on the factory's own dock photos (12/12; Tesseract 1/12). No
+    # API key, no per-image cost.
+    if settings.ocr_provider == "rapidocr":
+        return RapidOcrAdapter()
     if settings.ocr_provider == "google_vision":
         if not settings.google_vision_api_key:
             # Never let a missing cloud credential make OCR simply stop

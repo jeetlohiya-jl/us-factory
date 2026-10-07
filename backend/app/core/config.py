@@ -29,14 +29,14 @@ class Settings(BaseSettings):
     # Left in place only so an already-set env var doesn't error out.
     supabase_jwt_secret: str | None = None
 
-    # OCR adapter selection: "google_vision" (cloud, default -- see
-    # app/adapters/ocr/google_vision_adapter.py) or "tesseract" (local
-    # fallback, see app/adapters/ocr/tesseract_adapter.py). get_ocr_adapter()
-    # in factory.py automatically falls back to "tesseract" if
-    # "google_vision" is selected but google_vision_api_key isn't set, so a
-    # dev/local environment without cloud credentials still gets a working
-    # (if less accurate) OCR path rather than every upload failing outright.
-    ocr_provider: str = "google_vision"
+    # OCR adapter selection (FACTORY_OCR_PROVIDER):
+    #   "rapidocr" (default) -- local PaddleOCR models + container/seal/truck
+    #       pipeline, app/adapters/ocr/rapidocr_adapter.py. Chosen on the
+    #       factory's own dock photos: 12/12 correct (Tesseract 1/12). No key.
+    #   "google_vision" -- cloud; needs google_vision_api_key, else falls back
+    #       to "tesseract" (get_ocr_adapter in factory.py).
+    #   "tesseract" -- local, least accurate on dock photos.
+    ocr_provider: str = "rapidocr"
     # Google Cloud Vision API key (Cloud Console -> APIs & Services ->
     # Credentials -> API key, with the Cloud Vision API enabled on the
     # project). Required for ocr_provider="google_vision" to actually call
