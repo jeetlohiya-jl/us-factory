@@ -3371,7 +3371,7 @@ export const api = {
     return res;
   },
   addInventorySource: async (id: string, payload: {
-    quantity: number; vendor_id?: string | null; supplier_country?: string | null; unit?: string | null; note?: string | null;
+    quantity: number; vendor_id?: string | null; vendor_name?: string | null; supplier_country?: string | null; unit?: string | null; note?: string | null;
   }) => {
     const res = await request<InventoryDetail>(`/api/v1/inventory/${id}/sources`, { method: "POST", body: JSON.stringify(payload) });
     invalidateListCache("inventory");
