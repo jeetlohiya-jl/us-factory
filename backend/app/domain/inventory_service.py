@@ -167,9 +167,15 @@ def create_inventory_item(db: Session, payload) -> models.InventoryItem:
     if existing:
         raise InventoryValidationError(f'"{sku.code}" is already an Inventory item -- open it to add a source instead.')
 
+    # The UOM is the SKU's own (sku_codes.default_unit, set in Setup -> SKUs)
+    # -- not typed here. (Before: a free-text box defaulting to "Kgs".)
+    if not (sku.default_unit or "").strip():
+        raise InventoryValidationError(
+            f'"{sku.code}" has no UOM yet -- set it in Setup -> SKUs, then add the Inventory item.'
+        )
     item = models.InventoryItem(
         sku_code_id=payload.sku_code_id,
-        uom=(payload.uom or "Kgs").strip() or "Kgs",
+        uom=sku.default_unit.strip(),
     )
     db.add(item)
     db.flush()
@@ -209,11 +215,11 @@ def update_inventory_item(db: Session, item_id: uuid.UUID, payload) -> models.In
     )
     if not item:
         raise InventoryValidationError("Inventory item not found.")
-    if payload.uom is not None:
-        uom = payload.uom.strip()
-        if not uom:
-            raise InventoryValidationError("UOM is required.")
-        item.uom = uom
+    # UOM isn't edited here: it follows the SKU (Setup -> SKUs). Keep the
+    # item in step with its SKU on every save.
+    sku_unit = (db.query(models.SkuCode.default_unit).filter(models.SkuCode.id == item.sku_code_id).scalar() or "").strip()
+    if sku_unit and item.uom != sku_unit:
+        item.uom = sku_unit
     if payload.compatible_tray_sku_code_ids is not None:
         db.query(models.InventoryCompatibleTray).filter(
             models.InventoryCompatibleTray.inventory_item_id == item.id

@@ -31,7 +31,6 @@ export default function InventoryDetailPanel({
   onChanged: (updated: InventoryDetail) => void;
 }) {
   const [editing, setEditing] = useState(false);
-  const [uom, setUom] = useState(item.uom);
   const [traySkuIds, setTraySkuIds] = useState<string[]>(item.compatible_trays.map((t) => t.id));
   const [traySkus, setTraySkus] = useState<SkuCode[]>([]);
   const [saving, setSaving] = useState(false);
@@ -45,7 +44,6 @@ export default function InventoryDetailPanel({
   const [vendors, setVendors] = useState<Vendor[]>([]);
 
   useEffect(() => {
-    setUom(item.uom);
     setTraySkuIds(item.compatible_trays.map((t) => t.id));
   }, [item]);
 
@@ -66,7 +64,6 @@ export default function InventoryDetailPanel({
     setError(null);
     try {
       const updated = await api.updateInventoryItem(item.id, {
-        uom: uom.trim() || undefined,
         compatible_tray_sku_code_ids: traySkuIds,
       });
       onChanged(updated);
@@ -133,7 +130,8 @@ export default function InventoryDetailPanel({
               <div className="form-grid">
                 <div className="field">
                   <label>UOM</label>
-                  <input value={uom} onChange={(e) => setUom(e.target.value)} />
+                  {/* Follows the SKU (Setup -> SKUs); not edited here. */}
+                  <div className="readonly-val">{item.uom}</div>
                 </div>
                 <div className="field" style={{ gridColumn: "1 / -1" }}>
                   <label>Compatible Tray SKU(s)</label>
@@ -148,7 +146,7 @@ export default function InventoryDetailPanel({
                   </div>
                 </div>
                 <div className="field" style={{ gridColumn: "1 / -1", display: "flex", gap: 10, justifyContent: "flex-end" }}>
-                  <button className="btn btn-ghost" onClick={() => { setEditing(false); setUom(item.uom); setTraySkuIds(item.compatible_trays.map((t) => t.id)); }}>Cancel</button>
+                  <button className="btn btn-ghost" onClick={() => { setEditing(false); setTraySkuIds(item.compatible_trays.map((t) => t.id)); }}>Cancel</button>
                   <button className="btn btn-primary" disabled={saving} onClick={handleSave}>{saving ? "Saving…" : "Save"}</button>
                 </div>
               </div>
