@@ -545,6 +545,7 @@ export interface StorageRecordDetail {
 
 export interface InventoryListItem {
   id: string;
+  sku_code_id: string;
   sku: string;
   sku_code: string | null;
   uom: string;

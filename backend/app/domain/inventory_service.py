@@ -63,6 +63,7 @@ def list_inventory(db: Session, search: str = "", page: int = 1, page_size: int 
     q = (
         db.query(
             models.InventoryItem.id,
+            models.InventoryItem.sku_code_id,
             models.SkuCode.code,
             models.SkuCode.sku_code,
             models.InventoryItem.uom,
@@ -78,11 +79,11 @@ def list_inventory(db: Session, search: str = "", page: int = 1, page_size: int 
             func.lower(models.SkuCode.code).like(like)
             | func.lower(func.coalesce(models.SkuCode.sku_code, "")).like(like)
         )
-    q = q.group_by(models.InventoryItem.id, models.SkuCode.code, models.SkuCode.sku_code, models.InventoryItem.uom)
+    q = q.group_by(models.InventoryItem.id, models.InventoryItem.sku_code_id, models.SkuCode.code, models.SkuCode.sku_code, models.InventoryItem.uom)
     rows = q.order_by(models.SkuCode.code).offset((page - 1) * page_size).limit(page_size).all()
 
     items = [
-        {"id": r.id, "sku": r.code, "sku_code": r.sku_code, "uom": r.uom, "quantity": float(r.quantity)}
+        {"id": r.id, "sku_code_id": r.sku_code_id, "sku": r.code, "sku_code": r.sku_code, "uom": r.uom, "quantity": float(r.quantity)}
         for r in rows
     ]
     return items, matched_count
@@ -154,6 +155,20 @@ class InventoryValidationError(Exception):
         self.message = message
 
 
+def _supplier(db: Session, payload) -> tuple:
+    """(vendor_id, vendor_name, country) for a stock entry: a vendor picked
+    from Setup -> Vendors, or a new supplier typed in by name."""
+    vendor_id = getattr(payload, "vendor_id", None)
+    vendor_name = None
+    if vendor_id:
+        vendor = db.query(models.Vendor).filter(models.Vendor.id == vendor_id).first()
+        vendor_name = vendor.name if vendor else None
+    else:
+        vendor_name = (getattr(payload, "vendor_name", None) or "").strip() or None
+    country = (payload.supplier_country or "").strip().upper() or _country_from_vendor(db, vendor_id)
+    return vendor_id, vendor_name, country
+
+
 def create_inventory_item(db: Session, payload) -> models.InventoryItem:
     unit = current_unit()
     sku = db.query(models.SkuCode).filter(models.SkuCode.id == payload.sku_code_id).first()
@@ -165,7 +180,26 @@ def create_inventory_item(db: Session, payload) -> models.InventoryItem:
         .first()
     )
     if existing:
-        raise InventoryValidationError(f'"{sku.code}" is already an Inventory item -- open it to add a source instead.')
+        # Already in Inventory: "Add" records a new arrival on it -- its own
+        # stock entry (supplier, country, note) -- and the item's total, the
+        # sum of its entries, goes up by that much (200 + 500 = 700).
+        if not payload.initial_quantity or payload.initial_quantity <= 0:
+            raise InventoryValidationError(
+                f'"{sku.code}" is already in Inventory -- enter the quantity received to add to it.'
+            )
+        have = {t.tray_sku_code_id for t in db.query(models.InventoryCompatibleTray)
+                .filter(models.InventoryCompatibleTray.inventory_item_id == existing.id)}
+        for tray_sku_code_id in payload.compatible_tray_sku_code_ids or []:
+            if tray_sku_code_id not in have:
+                db.add(models.InventoryCompatibleTray(inventory_item_id=existing.id, tray_sku_code_id=tray_sku_code_id))
+        vendor_id, vendor_name, country = _supplier(db, payload)
+        db.add(models.InventorySource(
+            inventory_item_id=existing.id, vendor_id=vendor_id, vendor_name=vendor_name, country_code=country,
+            quantity=payload.initial_quantity, unit=existing.uom, is_manual=True, note=payload.note,
+        ))
+        db.commit()
+        db.refresh(existing)
+        return existing
 
     # The UOM is the SKU's own (sku_codes.default_unit, set in Setup -> SKUs)
     # -- not typed here. (Before: a free-text box defaulting to "Kgs".)
@@ -186,14 +220,10 @@ def create_inventory_item(db: Session, payload) -> models.InventoryItem:
     if payload.initial_quantity:
         if payload.initial_quantity <= 0:
             raise InventoryValidationError("Initial quantity must be greater than 0.")
-        country = (payload.supplier_country or "").strip().upper() or _country_from_vendor(db, payload.vendor_id)
-        vendor_name = None
-        if payload.vendor_id:
-            vendor = db.query(models.Vendor).filter(models.Vendor.id == payload.vendor_id).first()
-            vendor_name = vendor.name if vendor else None
+        vendor_id, vendor_name, country = _supplier(db, payload)
         db.add(models.InventorySource(
             inventory_item_id=item.id,
-            vendor_id=payload.vendor_id,
+            vendor_id=vendor_id,
             vendor_name=vendor_name,
             country_code=country,
             quantity=payload.initial_quantity,
@@ -244,15 +274,11 @@ def add_manual_source(db: Session, item_id: uuid.UUID, payload) -> models.Invent
     if payload.quantity is None or payload.quantity <= 0:
         raise InventoryValidationError("Quantity must be greater than 0.")
 
-    country = (payload.supplier_country or "").strip().upper() or _country_from_vendor(db, payload.vendor_id)
-    vendor_name = None
-    if payload.vendor_id:
-        vendor = db.query(models.Vendor).filter(models.Vendor.id == payload.vendor_id).first()
-        vendor_name = vendor.name if vendor else None
+    vendor_id, vendor_name, country = _supplier(db, payload)
 
     source = models.InventorySource(
         inventory_item_id=item.id,
-        vendor_id=payload.vendor_id,
+        vendor_id=vendor_id,
         vendor_name=vendor_name,
         country_code=country,
         quantity=payload.quantity,

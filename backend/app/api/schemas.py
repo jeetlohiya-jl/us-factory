@@ -1181,6 +1181,7 @@ class InventoryListItemOut(BaseModel):
     """One dashboard row -- exactly SKU / SKU Code / UOM / clubbed
     Quantity, per the task's explicit "do NOT include Cirkla Entity"."""
     id: uuid.UUID
+    sku_code_id: Optional[uuid.UUID] = None
     sku: str
     sku_code: Optional[str] = None
     uom: str
@@ -1233,6 +1234,9 @@ class InventoryCreateIn(BaseModel):
     # quantity/supplier in the same step rather than a bare empty item.
     initial_quantity: Optional[float] = None
     vendor_id: Optional[uuid.UUID] = None
+    # A supplier who isn't in Setup -> Vendors, typed in by name (kept on
+    # this stock entry only; Vendors is left as it is).
+    vendor_name: Optional[str] = None
     supplier_country: Optional[str] = None
     note: Optional[str] = None
 
@@ -1249,6 +1253,7 @@ class InventorySourceIn(BaseModel):
     0059's inventory_apply_receipt), never entered here."""
     quantity: float
     vendor_id: Optional[uuid.UUID] = None
+    vendor_name: Optional[str] = None
     supplier_country: Optional[str] = None
     unit: Optional[str] = None
     note: Optional[str] = None
