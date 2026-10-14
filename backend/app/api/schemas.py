@@ -319,6 +319,15 @@ class QcDetailOut(BaseModel):
     fgtray_answers: list[QcFgtrayAnswerOut] = []
     attribute_values: list[QcAttributeValueOut] = []
     vehicle_inspection: Optional[dict] = None
+    # 2026-10-14 -- present only for a QC record created from a US Factory
+    # Goods Receipt entry (gr_ensure_qc): the inward details shown read-only
+    # on the form, whether a COA is required before approval, and the RM QR
+    # batch an Accepted record feeds (so the page can offer "how many QRs?").
+    source_goods_receipt_entry_id: Optional[uuid.UUID] = None
+    goods_receipt: Optional[dict] = None
+    requires_coa: bool = False
+    rm_qr_batch_id: Optional[uuid.UUID] = None
+    rm_qr_status: Optional[str] = None
 
 
 # ============================================================================
@@ -371,7 +380,16 @@ class QrGenerationDetailOut(BaseModel):
     source_production_run_id: Optional[uuid.UUID] = None
     source_goods_receipt_entry_id: Optional[uuid.UUID] = None
     source_display_id: Optional[str] = None
+    # Upper bound for "how many QR codes to generate" on a Goods Receipt-
+    # sourced RM batch that hasn't been generated yet (pallets received, or
+    # the whole-number received quantity when the entry isn't palletised).
+    max_quantity: Optional[int] = None
     pallets: list[PalletOut] = []
+
+
+class RmQrGenerateIn(BaseModel):
+    # Optional: only Goods Receipt-sourced RM batches ask for it.
+    quantity: Optional[int] = None
 
 
 class ScanIn(BaseModel):

@@ -25,13 +25,24 @@ export default function QrGenerationPanel({
   title: string;
   detail: QrGenerationDetail;
   canGenerate: boolean;
-  onGenerate: () => Promise<void>;
+  // Receives the chosen quantity only for a Goods-Receipt-sourced RM batch
+  // (US Factory), where the user decides how many QRs after QC approval.
+  onGenerate: (quantity?: number) => Promise<void>;
   onClose: () => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const isGenerated = detail.status === "generated";
+  const maxQty = detail.max_quantity ?? null;
+  const askQuantity = !isGenerated && maxQty != null;
+  const [qtyText, setQtyText] = useState(String(detail.quantity || maxQty || ""));
+  const qtyNum = Number(qtyText);
+  const qtyError = !askQuantity ? null
+    : !Number.isInteger(qtyNum) || qtyNum < 1 ? "Enter a whole number of at least 1."
+    : maxQty != null && qtyNum > maxQty ? `Only ${maxQty} pallet(s) were received, so at most ${maxQty} QR code(s) can be generated.`
+    : null;
+  const effectiveQty = askQuantity ? (qtyError ? 0 : qtyNum) : detail.quantity;
 
   useEffect(() => {
     setSelected(new Set(detail.pallets.map((p) => p.id)));
@@ -41,7 +52,7 @@ export default function QrGenerationPanel({
     setBusy(true);
     setError(null);
     try {
-      await onGenerate();
+      await onGenerate(askQuantity ? qtyNum : undefined);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to generate QR codes");
     } finally {
@@ -80,7 +91,16 @@ export default function QrGenerationPanel({
             <div className="field"><label>{T.shipmentNumber}</label><div className="readonly-val mono">{detail.shipment_number || "—"}</div></div>
             <div className="field"><label>{T.sku}</label><div className="readonly-val mono">{detail.sku_code_snapshot || "—"}</div></div>
             <div className="field"><label>Country</label><div className="readonly-val mono">{detail.country_code || "—"}</div></div>
-            <div className="field"><label>Quantity</label><div className="readonly-val mono">{detail.quantity}</div></div>
+            {askQuantity ? (
+              <div className="field">
+                <label>How many QR codes to generate? <span style={{ color: "var(--red)" }}>*</span></label>
+                <input type="number" min={1} max={maxQty ?? undefined} step={1} disabled={busy || !canGenerate}
+                  value={qtyText} onChange={(e) => setQtyText(e.target.value)} style={{ fontFamily: "var(--mono)" }} />
+                <div className="hint-text" style={{ margin: "4px 0 0" }}>{maxQty} pallet(s) received.</div>
+              </div>
+            ) : (
+              <div className="field"><label>Quantity</label><div className="readonly-val mono">{detail.quantity}</div></div>
+            )}
           </div>
           <div className="hint-text" style={{ marginBottom: 6 }}>
             {detail.source_locked
@@ -89,7 +109,8 @@ export default function QrGenerationPanel({
           </div>
           {!isGenerated && (
             <div className="hint-text" style={{ marginBottom: 6 }}>
-              {detail.quantity > 0 ? `This will generate ${detail.quantity} unique pallet QR code(s).` : "Enter a quantity greater than 0 before generating QR codes."}
+              {qtyError ? qtyError
+                : effectiveQty > 0 ? `This will generate ${effectiveQty} unique pallet QR code(s).` : "Enter a quantity greater than 0 before generating QR codes."}
             </div>
           )}
 
@@ -158,7 +179,7 @@ export default function QrGenerationPanel({
               </>
             )}
             {!isGenerated && (
-              <button className="btn btn-primary" disabled={busy || !canGenerate || detail.quantity <= 0} onClick={handleGenerate}>
+              <button className="btn btn-primary" disabled={busy || !canGenerate || effectiveQty <= 0} onClick={handleGenerate}>
                 {busy ? "Generating…" : "Generate QR"}
               </button>
             )}

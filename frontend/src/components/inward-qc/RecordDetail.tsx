@@ -18,8 +18,10 @@ function Kv({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-export default function RecordDetail({ detail, onClose, onEdit, canEdit }: {
+export default function RecordDetail({ detail, onClose, onEdit, canEdit, onOpenQr }: {
   detail: QcDetail; onClose: () => void; onEdit: () => void; canEdit: boolean;
+  // US Factory: open the RM QR panel for this (approved) record's batch.
+  onOpenQr?: (batchId: string) => void;
 }) {
   const isTray = TRAY_FAMILY_QC_CATEGORIES.includes(detail.category);
   const [tab, setTab] = useState<"qc" | "vehicle">("qc");
@@ -147,7 +149,12 @@ export default function RecordDetail({ detail, onClose, onEdit, canEdit }: {
         <div className="sp-foot">
           <button className="btn btn-ghost" onClick={onClose}>Close</button>
           <div className="sp-foot-right">
-            {tab === "qc" && canEdit && <button className="btn btn-primary" onClick={onEdit}>Edit</button>}
+            {tab === "qc" && onOpenQr && detail.rm_qr_batch_id && (
+              <button className="btn btn-primary" onClick={() => onOpenQr(detail.rm_qr_batch_id!)}>
+                {detail.rm_qr_status === "generated" ? "View QR Codes" : "Generate QR Codes"}
+              </button>
+            )}
+            {tab === "qc" && canEdit && <button className={`btn ${detail.rm_qr_batch_id ? "btn-secondary" : "btn-primary"}`} onClick={onEdit}>Edit</button>}
           </div>
         </div>
       </div>

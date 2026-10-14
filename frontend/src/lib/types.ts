@@ -455,6 +455,18 @@ export interface QcDetail {
   fgtray_answers: QcFgtrayAnswer[];
   attribute_values: QcAttributeValue[];
   vehicle_inspection: InspectionDetail | null;
+  // US Factory: set when this QC was created from a Goods Receipt entry
+  // (migration 0082). Inward details come from it; COA is required to approve.
+  source_goods_receipt_entry_id?: string | null;
+  goods_receipt?: {
+    po_number: string | null; vendor_name: string | null; shipment_number: string | null;
+    sku_code: string | null; sku_version: string | null; category: string | null;
+    po_quantity: number | null; received_quantity: number | null; unit: string | null;
+    pallet_count: number | null; batch_numbers: string[];
+  } | null;
+  requires_coa?: boolean;
+  rm_qr_batch_id?: string | null;
+  rm_qr_status?: "pending" | "generated" | null;
   // Only ever present on the response to uploadQcCoa — a one-shot batch of
   // suggested Observation values parsed from the COA just uploaded.
   coa_suggestions?: CoaSuggestion[];
@@ -507,6 +519,9 @@ export interface QrGenerationListItem {
 }
 
 export interface QrGenerationDetail extends QrGenerationListItem {
+  // Pending Goods-Receipt-sourced RM batch: the most QR codes that may be
+  // generated (received pallet count). The user picks 1..max.
+  max_quantity?: number | null;
   category: string | null;
   generated_at: string | null;
   source_locked: boolean;
@@ -1861,6 +1876,10 @@ export interface GoodsReceiptEntry {
   // the real inward (status flips to "inwarded" separately, at that point)
   // -- this field itself doesn't change once Approved.
   inward_inspection?: { id: string; status: InspectionStatus } | null;
+  // US Factory (migration 0082): the Inward QC record this entry became once
+  // inwarded, and how many per-pallet Batch Numbers have been captured.
+  qc?: { id: string; status: QcStatus } | null;
+  batch_count?: number;
 }
 
 export interface GoodsReceiptDetail {

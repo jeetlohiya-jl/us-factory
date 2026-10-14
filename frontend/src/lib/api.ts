@@ -20,7 +20,7 @@ import type {
   AppUser, UserCreateInput, UserUpdateInput,
   PortfolioAccessMe, PortfolioAccess, PortfolioAccessInput, PortfolioAccessUpdateInput,
   GoodsReceiptDetail, GoodsReceiptListItem, GoodsReceiptSavePayload, GoodsReceiptInwardPayload, GoodsReceiptEntry,
-  InventoryListResponse, InventoryDetail, InspectionStatus,
+  InventoryListResponse, InventoryDetail, InspectionStatus, QcStatus,
 } from "./types";
 
 // Static, never-changing business constants -- mirrored 1:1 from
@@ -245,7 +245,7 @@ async function qrGetDetail(qrType: "rm" | "fg", id: string): Promise<QrGeneratio
       "id,batch_display_id,qr_type,category,shipment_number,sku_code_snapshot,sku_version_snapshot,country_code,quantity,status,created_at,generated_at," +
         "source_inward_qc_id,source_production_run_id,source_goods_receipt_entry_id," +
         "source_inward_qc:inward_qc_records(shipment_number),source_production_run:production_runs(run_number)," +
-        "source_goods_receipt_entry:goods_receipt_entries!qr_generation_records_source_goods_receipt_entry_id_fkey(shipment_number,goods_receipt:goods_receipts(po_number))," +
+        "source_goods_receipt_entry:goods_receipt_entries!qr_generation_records_source_goods_receipt_entry_id_fkey(shipment_number,pallet_count,received_quantity,goods_receipt:goods_receipts(po_number))," +
         `pallets(${PALLET_SELECT})`
     )
     .eq("id", id)
@@ -258,11 +258,17 @@ async function qrGetDetail(qrType: "rm" | "fg", id: string): Promise<QrGeneratio
     status: "pending" | "generated"; created_at: string; generated_at: string | null;
     source_inward_qc_id: string | null; source_production_run_id: string | null; source_goods_receipt_entry_id: string | null;
     source_inward_qc: { shipment_number: string } | null; source_production_run: { run_number: string } | null;
-    source_goods_receipt_entry: { shipment_number: string; goods_receipt: { po_number: string } | null } | null;
+    source_goods_receipt_entry: { shipment_number: string; pallet_count: number | null; received_quantity: number | string | null; goods_receipt: { po_number: string } | null } | null;
     pallets: RawPallet[];
   };
   const grEntry = raw.source_goods_receipt_entry;
+  // US Factory: a still-pending RM batch born from an approved Inward QC asks
+  // "how many QR codes?" -- capped at the pallets actually received.
+  const maxQuantity = raw.qr_type === "rm" && raw.status === "pending" && raw.source_inward_qc_id && grEntry
+    ? (grEntry.pallet_count ?? (grEntry.received_quantity != null ? Math.floor(Number(grEntry.received_quantity)) : null))
+    : null;
   return {
+    max_quantity: maxQuantity,
     id: raw.id, batch_display_id: raw.batch_display_id, qr_type: raw.qr_type, category: raw.category,
     shipment_number: raw.shipment_number, sku_code_snapshot: raw.sku_code_snapshot, sku_version_snapshot: raw.sku_version_snapshot,
     country_code: raw.country_code, quantity: raw.quantity, status: raw.status, created_at: raw.created_at,
@@ -2131,14 +2137,21 @@ const GR_DETAIL_SELECT =
   "sku_code:sku_code_snapshot,sku_version:sku_version_snapshot,sku_name:sku_codes(code),po_quantity,received_quantity,unit,pallet_count," +
   "qr_quantity,coa_storage_path,coa_filename," +
   "status,inwarded_at,sort_order," +
+  "qc:inward_qc_records!inward_qc_records_source_goods_receipt_entry_id_fkey(id,status)," +
+  "batch_numbers:goods_receipt_pallet_batches(count)," +
   "inward_events:goods_receipt_inward_events(received_quantity,pallet_count,unit,kind,inwarded_at)," +
   "qr_batch:qr_generation_records!qr_generation_records_source_goods_receipt_entry_id_fkey(id,batch_display_id,status,quantity)," +
   "inward_inspection:inward_vehicle_inspections!inward_vehicle_inspections_source_goods_receipt_entry_id_fkey(id,status,created_at))";
 
 type RawInwardInspectionRef = { id: string; status: InspectionStatus; created_at: string };
 
-type RawGrEntry = Omit<GoodsReceiptEntry, "qr_batch" | "po_quantity" | "received_quantity" | "inward_inspection" | "sku_name"> & {
+type RawGrEntry = Omit<GoodsReceiptEntry, "qr_batch" | "po_quantity" | "received_quantity" | "inward_inspection" | "sku_name" | "qc" | "batch_count"> & {
   sort_order: number;
+  // Direct select: embedded array / count rows. RPC (gr_detail_json): a flat
+  // qc object and batch_count.
+  qc?: { id: string; status: QcStatus }[] | { id: string; status: QcStatus } | null;
+  batch_numbers?: { count: number }[];
+  batch_count?: number;
   po_quantity: number | string;
   received_quantity: number | string | null;
   qr_batch: GoodsReceiptEntry["qr_batch"][] | GoodsReceiptEntry["qr_batch"];
@@ -2167,8 +2180,10 @@ function currentInwardInspection(raw: RawGrEntry["inward_inspection"]): GoodsRec
 function flattenGoodsReceipt(raw: Omit<GoodsReceiptDetail, "entries"> & { entries: RawGrEntry[] }): GoodsReceiptDetail {
   const entries = [...(raw.entries || [])]
     .sort((a, b) => a.sort_order - b.sort_order)
-    .map(({ sort_order: _s, ...e }) => ({
+    .map(({ sort_order: _s, batch_numbers, qc, ...e }) => ({
       ...e,
+      qc: Array.isArray(qc) ? qc[0] ?? null : qc ?? null,
+      batch_count: e.batch_count ?? batch_numbers?.[0]?.count ?? 0,
       po_quantity: Number(e.po_quantity),
       received_quantity: e.received_quantity == null ? null : Number(e.received_quantity),
       qr_batch: Array.isArray(e.qr_batch) ? e.qr_batch[0] ?? null : e.qr_batch ?? null,
@@ -2214,7 +2229,7 @@ async function getGoodsReceiptSb(id: string): Promise<GoodsReceiptDetail> {
  * functions map through sbRequest exactly like table writes: 42501 -> 403,
  * 23505 (duplicate PO / container) and 23503 (locked / blocked) -> 409 with
  * the function's own message; validation errors carry their message too. */
-async function goodsReceiptRpc(fn: "goods_receipt_save" | "goods_receipt_inward" | "goods_receipt_inward_remaining", args: Record<string, unknown>): Promise<GoodsReceiptDetail> {
+async function goodsReceiptRpc(fn: "goods_receipt_save" | "goods_receipt_inward" | "goods_receipt_inward_remaining" | "goods_receipt_save_batch_numbers", args: Record<string, unknown>): Promise<GoodsReceiptDetail> {
   const raw = await sbRequest<Parameters<typeof flattenGoodsReceipt>[0]>(() =>
     supabase.rpc(fn, args) as unknown as Promise<{ data: Parameters<typeof flattenGoodsReceipt>[0] | null; error: { message: string; code?: string } | null }>
   );
@@ -2607,9 +2622,14 @@ export const api = {
       sbRequestPage<QrGenerationListItem>(() => qrListQuery("rm", params) as unknown as Promise<{ data: QrGenerationListItem[] | null; error: { message: string; code?: string } | null; count: number | null }>)
     ),
   getRmQr: (id: string) => qrGetDetail("rm", id),
-  generateRmQr: async (id: string) => {
-    const res = await request<QrGenerationDetail>(`/api/v1/rm-qr/${id}/generate`, { method: "POST" });
+  generateRmQr: async (id: string, quantity?: number) => {
+    const res = await request<QrGenerationDetail>(`/api/v1/rm-qr/${id}/generate`, {
+      method: "POST",
+      ...(quantity != null ? { body: JSON.stringify({ quantity }) } : {}),
+    });
     invalidateListCache("rm-qr");
+    invalidateListCache("rm-storage-pending");
+    invalidateListCache("goods-receipt");
     return res;
   },
   deleteRmQr: async (id: string) => {
@@ -3308,6 +3328,20 @@ export const api = {
   inwardGoodsReceiptEntry: async (_id: string, entryId: string, payload: GoodsReceiptInwardPayload) => {
     const res = await goodsReceiptRpc("goods_receipt_inward", { _entry_id: entryId, _payload: payload });
     invalidateListCache("goods-receipt");
+    return res;
+  },
+  // US Factory: one Batch Number per received pallet, saved in one RPC
+  // (migration 0082). Creates the entry's Pending Inward QC on first save.
+  getGoodsReceiptBatchNumbers: async (entryId: string): Promise<string[]> => {
+    const rows = await sbRequest<{ pallet_index: number; batch_number: string }[]>(() =>
+      supabase.from("goods_receipt_pallet_batches").select("pallet_index,batch_number").eq("goods_receipt_entry_id", entryId).order("pallet_index") as unknown as Promise<{ data: { pallet_index: number; batch_number: string }[] | null; error: { message: string; code?: string } | null }>
+    );
+    return (rows || []).map((r) => r.batch_number);
+  },
+  saveGoodsReceiptBatchNumbers: async (entryId: string, batchNumbers: string[]) => {
+    const res = await goodsReceiptRpc("goods_receipt_save_batch_numbers", { _entry_id: entryId, _payload: { batch_numbers: batchNumbers } });
+    invalidateListCache("goods-receipt");
+    invalidateListCache("inward-qc");
     return res;
   },
   // One Postgres function inserts the batch + every pallet in a single

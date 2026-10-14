@@ -51,6 +51,8 @@ def _get_or_404(db: Session, qc_id: uuid.UUID) -> models.InwardQcRecord:
             joinedload(models.InwardQcRecord.line_item_snapshots),
             joinedload(models.InwardQcRecord.sku_code),
             joinedload(models.InwardQcRecord.sku_version),
+            joinedload(models.InwardQcRecord.source_goods_receipt_entry)
+            .joinedload(models.GoodsReceiptEntry.goods_receipt),
             # Loaded deep enough for _serialize_vehicle_inspection to run
             # entirely off this object below -- _serialize_detail used to
             # throw this away and re-fetch the linked inspection from
@@ -73,6 +75,43 @@ def _get_or_404(db: Session, qc_id: uuid.UUID) -> models.InwardQcRecord:
     if not qc:
         raise HTTPException(status_code=404, detail="Inward QC record not found.")
     return qc
+
+
+# COA is compulsory before a Goods Receipt-sourced QC can be Accepted (the
+# 2026-10-14 flow: Inward QC + COA -> QR Generation). A record created any
+# other way keeps its old rules (manual categories upload one in step 2,
+# Tray QC from a Vehicle Inspection has none).
+def _is_gr_linked(qc: models.InwardQcRecord) -> bool:
+    return qc.source_goods_receipt_entry_id is not None
+
+
+def _goods_receipt_context(db: Session, qc: models.InwardQcRecord) -> dict | None:
+    """Everything the QC form shows read-only about the inward, straight from
+    the Goods Receipt entry -- nothing is re-entered or copied that could
+    drift. Batch Numbers (trays) come back in pallet order."""
+    e = qc.source_goods_receipt_entry
+    if e is None:
+        return None
+    gr = e.goods_receipt
+    batches = (
+        db.query(models.GoodsReceiptPalletBatch.pallet_index, models.GoodsReceiptPalletBatch.batch_number)
+        .filter(models.GoodsReceiptPalletBatch.goods_receipt_entry_id == e.id)
+        .order_by(models.GoodsReceiptPalletBatch.pallet_index)
+        .all()
+    )
+    return {
+        "po_number": gr.po_number if gr else None,
+        "vendor_name": gr.vendor_name if gr else None,
+        "shipment_number": e.shipment_number,
+        "sku_code": e.sku_code_snapshot,
+        "sku_version": e.sku_version_snapshot,
+        "category": e.category,
+        "po_quantity": float(e.po_quantity) if e.po_quantity is not None else None,
+        "received_quantity": float(e.received_quantity) if e.received_quantity is not None else None,
+        "unit": e.unit,
+        "pallet_count": e.pallet_count,
+        "batch_numbers": [b.batch_number for b in batches],
+    }
 
 
 def _serialize_detail(db: Session, qc: models.InwardQcRecord) -> dict:
@@ -121,6 +160,13 @@ def _serialize_detail(db: Session, qc: models.InwardQcRecord) -> dict:
         # QC open/save; see _get_or_404's comment).
         vehicle_inspection_dict = _serialize_vehicle_inspection(db, qc.vehicle_inspection)
 
+    rm_qr = (
+        db.query(models.QrGenerationRecord.id, models.QrGenerationRecord.status)
+        .filter(models.QrGenerationRecord.source_inward_qc_id == qc.id)
+        .first()
+        if qc.status == "accepted" else None
+    )
+
     return schemas.QcDetailOut(
         id=qc.id, shipment_number=qc.shipment_number, is_auto_shipment_number=qc.is_auto_shipment_number,
         category=qc.category, status=qc.status, vendor_name=qc.vendor_name, quantity=qc.quantity,
@@ -135,6 +181,11 @@ def _serialize_detail(db: Session, qc: models.InwardQcRecord) -> dict:
         linked_vehicle_inspection_id=qc.linked_vehicle_inspection_id,
         line_item_snapshots=line_items_out, fgtray_answers=fgtray_answers_out, attribute_values=attribute_values_out,
         vehicle_inspection=vehicle_inspection_dict,
+        source_goods_receipt_entry_id=qc.source_goods_receipt_entry_id,
+        goods_receipt=_goods_receipt_context(db, qc) if _is_gr_linked(qc) else None,
+        requires_coa=_is_gr_linked(qc),
+        rm_qr_batch_id=rm_qr.id if rm_qr else None,
+        rm_qr_status=rm_qr.status if rm_qr else None,
     ).model_dump()
 
 
@@ -241,6 +292,8 @@ def update_qc_basic(
     _perm=Depends(require_qc_permission("fill_section")),
 ):
     qc = _get_or_404(db, qc_id)
+    if _is_gr_linked(qc):
+        raise HTTPException(status_code=400, detail="This QC's shipment, SKU, vendor and quantity come from its Goods Receipt entry and cannot be edited here.")
     if qc.category in svc.TRAY_FAMILY_CATEGORIES:
         raise HTTPException(status_code=400, detail="Tray QC's basic information comes from its linked Vehicle Inspection and cannot be edited here.")
     data = payload.model_dump(exclude_unset=True)
@@ -265,7 +318,7 @@ async def upload_coa(
     _perm=Depends(require_qc_permission("fill_section")),
 ):
     qc = _get_or_404(db, qc_id)
-    if qc.category in svc.TRAY_FAMILY_CATEGORIES:
+    if qc.category in svc.TRAY_FAMILY_CATEGORIES and not _is_gr_linked(qc):
         raise HTTPException(status_code=400, detail="COA is not applicable to RM / LNP Tray QC.")
     content = await file.read()
     ext = (file.filename or "coa").rsplit(".", 1)[-1] if "." in (file.filename or "") else "pdf"
@@ -282,6 +335,9 @@ async def upload_coa(
     db.commit()
 
     detail = _serialize_detail(db, _get_or_404(db, qc_id))
+    if qc.category in svc.TRAY_FAMILY_CATEGORIES:
+        detail["coa_suggestions"] = []  # a tray QC has no attribute fields to pre-fill
+        return detail
     try:
         attr_defs = svc.get_attribute_definitions(db, qc.category)
         text = coa_parsing_service.extract_text(content, file.filename or "coa", file.content_type)
@@ -388,7 +444,7 @@ def save_draft(
     auto-created Tray QC is never a 'draft', it stays Pending until its own
     completion logic promotes it (see submit_qc)."""
     qc = _get_or_404(db, qc_id)
-    if qc.category not in svc.TRAY_FAMILY_CATEGORIES and qc.status not in ("accepted", "onhold"):
+    if qc.category not in svc.TRAY_FAMILY_CATEGORIES and qc.status not in ("accepted", "onhold") and not _is_gr_linked(qc):
         qc.status = "draft"
     qc.updated_by = current_user.user_id
     db.commit()
@@ -410,6 +466,12 @@ def submit_qc(
         else:
             detail = "Fill in every required field (marked *) and the conclusion to complete this inspection. Until then it stays Pending."
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=detail)
+
+    if new_status == "accepted" and _is_gr_linked(qc) and not qc.coa_storage_path:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Upload the COA (PDF, Word doc, or image) before approving this Inward QC.",
+        )
 
     plan = svc.compute_sampling_plan(db, qc.category, float(qc.quantity) if qc.quantity else None)
     if plan:
@@ -439,7 +501,7 @@ def discard_if_blank(qc_id: uuid.UUID, db: Session = Depends(get_db)):
     Pending even if untouched. See discard_new below for the "just created
     this record this session" case."""
     qc = db.query(models.InwardQcRecord).filter(models.InwardQcRecord.id == qc_id).first()
-    if qc and qc.linked_vehicle_inspection_id is None and svc.is_qc_blank(qc):
+    if qc and qc.linked_vehicle_inspection_id is None and not _is_gr_linked(qc) and svc.is_qc_blank(qc):
         db.delete(qc)
         db.commit()
     return None
@@ -457,7 +519,7 @@ def discard_new(
     completely"). Gated on can_create, not can_delete. Never applies to an
     auto-created Tray QC, and only ever removes a still-draft record."""
     qc = db.query(models.InwardQcRecord).filter(models.InwardQcRecord.id == qc_id).first()
-    if qc and qc.linked_vehicle_inspection_id is None and qc.status == "draft":
+    if qc and qc.linked_vehicle_inspection_id is None and not _is_gr_linked(qc) and qc.status == "draft":
         db.delete(qc)
         db.commit()
     return None
@@ -466,6 +528,11 @@ def discard_new(
 @router.delete("/{qc_id}")
 def delete_qc(qc_id: uuid.UUID, db: Session = Depends(get_db), _perm=Depends(require_qc_permission("delete"))):
     qc = _get_or_404(db, qc_id)
+    if _is_gr_linked(qc):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This Inward QC record belongs to a Goods Receipt entry and can't be deleted here.",
+        )
     dependent = svc.find_dependent_qr(db, qc_id)
     if dependent:
         raise HTTPException(

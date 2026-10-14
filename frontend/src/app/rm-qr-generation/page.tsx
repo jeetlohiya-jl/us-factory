@@ -66,9 +66,9 @@ export default function RmQrGenerationPage() {
     }
   }
 
-  async function handleGenerate() {
+  async function handleGenerate(quantity?: number) {
     if (!detail) return;
-    const updated = await api.generateRmQr(detail.id);
+    const updated = await api.generateRmQr(detail.id, quantity);
     setDetail(updated);
     refreshAfterMutation();
   }

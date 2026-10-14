@@ -7,6 +7,7 @@ import MultiImageField from "@/components/inward-vehicle-inspection/MultiImageFi
 import ChecklistStep from "@/components/inward-vehicle-inspection/ChecklistStep";
 import GrCoaField from "./GrCoaField";
 import { statusLabel } from "@/lib/terms";
+import { useProduct } from "@/lib/productContext";
 import { isTray, needsCoa, needsStage } from "./GoodsReceiptDetailPanel";
 
 /**
@@ -66,7 +67,9 @@ export default function GrInwardWizard({
   // see needsCoa's own comment). Rare in practice (these materials are
   // usually the ones Zoho sends no container for), but independent of
   // shipment-number type, so it's checked here too.
-  const requiresCoa = needsCoa(entry);
+  // US Factory: the COA is uploaded in Inward QC (required there to approve),
+  // not at inspection.
+  const requiresCoa = useProduct() !== "us_factory" && needsCoa(entry);
   const [coaFilename, setCoaFilename] = useState(entry.coa_filename);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);

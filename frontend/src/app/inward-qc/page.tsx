@@ -5,7 +5,7 @@ import { api, ApiError } from "@/lib/api";
 import { useMe } from "@/lib/useMe";
 import { cachedList, invalidateListCache, listCacheKey } from "@/lib/listCache";
 import { useImmediateThenDebounced } from "@/lib/useImmediateThenDebounced";
-import type { QcDetail, QcListItem, QcManualCategory, QcMeta, SkuCode } from "@/lib/types";
+import type { QcDetail, QcListItem, QcManualCategory, QcMeta, SkuCode, QrGenerationDetail } from "@/lib/types";
 import { TRAY_FAMILY_QC_CATEGORIES, QC_CATEGORY_LABELS } from "@/lib/types";
 import MoreMenu from "@/components/inward-vehicle-inspection/MoreMenu";
 import ConfirmDialog from "@/components/inward-vehicle-inspection/ConfirmDialog";
@@ -13,6 +13,8 @@ import CategoryPicker from "@/components/inward-qc/CategoryPicker";
 import Wizard from "@/components/inward-qc/Wizard";
 import RecordDetail from "@/components/inward-qc/RecordDetail";
 import Pagination from "@/components/Pagination";
+import QrGenerationPanel from "@/components/qr-generation/QrGenerationPanel";
+import { useProduct } from "@/lib/productContext";
 import { T, statusLabel } from "@/lib/terms";
 
 const MODULE = "inward-qc";
@@ -37,6 +39,7 @@ export default function InwardQcPage() {
 
 function InwardQcPageContent() {
   const me = useMe();
+  const isUs = useProduct() === "us_factory";
   const router = useRouter();
   const searchParams = useSearchParams();
   const [meta, setMeta] = useState<QcMeta | null>(null);
@@ -59,6 +62,8 @@ function InwardQcPageContent() {
   const [detailState, setDetailState] = useState<QcDetail | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<QcListItem | null>(null);
   const [deleteBlockedMsg, setDeleteBlockedMsg] = useState<string | null>(null);
+  // US Factory: RM QR panel for an approved record (asks how many QRs).
+  const [qrState, setQrState] = useState<{ title: string; detail: QrGenerationDetail } | null>(null);
 
   const perms = me?.permissions.inward_qc;
   const activeFilterCount = (fDate ? 1 : 0) + (fCategory ? 1 : 0) + (fStatus ? 1 : 0);
@@ -134,12 +139,31 @@ function InwardQcPageContent() {
     }
   }
 
+  async function openQr(batchId: string, shipment: string) {
+    try {
+      const detail = await api.getRmQr(batchId);
+      setDetailState(null);
+      setQrState({ title: `RM QR · ${shipment}`, detail });
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : "Failed to load QR batch");
+    }
+  }
+
+  async function generateQr(quantity?: number) {
+    if (!qrState) return;
+    const updated = await api.generateRmQr(qrState.detail.id, quantity);
+    setQrState({ ...qrState, detail: updated });
+    refreshAfterMutation();
+  }
+
   function handleRowClick(item: QcListItem) {
     // "The user does NOT click + New Record to create this Tray QC. The user
     // simply opens the existing Pending Tray QC" — a still-Pending Tray QC
     // opens straight into the observation form; anything else opens the
     // read-only Record Details view (with Edit available from there / More menu).
-    if (TRAY_FAMILY_QC_CATEGORIES.includes(item.category) && item.status === "pending") {
+    // US Factory: every Pending record was created from a Goods Receipt entry
+    // and opens straight into its observations.
+    if ((isUs || TRAY_FAMILY_QC_CATEGORIES.includes(item.category)) && item.status === "pending") {
       openEdit(item.id);
     } else {
       openDetail(item.id);
@@ -166,16 +190,22 @@ function InwardQcPageContent() {
       <div className="page-head2">
         <div>
           <h1>Inward QC</h1>
-          <div className="desc">Every Inward QC record created to date, across LNP Tray, Soaker Pad, Polybag and CFB.</div>
+          <div className="desc">{isUs
+            ? "Inwarded Goods Receipt entries appear here as Pending. Upload the COA, complete the checks and approve, then generate the pallet QR codes."
+            : "Every Inward QC record created to date, across LNP Tray, Soaker Pad, Polybag and CFB."}</div>
         </div>
-        <button
-          className="btn btn-primary"
-          disabled={!perms || !perms.can_create}
-          title={perms && !perms.can_create ? "Only users with Create permission can add new records." : ""}
-          onClick={() => setShowCategoryPicker(true)}
-        >
-          + New Record
-        </button>
+        {/* US Factory: records appear here automatically (Pending) once a
+            Goods Receipt entry is inwarded -- there is nothing to add by hand. */}
+        {!isUs && (
+          <button
+            className="btn btn-primary"
+            disabled={!perms || !perms.can_create}
+            title={perms && !perms.can_create ? "Only users with Create permission can add new records." : ""}
+            onClick={() => setShowCategoryPicker(true)}
+          >
+            + New Record
+          </button>
+        )}
       </div>
 
       <div className="toolbar">
@@ -204,6 +234,7 @@ function InwardQcPageContent() {
                 <select value={fStatus} onChange={(e) => setFStatus(e.target.value)}>
                   <option value="">All</option>
                   <option value="draft">Draft</option>
+                  <option value="pending">Pending</option>
                   <option value="accepted">Approve</option>
                   <option value="onhold">On Hold</option>
                 </select>
@@ -266,6 +297,12 @@ function InwardQcPageContent() {
           permissions={perms}
           onClose={() => { setWizardState(null); refreshAfterMutation(); }}
           onSaved={refreshAfterMutation}
+          onSubmitted={(d) => {
+            // Approved -> straight on to "how many QR codes?" (US Factory).
+            if (d.status === "accepted" && d.rm_qr_batch_id && me?.permissions.rm_qr_generation?.can_edit) {
+              openQr(d.rm_qr_batch_id, d.shipment_number);
+            }
+          }}
           isNew={wizardState.isNew}
         />
       )}
@@ -276,6 +313,17 @@ function InwardQcPageContent() {
           canEdit={!!perms?.can_edit}
           onClose={() => setDetailState(null)}
           onEdit={() => { const id = detailState.id; setDetailState(null); openEdit(id); }}
+          onOpenQr={isUs ? (batchId) => openQr(batchId, detailState.shipment_number) : undefined}
+        />
+      )}
+
+      {qrState && (
+        <QrGenerationPanel
+          title={qrState.title}
+          detail={qrState.detail}
+          canGenerate={!!me?.permissions.rm_qr_generation?.can_edit}
+          onGenerate={generateQr}
+          onClose={() => setQrState(null)}
         />
       )}
 

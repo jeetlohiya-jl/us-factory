@@ -1,13 +1,16 @@
 "use client";
 import { Fragment, useState } from "react";
+import Link from "next/link";
 import { api } from "@/lib/api";
 import type { Category, GoodsReceiptDetail, GoodsReceiptEntry, InspectionDetail, Permissions, QrGenerationDetail } from "@/lib/types";
 import { INWARD_CATEGORY_LABELS, TRAY_FAMILY_QC_CATEGORIES } from "@/lib/types";
 import QrGenerationPanel from "@/components/qr-generation/QrGenerationPanel";
 import GrInwardWizard from "./GrInwardWizard";
 import GrQuickInwardForm, { type QuickInwardSubmission } from "./GrQuickInwardForm";
+import GrBatchNumbersDialog from "./GrBatchNumbersDialog";
+import { useProduct } from "@/lib/productContext";
 import { GoodsReceiptStatusBadge } from "./GoodsReceiptStatusBadge";
-import { T, categoryLabel } from "@/lib/terms";
+import { T, categoryLabel, statusLabel } from "@/lib/terms";
 
 // Display only -- INWARD_CATEGORY_LABELS is typed for just the 7 Inward
 // QC categories (tray/lnp_tray/film/pad/polybag/cfb/glue), so it renders
@@ -97,7 +100,14 @@ export default function GoodsReceiptDetailPanel({
   onEdit: () => void;
   onChanged: (next: GoodsReceiptDetail) => void;
 }) {
+  // US Factory: Goods Receipt is Module 1 of the US flow. Inward Vehicle
+  // Inspection (mandatory for trays, optional otherwise) never generates QRs;
+  // trays then collect one Batch Number per pallet in a separate dialog, and
+  // every inwarded entry continues in Inward QC -> QR Generation.
+  const isUs = useProduct() === "us_factory";
   const [record, setRecord] = useState(detail);
+  const [batchEntry, setBatchEntry] = useState<GoodsReceiptEntry | null>(null);
+  const [usInspectionDone, setUsInspectionDone] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [qr, setQr] = useState<{ entry: GoodsReceiptEntry; detail: QrGenerationDetail } | null>(null);
@@ -138,10 +148,17 @@ export default function GoodsReceiptDetailPanel({
   // migrations 0066/0068): a draft/hold already in progress for this entry
   // is resumed instead of creating a second one; a delivery whose
   // inspection is already approved always gets a fresh one.
-  async function openInwardWizard(e: GoodsReceiptEntry) {
+  async function openInwardWizard(e: GoodsReceiptEntry, skipQuick = false) {
     // No real Container/Shipment Number -- skip Inward Vehicle Inspection
     // entirely and use the lightweight quick-inward form instead.
-    if (isAutoShipment(e)) {
+    // (US Factory: a tray always needs its inspection, so only non-trays
+    // use the quick form -- see openUsInward.)
+    if (isUs && !isTray(e) && !skipQuick) {
+      setUsInspectionDone(null);
+      setQuickInward(e);
+      return;
+    }
+    if (!isUs && !skipQuick && isAutoShipment(e)) {
       setQuickInward(e);
       return;
     }
@@ -173,6 +190,18 @@ export default function GoodsReceiptDetailPanel({
     setBusy(e.id);
     setError(null);
     try {
+      if (submission.kind === "us") {
+        // US Factory non-tray inward: no QR here -- the entry lands in Inward
+        // QC as Pending (created by the database in the same call).
+        const nextUs = await api.inwardGoodsReceiptEntry(record.id, e.id, {
+          received_quantity: submission.receivedQuantity, unit: submission.unit,
+          ...(submission.pallets ? { pallet_count: submission.pallets } : {}),
+        });
+        apply(nextUs);
+        invalidateQc();
+        setQuickInward(null);
+        return;
+      }
       let next: GoodsReceiptDetail;
       if (e.status === "inwarded") {
         next = await api.inwardRemainingGoodsReceiptEntry(e.id, submission.kind === "pallets"
@@ -194,6 +223,11 @@ export default function GoodsReceiptDetailPanel({
     }
   }
 
+  function invalidateQc() {
+    // Inward QC's list is cached; the new Pending record must show up there.
+    import("@/lib/listCache").then((m) => m.invalidateListCache("inward-qc"));
+  }
+
   // Refetches the full record after the wizard closes without an approval
   // (Save Draft, a Hold submit, or a Cancel that left an existing draft in
   // place) so the row's inward_inspection status picks up immediately.
@@ -210,6 +244,15 @@ export default function GoodsReceiptDetailPanel({
   // completed the inward process"), then auto-opens RM QR Generation for
   // that same entry, exactly like the pre-existing "Generate QRs" button.
   async function handleInspectionApproved(e: GoodsReceiptEntry, inspection: InspectionDetail) {
+    if (isUs && !isTray(e)) {
+      // Optional inspection finished: back to the inward form, which still
+      // asks for the quantity received. Nothing is inwarded yet.
+      setInwardWizard(null);
+      setUsInspectionDone(e.id);
+      setQuickInward(e);
+      await refreshRecord();
+      return;
+    }
     setBusy(e.id);
     setError(null);
     try {
@@ -239,7 +282,11 @@ export default function GoodsReceiptDetailPanel({
       }
       apply(next);
       const updatedEntry = next.entries.find((x) => x.id === e.id);
-      if (updatedEntry) await openOrGenerateQr(updatedEntry);
+      if (isUs) {
+        // Inspection never generates QRs: go on to the per-pallet Batch Numbers.
+        setInwardWizard(null);
+        if (updatedEntry) setBatchEntry(updatedEntry);
+      } else if (updatedEntry) await openOrGenerateQr(updatedEntry);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Inspection approved, but the inward could not be completed");
     } finally {
@@ -394,10 +441,35 @@ export default function GoodsReceiptDetailPanel({
                               COA before Submit for this category -- but QR generation itself
                               also refuses without one (goods_receipt_generate_pallets), so this
                               is a plain explanation rather than a dead button if it ever is. */}
-                          {e.status === "inwarded" && e.qr_batch?.status !== "generated" && needsCoa(e) && !e.coa_storage_path && (
+                          {isUs && e.status === "inwarded" && (
+                            <>
+                              {isTray(e) && (e.batch_count ?? 0) < (e.pallet_count ?? 0) && canReceive && (
+                                <button className="btn btn-primary" onClick={() => setBatchEntry(e)}>Enter Batch Numbers</button>
+                              )}
+                              {isTray(e) && (e.batch_count ?? 0) >= (e.pallet_count ?? 0) && (e.pallet_count ?? 0) > 0 && (
+                                <button className="btn btn-secondary" onClick={() => setBatchEntry(e)}>
+                                  {e.qr_batch?.status === "generated" || !canReceive ? "View Batch Numbers" : "Batch Numbers"}
+                                </button>
+                              )}
+                              {e.qc && (
+                                <Link href={`/inward-qc?open=${e.qc.id}`} className="btn btn-secondary" style={{ marginLeft: isTray(e) ? 8 : 0 }}>
+                                  Inward QC · {statusLabel(e.qc.status)}
+                                </Link>
+                              )}
+                              {e.qr_batch?.status === "generated" && (
+                                <button className="btn btn-secondary" style={{ marginLeft: 8 }} disabled={busy === e.id} onClick={() => openOrGenerateQr(e)}>
+                                  View QRs · {e.qr_batch.batch_display_id}
+                                </button>
+                              )}
+                              {!e.qc && !isTray(e) && (
+                                <span className="hint-text" style={{ margin: 0 }}>No Inward QC for this material.</span>
+                              )}
+                            </>
+                          )}
+                          {!isUs && e.status === "inwarded" && e.qr_batch?.status !== "generated" && needsCoa(e) && !e.coa_storage_path && (
                             <span className="hint-text" style={{ margin: 0 }}>COA missing -- QR generation is blocked until one is uploaded.</span>
                           )}
-                          {e.status === "inwarded" && (e.qr_batch?.status === "generated" || canReceive) && !(needsCoa(e) && !e.coa_storage_path && e.qr_batch?.status !== "generated") && (
+                          {!isUs && e.status === "inwarded" && (e.qr_batch?.status === "generated" || canReceive) && !(needsCoa(e) && !e.coa_storage_path && e.qr_batch?.status !== "generated") && (
                             <button
                               className={`btn ${e.qr_batch?.status === "generated" ? "btn-secondary" : "btn-primary"}`}
                               disabled={busy === e.id}
@@ -410,7 +482,7 @@ export default function GoodsReceiptDetailPanel({
                                 : `Generate ${e.qr_quantity ?? e.pallet_count} QRs`}
                             </button>
                           )}
-                          {e.status === "inwarded" && canReceive && !record.zoho_cancelled && leftToReceive(e) > 0 && (
+                          {!isUs && e.status === "inwarded" && canReceive && !record.zoho_cancelled && leftToReceive(e) > 0 && (
                             <button className="btn btn-secondary" style={{ marginLeft: 8 }} disabled={busy === e.id} onClick={() => openInwardWizard(e)}>
                               {busy === e.id ? "Opening…"
                                 : !activeInspection(e) ? "Inward remaining"
@@ -463,8 +535,27 @@ export default function GoodsReceiptDetailPanel({
         />
       )}
 
+      {batchEntry && (
+        <GrBatchNumbersDialog
+          entry={batchEntry}
+          poNumber={record.po_number}
+          canEdit={canReceive}
+          onClose={() => setBatchEntry(null)}
+          onSaved={(next) => { apply(next); invalidateQc(); }}
+        />
+      )}
+
       {quickInward && (
         <GrQuickInwardForm
+          usMode={isUs}
+          inspection={isUs && quickInward.category && quickInward.category in INWARD_CATEGORY_LABELS ? {
+            label: usInspectionDone === quickInward.id ? "View Inspection"
+              : !activeInspection(quickInward) ? "Fill Inward Vehicle Inspection"
+              : activeInspection(quickInward)!.status === "draft" ? "Resume Inspection" : "View Inspection",
+            done: usInspectionDone === quickInward.id || quickInward.inward_inspection?.status === "approved",
+            busy: busy === quickInward.id,
+            onOpen: () => { openInwardWizard(quickInward, true); },
+          } : undefined}
           entry={quickInward}
           poNumber={record.po_number}
           vendorName={record.vendor_name}

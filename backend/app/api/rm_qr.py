@@ -1,3 +1,4 @@
+from typing import Optional
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -75,13 +76,16 @@ def get_rm_qr(rec_id: uuid.UUID, db: Session = Depends(get_db), _perm=Depends(re
 
 @router.post("/{rec_id}/generate", response_model=schemas.QrGenerationDetailOut)
 def generate_rm_qr(
-    rec_id: uuid.UUID, db: Session = Depends(get_db),
+    rec_id: uuid.UUID, payload: Optional[schemas.RmQrGenerateIn] = None, db: Session = Depends(get_db),
     current_user: AuthenticatedUser = Depends(get_current_user),
     _perm=Depends(require("edit")),
 ):
     rec = _get_or_404(db, rec_id)
     try:
-        qr_generation_service.generate_pallets(db, rec, actor_user_id=current_user.user_id)
+        qr_generation_service.generate_pallets(
+            db, rec, actor_user_id=current_user.user_id,
+            quantity=(payload.quantity if payload else None),
+        )
     except qr_generation_service.QrGenerationError as e:
         raise HTTPException(status_code=422, detail=str(e))
     db.commit()
