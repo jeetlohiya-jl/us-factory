@@ -20,6 +20,15 @@ import { MODULE_NAMES } from "@/lib/terms";
  * sidebar order and icon choice for each.
  */
 const NAV_ITEMS = [
+  // Module 1 (US Factory) -- Goods Receipt: Zoho POs for the US delivery
+  // location, one entry per container/SKU. Same page Factory uses.
+  {
+    href: "/goods-receipt",
+    label: MODULE_NAMES.goods_receipt,
+    icon: (
+      <path d="M3 7l9-4 9 4v10l-9 4-9-4V7zM3 7l9 4 9-4M12 11v10M7.5 5.2l9 4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    ),
+  },
   {
     href: "/inward-vehicle-inspection",
     label: MODULE_NAMES.inward_vehicle_inspection,
@@ -261,7 +270,7 @@ const FACTORY_NAV_ITEMS = [
 ];
 
 // Routes that exist only inside the Factory product.
-const FACTORY_ONLY_HREFS = ["/goods-receipt", "/inventory"];
+const FACTORY_ONLY_HREFS = ["/inventory"];
 
 const SETUP_NAV_ITEMS = [
   {
@@ -351,7 +360,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const me = useMe();
   const setupNavItems = me?.is_admin ? [...SETUP_NAV_ITEMS, USERS_NAV_ITEM, PORTFOLIO_ACCESS_NAV_ITEM] : SETUP_NAV_ITEMS;
 
-  // The root "/" route always server-redirects to "/inward-vehicle-inspection"
+  // The root "/" route always server-redirects to "/goods-receipt"
   // (see app/page.tsx) since that predates the Factory/US Factory split --
   // once someone has landed in the Factory product, bounce them off that
   // (and any other non-Factory) route to Factory's own landing page instead,
@@ -370,7 +379,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (chosenProduct !== "us_factory") return;
     if (pathname && FACTORY_ONLY_HREFS.some((href) => pathname.startsWith(href))) {
-      router.replace("/inward-vehicle-inspection");
+      router.replace("/goods-receipt");
     }
   }, [chosenProduct, pathname, router]);
 

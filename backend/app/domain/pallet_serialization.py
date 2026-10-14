@@ -41,7 +41,15 @@ def serialize_qr_detail(rec: models.QrGenerationRecord) -> schemas.QrGenerationD
     elif rec.source_goods_receipt_entry_id and rec.source_goods_receipt_entry:
         e = rec.source_goods_receipt_entry
         source_display_id = f"{e.goods_receipt.po_number} / {e.shipment_number}" if e.goods_receipt else e.shipment_number
+    max_quantity = None
+    if rec.qr_type == "rm" and rec.status == "pending" and rec.source_goods_receipt_entry_id and rec.source_goods_receipt_entry:
+        ge = rec.source_goods_receipt_entry
+        if ge.pallet_count:
+            max_quantity = int(ge.pallet_count)
+        elif ge.received_quantity is not None:
+            max_quantity = int(ge.received_quantity)
     return schemas.QrGenerationDetailOut(
+        max_quantity=max_quantity,
         id=rec.id, batch_display_id=rec.batch_display_id, qr_type=rec.qr_type, category=rec.category,
         shipment_number=rec.shipment_number, sku_code_snapshot=rec.sku_code_snapshot,
         sku_version_snapshot=rec.sku_version_snapshot, country_code=rec.country_code,

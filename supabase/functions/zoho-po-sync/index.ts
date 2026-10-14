@@ -30,7 +30,9 @@
 //   ZOHO_ORGANIZATION_ID
 //   ZOHO_API_DOMAIN       default https://www.zohoapis.com   (.in / .eu / .com.au for other data centres)
 //   ZOHO_ACCOUNTS_DOMAIN  default https://accounts.zoho.com
-//   GAINESVILLE_MATCH     default "gainesville factory" (text identifying the delivery location)
+//   GAINESVILLE_MATCH     default "gainesville factory" (text identifying the Factory delivery location)
+//   US_FACTORY_MATCH      default "bhiwandi plant" (text identifying the US Factory delivery location)
+// Each PO is offered to every unit in turn; the unit whose delivery location it matches owns it.
 // SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are provided by Supabase.
 
 export type Env = Record<string, string | undefined>;
@@ -65,16 +67,25 @@ async function zohoGet(env: Env, f: Fetch, path: string, query: Record<string, s
   return j;
 }
 
-async function upsert(env: Env, f: Fetch, po: unknown): Promise<any> {
+type UnitCfg = { product: "factory" | "us_factory"; match: string };
+
+function unitConfigs(env: Env): UnitCfg[] {
+  return [
+    { product: "factory", match: env.GAINESVILLE_MATCH || "gainesville factory" },
+    { product: "us_factory", match: env.US_FACTORY_MATCH || "bhiwandi plant" },
+  ];
+}
+
+async function upsert(env: Env, f: Fetch, po: unknown, cfg: UnitCfg): Promise<any> {
   const r = await f(`${env.SUPABASE_URL}/rest/v1/rpc/zoho_upsert_purchase_order`, {
     method: "POST",
     headers: {
       apikey: env.SUPABASE_SERVICE_ROLE_KEY || "",
       Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
       "Content-Type": "application/json",
-      "x-product": "factory",
+      "x-product": cfg.product,
     },
-    body: JSON.stringify({ _po: po, _delivery_match: env.GAINESVILLE_MATCH || "gainesville factory" }),
+    body: JSON.stringify({ _po: po, _delivery_match: cfg.match, _unit_product: cfg.product }),
   });
   const j = await r.json();
   if (!r.ok) throw new Error(`Goods Receipt sync failed: ${JSON.stringify(j).slice(0, 300)}`);
@@ -82,11 +93,16 @@ async function upsert(env: Env, f: Fetch, po: unknown): Promise<any> {
 }
 
 async function syncPo(env: Env, f: Fetch, po: any, source: string) {
-  const match = env.GAINESVILLE_MATCH || "gainesville factory";
-  const result = await upsert(env, f, normaliseDelivery(po, match));
+  let result: any = null;
+  let unit = "";
+  for (const cfg of unitConfigs(env)) {
+    result = await upsert(env, f, normaliseDelivery(po, cfg.match), cfg);
+    unit = cfg.product;
+    if (result?.action !== "ignored") break;
+  }
   // One line per sync in Supabase -> Edge Functions -> zoho-po-sync -> Logs.
   console.log(JSON.stringify({
-    source, purchaseorder_number: po?.purchaseorder_number, status: po?.status,
+    source, unit, purchaseorder_number: po?.purchaseorder_number, status: po?.status,
     location: po?.location_name ?? po?.warehouse_name ?? null, lines: po?.line_items?.length ?? 0,
     action: result?.action, reason: result?.reason ?? null,
   }));

@@ -23,7 +23,7 @@ function computeClientSamplingPlan(meta: QcMeta, category: string, qty: number |
 }
 
 export default function Wizard({
-  qcId, initialDetail, meta, skuCodes, permissions, onClose, onSaved, isNew = false,
+  qcId, initialDetail, meta, skuCodes, permissions, onClose, onSaved, onSubmitted, isNew = false,
 }: {
   qcId: string;
   initialDetail: QcDetail;
@@ -32,13 +32,20 @@ export default function Wizard({
   permissions: Permissions;
   onClose: (deleted: boolean) => void;
   onSaved: () => void;
+  // Called with the saved record right after Submit succeeds (before onClose),
+  // so the page can go straight on to QR generation for an Accepted record.
+  onSubmitted?: (submitted: QcDetail) => void;
   // True only for a record just created this session via "+ New Record"
   // (never yet explicitly Saved/Submitted) -- see handleCancel.
   isNew?: boolean;
 }) {
   const isTray = TRAY_FAMILY_QC_CATEGORIES.includes(initialDetail.category);
   const [detail, setDetail] = useState<QcDetail>(initialDetail);
-  const [step, setStep] = useState<2 | 3>(isTray ? 3 : 2);
+  // US Factory: created from a Goods Receipt entry -- its shipment, SKU,
+  // vendor and quantities are already known (read-only), so it opens straight
+  // on the observations, and a COA is required to approve.
+  const grLinked = !!initialDetail.source_goods_receipt_entry_id;
+  const [step, setStep] = useState<2 | 3>(isTray || grLinked ? 3 : 2);
   const [vendor, setVendor] = useState(initialDetail.vendor_name || "");
   const [quantity, setQuantity] = useState(initialDetail.quantity != null ? String(initialDetail.quantity) : "");
   const [quantityUnit, setQuantityUnit] = useState<QuantityUnit>((initialDetail.quantity_unit as QuantityUnit) || "Pallets");
@@ -72,7 +79,7 @@ export default function Wizard({
   }
 
   useEffect(() => {
-    if (!touched || isTray) return;
+    if (!touched || isTray || grLinked) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => { persistBasic(); }, 800);
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
@@ -137,6 +144,8 @@ export default function Wizard({
     complete = requiredFilled && conclusion.trim() !== "";
   }
 
+  const coaOk = !grLinked || !!detail.coa_filename;
+  const canSubmit = complete && coaOk;
   const plan = computeClientSamplingPlan(meta, detail.category, quantity ? Number(quantity) : (detail.quantity ? Number(detail.quantity) : null));
 
   async function handleNext() {
@@ -150,7 +159,7 @@ export default function Wizard({
     setSaving(true);
     setError(null);
     try {
-      if (!isTray) await persistBasic();
+      if (!isTray && !grLinked) await persistBasic();
       const updated = await api.saveQcDraft(qcId);
       setDetail(updated);
       onSaved();
@@ -166,9 +175,10 @@ export default function Wizard({
     setSaving(true);
     setError(null);
     try {
-      if (!isTray) await persistBasic();
+      if (!isTray && !grLinked) await persistBasic();
       const updated = await api.submitQc(qcId);
       setDetail(updated);
+      onSubmitted?.(updated);
       onSaved();
       onClose(false);
     } catch (e) {
@@ -184,13 +194,13 @@ export default function Wizard({
       // completely regardless of whether any fields were touched/autosaved
       // -- this record was never explicitly Saved/Submitted in this
       // session. Always hard-delete rather than the blank-only check.
-      if (detail.status === "draft" && !isTray) {
+      if (detail.status === "draft" && !isTray && !grLinked) {
         try { await api.discardNewQc(qcId); } catch { /* best-effort */ }
       }
       onClose(true);
       return;
     }
-    if (!touched && detail.status === "draft" && !isTray) {
+    if (!touched && detail.status === "draft" && !isTray && !grLinked) {
       try { await api.discardQcIfBlank(qcId); } catch { /* best-effort */ }
     }
     onClose(false);
@@ -213,7 +223,33 @@ export default function Wizard({
         <div className="sp-body">
           {error && <div className="error-banner">{error}</div>}
 
-          {isTray && (
+          {grLinked && detail.goods_receipt && (
+            <div className="detail-card" style={{ marginBottom: 20 }}>
+              <h3>Inward Details</h3>
+              <div className="detail-grid">
+                <div><div className="detail-kv-label">PO Number</div><div className="detail-kv-value mono">{detail.goods_receipt.po_number || "—"}</div></div>
+                <div><div className="detail-kv-label">Vendor</div><div className="detail-kv-value">{detail.goods_receipt.vendor_name || detail.vendor_name || "—"}</div></div>
+                <div><div className="detail-kv-label">{T.shipmentNumber}</div><div className="detail-kv-value mono">{detail.shipment_number}</div></div>
+                <div><div className="detail-kv-label">{T.sku}</div><div className="detail-kv-value mono">{detail.sku_code || "—"}</div></div>
+                <div><div className="detail-kv-label">SKU Version</div><div className="detail-kv-value">{detail.sku_version || "—"}</div></div>
+                <div><div className="detail-kv-label">PO Quantity</div><div className="detail-kv-value">{detail.goods_receipt.po_quantity ?? "—"} {detail.goods_receipt.unit || ""}</div></div>
+                <div><div className="detail-kv-label">Received</div><div className="detail-kv-value">{detail.goods_receipt.received_quantity ?? "—"} {detail.goods_receipt.unit || ""}</div></div>
+                {detail.goods_receipt.pallet_count != null && (
+                  <div><div className="detail-kv-label">Pallets</div><div className="detail-kv-value">{detail.goods_receipt.pallet_count}</div></div>
+                )}
+              </div>
+              {detail.goods_receipt.batch_numbers.length > 0 && (
+                <div style={{ marginTop: 12 }}>
+                  <div className="detail-kv-label">Batch Numbers ({detail.goods_receipt.batch_numbers.length})</div>
+                  <div className="mono" style={{ fontSize: 12.5, lineHeight: 1.7, maxHeight: 96, overflowY: "auto" }}>
+                    {detail.goods_receipt.batch_numbers.map((b, i) => `${i + 1}: ${b}`).join("  ·  ")}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {isTray && !grLinked && (
             <div className="detail-card" style={{ marginBottom: 20 }}>
               <h3>Vehicle Inspection Information</h3>
               <div className="detail-grid">
@@ -234,7 +270,7 @@ export default function Wizard({
             </div>
           )}
 
-          {!isTray && step === 2 && (
+          {!isTray && !grLinked && step === 2 && (
             <div>
               <div className="form-grid" style={{ marginBottom: 18 }}>
                 <div className="field">
@@ -273,6 +309,12 @@ export default function Wizard({
 
           {(step === 3 || isTray) && (
             <div>
+              {grLinked && (
+                <div style={{ marginBottom: 18 }}>
+                  <CoaField qcId={qcId} filename={detail.coa_filename} url={detail.coa_url} disabled={!canFillSection || isFinalized} onChange={setDetail} />
+                  {!detail.coa_filename && <div className="hint-text" style={{ color: "var(--red)", marginTop: 4 }}>A COA is required before this can be approved.</div>}
+                </div>
+              )}
               {plan && (
                 <div className="plan-callout">
                   {isTray ? (
@@ -289,7 +331,9 @@ export default function Wizard({
                 </div>
               )}
               <div className="hint-text" style={{ fontWeight: 700, marginBottom: 14, color: complete ? (hasNotOk ? "var(--red)" : "var(--green-deep)") : "var(--ink-50)" }}>
-                {complete
+                {complete && !coaOk
+                  ? "Upload the COA to approve this record. Until then it stays Pending."
+                  : complete
                   ? (isTray ? (hasNotOk ? "One or more criteria are NOT OK — this record will be set to On Hold." : "All criteria OK — this record will be set to Accepted.") : "All required fields and conclusion complete — this record will be set to Accepted.")
                   : (isTray ? "Mark OK / NOT OK for every criterion to complete this inspection. Until then it stays Pending." : "Fill in every required field (marked *) and the conclusion to complete this inspection. Until then it stays Pending.")}
               </div>
@@ -312,13 +356,13 @@ export default function Wizard({
         <div className="sp-foot">
           <button className="btn btn-ghost" onClick={handleCancel}>Cancel</button>
           <div className="sp-foot-right">
-            {!isTray && step === 3 && <button className="btn btn-secondary" onClick={() => setStep(2)}>← Back</button>}
+            {!isTray && !grLinked && step === 3 && <button className="btn btn-secondary" onClick={() => setStep(2)}>← Back</button>}
             {!isTray && <button className="btn btn-secondary" disabled={saving} onClick={handleSaveDraft}>Save Draft</button>}
-            {!isTray && step === 2 && (
+            {!isTray && !grLinked && step === 2 && (
               <button className="btn btn-primary" disabled={saving || !skuCodeId || !skuVersionId || !quantity} onClick={handleNext}>Next →</button>
             )}
             {(isTray || step === 3) && (
-              <button className="btn btn-primary" disabled={saving || !complete} onClick={handleSubmit}>Submit</button>
+              <button className="btn btn-primary" disabled={saving || !canSubmit} onClick={handleSubmit}>Submit</button>
             )}
           </div>
         </div>

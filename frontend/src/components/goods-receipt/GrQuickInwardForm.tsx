@@ -7,7 +7,10 @@ import { needsCoa } from "./GoodsReceiptDetailPanel";
 
 export type QuickInwardSubmission =
   | { kind: "pallets"; pallets: number; qrQuantity: number }
-  | { kind: "quantity"; receivedQuantity: number; unit: QuantityUnit; qrQuantity: number };
+  | { kind: "quantity"; receivedQuantity: number; unit: QuantityUnit; qrQuantity: number }
+  // US Factory: quantity + unit (+ pallets for Soaker Pad). No QR count and no
+  // COA here -- QR codes come after QC approval, and the COA is uploaded in QC.
+  | { kind: "us"; receivedQuantity: number; unit: QuantityUnit; pallets?: number };
 
 /**
  * Inward for a container with NO real Container/Shipment Number (2026-09-30)
@@ -37,7 +40,7 @@ export type QuickInwardSubmission =
  * "Inward" starts over, which is fine for a form this short.
  */
 export default function GrQuickInwardForm({
-  entry, poNumber, vendorName, canEdit, busy, error, onClose, onSubmit,
+  entry, poNumber, vendorName, canEdit, busy, error, onClose, onSubmit, usMode = false, inspection,
 }: {
   entry: GoodsReceiptEntry;
   poNumber: string;
@@ -47,10 +50,15 @@ export default function GrQuickInwardForm({
   error: string | null;
   onClose: () => void;
   onSubmit: (submission: QuickInwardSubmission) => void;
+  // US Factory inward for a non-tray material (see GoodsReceiptDetailPanel).
+  usMode?: boolean;
+  // US only: the optional Inward Vehicle Inspection. `label` is the button
+  // text; `done` once one was completed for this entry.
+  inspection?: { label: string; done: boolean; busy: boolean; onOpen: () => void };
 }) {
   const usesPallets = entry.category === "pad";
   const [pallets, setPallets] = useState("");
-  const [receivedQuantity, setReceivedQuantity] = useState("");
+  const [receivedQuantity, setReceivedQuantity] = useState(usMode ? String(entry.po_quantity) : "");
   const [unit, setUnit] = useState<QuantityUnit>(entry.unit);
   const [qrQuantity, setQrQuantity] = useState("");
   const [coaFilename, setCoaFilename] = useState(entry.coa_filename);
@@ -60,6 +68,14 @@ export default function GrQuickInwardForm({
   const isRemainingDelivery = entry.status === "inwarded";
 
   function validate(): string | null {
+    if (usMode) {
+      if (!(Number(receivedQuantity) > 0)) return "Quantity Received must be greater than 0.";
+      if (usesPallets) {
+        const p = Number(pallets);
+        if (!(p >= 1) || !Number.isInteger(p)) return "Number of Pallets must be a whole number of at least 1.";
+      }
+      return null;
+    }
     if (usesPallets) {
       const p = Number(pallets);
       if (!(p >= 1) || !Number.isInteger(p)) return "Quantity (Pallets) must be a whole number of at least 1.";
@@ -77,6 +93,10 @@ export default function GrQuickInwardForm({
     const invalid = validate();
     if (invalid) { setValidationError(invalid); return; }
     setValidationError(null);
+    if (usMode) {
+      onSubmit({ kind: "us", receivedQuantity: Number(receivedQuantity), unit, ...(usesPallets ? { pallets: Number(pallets) } : {}) });
+      return;
+    }
     onSubmit(
       usesPallets
         ? { kind: "pallets", pallets: Number(pallets), qrQuantity: Number(qrQuantity) }
@@ -118,11 +138,48 @@ export default function GrQuickInwardForm({
               </div>
             </div>
           </div>
-          <div className="hint-text" style={{ marginBottom: 18 }}>
-            No Container/Shipment Number was provided for this line, so Inward Vehicle Inspection doesn't apply here.
-          </div>
+          {usMode ? (
+            <div className="detail-card" style={{ marginBottom: 18 }}>
+              <h3>Inward Vehicle Inspection <span className="hint-text" style={{ margin: 0, fontWeight: 400 }}>(optional)</span></h3>
+              <div className="hint-text" style={{ marginBottom: 10 }}>
+                {inspection?.done
+                  ? "Inspection completed and linked to this entry."
+                  : "You can record the incoming vehicle and its inspection, or skip it and inward directly."}
+              </div>
+              {inspection && (
+                <button className="btn btn-secondary" disabled={inspection.busy || !canEdit} onClick={inspection.onOpen}>
+                  {inspection.busy ? "Opening…" : inspection.label}
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="hint-text" style={{ marginBottom: 18 }}>
+              No Container/Shipment Number was provided for this line, so Inward Vehicle Inspection doesn't apply here.
+            </div>
+          )}
           <div className="form-grid" style={{ marginBottom: 18 }}>
-            {usesPallets ? (
+            {usMode ? (
+              <>
+                <div className="field">
+                  <label>Quantity Received <span style={{ color: "var(--red)" }}>*</span></label>
+                  <input type="number" min={0} step="any" disabled={!canEdit || busy} value={receivedQuantity} placeholder="e.g. 980"
+                    onChange={(e) => setReceivedQuantity(e.target.value)} />
+                </div>
+                <div className="field">
+                  <label>Unit <span style={{ color: "var(--red)" }}>*</span></label>
+                  <select disabled={!canEdit || busy} value={unit} onChange={(e) => setUnit(e.target.value as QuantityUnit)}>
+                    {QUANTITY_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+                  </select>
+                </div>
+                {usesPallets && (
+                  <div className="field">
+                    <label>Number of Pallets <span style={{ color: "var(--red)" }}>*</span></label>
+                    <input type="number" min={1} step={1} disabled={!canEdit || busy} value={pallets} placeholder="e.g. 5"
+                      onChange={(e) => setPallets(e.target.value)} />
+                  </div>
+                )}
+              </>
+            ) : usesPallets ? (
               <div className="field">
                 <label>Quantity (Pallets) <span style={{ color: "var(--red)" }}>*</span></label>
                 <input type="number" min={1} step={1} disabled={!canEdit || busy} value={pallets} placeholder="e.g. 20"
@@ -143,14 +200,21 @@ export default function GrQuickInwardForm({
                 </div>
               </>
             )}
-            <div className="field">
-              <label>How many QR codes to generate? <span style={{ color: "var(--red)" }}>*</span></label>
-              <input type="number" min={1} step={1} disabled={!canEdit || busy} value={qrQuantity} placeholder="e.g. 20"
-                onChange={(e) => setQrQuantity(e.target.value)} />
-              <div className="hint-text" style={{ margin: "4px 0 0" }}>The boxes configuration behind this line isn't known, so this is asked separately.</div>
-            </div>
+            {!usMode && (
+              <div className="field">
+                <label>How many QR codes to generate? <span style={{ color: "var(--red)" }}>*</span></label>
+                <input type="number" min={1} step={1} disabled={!canEdit || busy} value={qrQuantity} placeholder="e.g. 20"
+                  onChange={(e) => setQrQuantity(e.target.value)} />
+                <div className="hint-text" style={{ margin: "4px 0 0" }}>The boxes configuration behind this line isn't known, so this is asked separately.</div>
+              </div>
+            )}
           </div>
-          {requiresCoa && (
+          {usMode && (
+            <div className="hint-text" style={{ marginBottom: 18 }}>
+              After this, the entry appears in Inward QC as Pending. Upload the COA and approve it there, then generate the QR codes.
+            </div>
+          )}
+          {requiresCoa && !usMode && (
             <GrCoaField
               entryId={entry.id}
               filename={coaFilename}

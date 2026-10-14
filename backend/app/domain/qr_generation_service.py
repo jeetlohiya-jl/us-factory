@@ -84,6 +84,26 @@ def _resolve_qc_country(db: Session, qc: models.InwardQcRecord) -> str:
     return (vendor.country if vendor and vendor.country else "US")
 
 
+def _gr_max_quantity(db: Session, entry_id) -> int | None:
+    """Upper bound on RM pallet QRs for a Goods-Receipt-sourced batch: the
+    pallet count recorded at inward (one QR per received pallet), else the
+    whole units received. None when the entry is gone."""
+    entry = db.get(models.GoodsReceiptEntry, entry_id) if entry_id else None
+    if entry is None:
+        return None
+    if entry.pallet_count:
+        return int(entry.pallet_count)
+    if entry.received_quantity is not None:
+        return int(entry.received_quantity)
+    return None
+
+
+def rm_qr_max_quantity(db: Session, rec: models.QrGenerationRecord) -> int | None:
+    if rec.qr_type != "rm" or not rec.source_goods_receipt_entry_id:
+        return None
+    return _gr_max_quantity(db, rec.source_goods_receipt_entry_id)
+
+
 def get_or_create_rm_qr_for_qc(db: Session, qc: models.InwardQcRecord) -> models.QrGenerationRecord:
     """
     Called the moment an Inward QC is Accepted. Idempotent — the partial
@@ -94,6 +114,13 @@ def get_or_create_rm_qr_for_qc(db: Session, qc: models.InwardQcRecord) -> models
     sku_code, sku_version, sku_code_id, sku_version_id = _resolve_qc_sku(qc)
     country_code = _resolve_qc_country(db, qc)
     quantity = int(qc.quantity or 0)
+    gr_entry_id = getattr(qc, "source_goods_receipt_entry_id", None)
+    if gr_entry_id:
+        # Goods-Receipt-linked: default the batch to the received pallet
+        # count; the user confirms/edits it when generating.
+        gr_max = _gr_max_quantity(db, gr_entry_id)
+        if gr_max:
+            quantity = gr_max
 
     existing = (
         db.query(models.QrGenerationRecord)
@@ -115,6 +142,8 @@ def get_or_create_rm_qr_for_qc(db: Session, qc: models.InwardQcRecord) -> models
             existing.sku_version_snapshot = sku_version
             existing.country_code = country_code
             existing.quantity = quantity
+            if gr_entry_id:
+                existing.source_goods_receipt_entry_id = gr_entry_id
             db.flush()
         return existing
 
@@ -123,6 +152,7 @@ def get_or_create_rm_qr_for_qc(db: Session, qc: models.InwardQcRecord) -> models
         qr_type="rm",
         category=qc.category,
         source_inward_qc_id=qc.id,
+        source_goods_receipt_entry_id=gr_entry_id,
         shipment_number=qc.shipment_number,
         sku_code_id=sku_code_id,
         sku_version_id=sku_version_id,
@@ -409,7 +439,9 @@ def _create_pallet_row(
     return pallet
 
 
-def generate_pallets(db: Session, rec: models.QrGenerationRecord, actor_user_id=None) -> models.QrGenerationRecord:
+def generate_pallets(
+    db: Session, rec: models.QrGenerationRecord, actor_user_id=None, quantity: int | None = None,
+) -> models.QrGenerationRecord:
     """
     Generate one individually-numbered, real-QR-backed pallet per unit of
     quantity, and immediately propagate all of them into pending_storage —
@@ -450,6 +482,33 @@ def generate_pallets(db: Session, rec: models.QrGenerationRecord, actor_user_id=
     )
     if rec.status == "generated":
         return rec
+
+    gr_batch_codes: list[str] = []
+    if rec.qr_type == "rm" and rec.source_goods_receipt_entry_id:
+        gr_max = rm_qr_max_quantity(db, rec)
+        if quantity is not None:
+            if quantity <= 0:
+                raise QrGenerationError("Enter a quantity greater than 0 before generating QR codes.")
+            if gr_max is not None and quantity > gr_max:
+                raise QrGenerationError(
+                    f"Only {gr_max} pallet(s) were received for this shipment, so at most {gr_max} QR code(s) can be generated."
+                )
+            rec.quantity = quantity
+        elif gr_max is not None and rec.quantity > gr_max:
+            raise QrGenerationError(
+                f"Only {gr_max} pallet(s) were received for this shipment, so at most {gr_max} QR code(s) can be generated."
+            )
+        # Pallet i takes the i-th vendor Batch Number captured at inward.
+        gr_batch_codes = [
+            r.batch_number
+            for r in db.query(models.GoodsReceiptPalletBatch)
+            .filter(models.GoodsReceiptPalletBatch.goods_receipt_entry_id == rec.source_goods_receipt_entry_id)
+            .order_by(models.GoodsReceiptPalletBatch.pallet_index)
+            .all()
+        ]
+    elif quantity is not None:
+        raise QrGenerationError("The quantity can't be changed for this QR batch.")
+
     if rec.quantity <= 0:
         raise QrGenerationError("Enter a quantity greater than 0 before generating QR codes.")
 
@@ -543,8 +602,11 @@ def generate_pallets(db: Session, rec: models.QrGenerationRecord, actor_user_id=
                     db, rec, next(display_ids), source_machine_id=machine.id if machine else None, batch_code=batch_code,
                 ))
     else:
-        for _ in range(rec.quantity):
-            pallets.append(_create_pallet_row(db, rec, next(display_ids)))
+        for i in range(rec.quantity):
+            pallets.append(_create_pallet_row(
+                db, rec, next(display_ids),
+                batch_code=(gr_batch_codes[i] if i < len(gr_batch_codes) else None),
+            ))
 
     # One flush for the whole batch's INSERTs (was one per pallet) -- this
     # is what actually assigns each pallet.id (gen_uuid's Python-side

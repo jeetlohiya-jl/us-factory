@@ -366,8 +366,14 @@ class InwardQcRecord(Base):
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
     submitted_at = Column(DateTime(timezone=True), nullable=True)
+    # 2026-10-14 (migration 0082) -- US Factory's Goods Receipt entry this
+    # record was created for (gr_ensure_qc). Null for every record created
+    # the old way (Tray QC from an approved Vehicle Inspection, or manually).
+    # One QC per entry, enforced by a partial unique index.
+    source_goods_receipt_entry_id = Column(UUID(as_uuid=True), ForeignKey("goods_receipt_entries.id"), nullable=True)
 
     vehicle_inspection = relationship("InwardVehicleInspection")
+    source_goods_receipt_entry = relationship("GoodsReceiptEntry", foreign_keys=[source_goods_receipt_entry_id])
     vendor = relationship("Vendor", foreign_keys=[vendor_id])
     sku_code = relationship("SkuCode")
     sku_version = relationship("SkuVersion")
@@ -1633,6 +1639,25 @@ class GoodsReceiptEntry(Base):
     sku_code = relationship("SkuCode")
     sku_version = relationship("SkuVersion")
     qr_batch = relationship("QrGenerationRecord", back_populates="source_goods_receipt_entry", uselist=False)
+
+
+class GoodsReceiptPalletBatch(ProductScoped, Base):
+    """One Batch Number per received pallet of an RM / LNP Tray Goods Receipt
+    entry (migration 0082). Written only by the goods_receipt_save_batch_numbers
+    RPC; read here to stamp each generated RM pallet's `batch_code` in
+    pallet order (pallet_index 1 -> the first pallet generated, and so on)."""
+    __tablename__ = "goods_receipt_pallet_batches"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    goods_receipt_entry_id = Column(UUID(as_uuid=True), ForeignKey("goods_receipt_entries.id", ondelete="CASCADE"), nullable=False)
+    inspection_id = Column(UUID(as_uuid=True), ForeignKey("inward_vehicle_inspections.id", ondelete="SET NULL"), nullable=True)
+    sku_code_id = Column(UUID(as_uuid=True), ForeignKey("sku_codes.id"), nullable=True)
+    shipment_number = Column(Text, nullable=True)
+    pallet_index = Column(Integer, nullable=False)
+    batch_number = Column(Text, nullable=False)
+    created_by = Column(UUID(as_uuid=True), ForeignKey("app_users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+    __table_args__ = (UniqueConstraint("goods_receipt_entry_id", "pallet_index"),)
 
 
 class InventoryItem(ProductScoped, Base):
