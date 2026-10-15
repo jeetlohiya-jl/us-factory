@@ -128,7 +128,7 @@ export default function RmQrGenerationPage() {
                   <td className="mono">{r.shipment_number}</td>
                   <td className="mono">{r.sku_code_snapshot}</td>
                   <td className="mono">{r.country_code || "—"}</td>
-                  <td>{r.quantity}</td>
+                  <td>{r.quantity > 0 ? r.quantity : "—"}</td>
                   <td><span className={`badge ${r.status === "generated" ? "generated" : "pending"}`}>{statusLabel(r.status)}</span></td>
                   <td>{new Date(r.created_at).toLocaleDateString()}</td>
                   <td onClick={(e) => e.stopPropagation()}>

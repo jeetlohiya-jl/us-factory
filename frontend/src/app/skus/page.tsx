@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
+import { useProduct } from "@/lib/productContext";
 import { api } from "@/lib/api";
 import { useMe } from "@/lib/useMe";
 import type { Category, QuantityUnit, SkuCode, SkuVersion } from "@/lib/types";
@@ -131,8 +132,9 @@ function SkuVersionDetailsModal({
 // chosen on each record, never here.
 const MATERIAL_LABELS: Record<string, string> = {
   tray: "Tray (RM / LNP Tray / FG)", film: "Film", pad: "Soaker Pad", polybag: "Polybag", cfb: "CFB", glue: "Glue",
+  corner_protector: "Corner Protector",
 };
-const MANAGED_CATEGORIES: Category[] = ["tray", "film", "pad", "polybag", "cfb", "glue"];
+const MANAGED_CATEGORIES: Category[] = ["tray", "film", "pad", "polybag", "cfb", "glue", "corner_protector"];
 const MATERIAL_SHORT: Record<string, string> = { ...MATERIAL_LABELS, tray: "Tray" };
 
 /**
@@ -142,6 +144,8 @@ const MATERIAL_SHORT: Record<string, string> = { ...MATERIAL_LABELS, tray: "Tray
  * (inward_vehicle_inspection's can_edit), same active/inactive pattern.
  */
 export default function SkusPage() {
+  // Corner Protector is an India Factory material (it has an inward QC report).
+  const isUs = useProduct() === "us_factory";
   const me = useMe();
   const perms = me?.permissions.inward_vehicle_inspection;
   const canEdit = !!perms?.can_edit;
@@ -319,7 +323,7 @@ export default function SkusPage() {
             <div className="field" style={{ maxWidth: 200 }}>
               <label>Material</label>
               <select value={category} onChange={(e) => setCategory(e.target.value as Category)}>
-                {MANAGED_CATEGORIES.map((c) => <option key={c} value={c}>{MATERIAL_LABELS[c]}</option>)}
+                {MANAGED_CATEGORIES.filter((c) => isUs || c !== "corner_protector").map((c) => <option key={c} value={c}>{MATERIAL_LABELS[c]}</option>)}
               </select>
             </div>
             <div className="field" style={{ flex: 1, minWidth: 220 }}>

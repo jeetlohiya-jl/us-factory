@@ -3,7 +3,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, status
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import or_
+from sqlalchemy import or_, select
 
 from app.db.session import get_db
 from app.db import models
@@ -85,6 +85,19 @@ def _is_gr_linked(qc: models.InwardQcRecord) -> bool:
     return qc.source_goods_receipt_entry_id is not None
 
 
+def _sku_spec(ver) -> dict | None:
+    """Reference values already on the SKU Version, shown beside the form so
+    the inspector compares against the spec (never copied into observations)."""
+    if ver is None:
+        return None
+    spec = {
+        "Dimensions": ver.prod_dimensions, "Absorption rate": ver.prod_absorption_rate,
+        "Weight": ver.prod_weight, "Pad color": ver.prod_pad_color,
+    }
+    spec = {k: v for k, v in spec.items() if v}
+    return spec or None
+
+
 def _goods_receipt_context(db: Session, qc: models.InwardQcRecord) -> dict | None:
     """Everything the QC form shows read-only about the inward, straight from
     the Goods Receipt entry -- nothing is re-entered or copied that could
@@ -111,6 +124,8 @@ def _goods_receipt_context(db: Session, qc: models.InwardQcRecord) -> dict | Non
         "unit": e.unit,
         "pallet_count": e.pallet_count,
         "batch_numbers": [b.batch_number for b in batches],
+        "received_at": e.inwarded_at.isoformat() if e.inwarded_at else None,
+        "sku_spec": _sku_spec(e.sku_version),
     }
 
 
@@ -131,14 +146,18 @@ def _serialize_detail(db: Session, qc: models.InwardQcRecord) -> dict:
             remarks=(answers_by_id.get(c.id).remarks if c.id in answers_by_id else None),
         )
         for c in fgtray_criteria
-    ] if qc.category in svc.TRAY_FAMILY_CATEGORIES else []
+    ] if svc.uses_fgtray(qc) else []
 
-    attr_defs = svc.get_attribute_definitions(db, qc.category) if qc.category not in svc.TRAY_FAMILY_CATEGORIES else []
+    fkey = svc.form_key(qc)
+    attr_defs = svc.get_attribute_definitions(db, fkey) if not svc.uses_fgtray(qc) else []
     values_by_id = {v.attribute_definition_id: v.value for v in qc.attribute_values}
     attribute_values_out = [
         schemas.QcAttributeValueOut(
             attribute_definition_id=d.id, label=d.label, field_type=d.field_type,
             options_json=d.options_json, is_required=d.is_required, value=values_by_id.get(d.id),
+            description=d.description, tolerance=d.tolerance, defect_type=d.defect_type,
+            inspection_method=d.inspection_method, acceptable_limit=d.acceptable_limit,
+            section=d.section or "attribute", lot_role=d.lot_role, auto_source=d.auto_source,
         )
         for d in attr_defs
     ]
@@ -186,6 +205,7 @@ def _serialize_detail(db: Session, qc: models.InwardQcRecord) -> dict:
         requires_coa=_is_gr_linked(qc),
         rm_qr_batch_id=rm_qr.id if rm_qr else None,
         rm_qr_status=rm_qr.status if rm_qr else None,
+        form_key=fkey, uses_fgtray=svc.uses_fgtray(qc), evaluation=svc.evaluate(db, qc),
     ).model_dump()
 
 
@@ -194,7 +214,7 @@ def get_meta(db: Session = Depends(get_db), _perm=Depends(require_qc_permission(
     """Everything the frontend needs to render category-specific forms
     without hardcoding the prototype's business data client-side."""
     attribute_definitions: dict[str, list] = {}
-    for cat in svc.MANUAL_CATEGORIES:
+    for cat in sorted(svc.FORM_KEYS):
         attribute_definitions[cat] = svc.get_attribute_definitions(db, cat)
     tiers = db.query(models.InwardQcSamplingPlanTier).order_by(models.InwardQcSamplingPlanTier.category, models.InwardQcSamplingPlanTier.sort_order).all()
     criteria = svc.get_fgtray_criteria(db)
@@ -335,11 +355,14 @@ async def upload_coa(
     db.commit()
 
     detail = _serialize_detail(db, _get_or_404(db, qc_id))
-    if qc.category in svc.TRAY_FAMILY_CATEGORIES:
-        detail["coa_suggestions"] = []  # a tray QC has no attribute fields to pre-fill
+    if svc.uses_fgtray(qc) or svc.form_key(qc) in svc.INDIA_FORM_KEYS:
+        # A checklist QC has no attribute fields to pre-fill, and on the India
+        # report forms every value is the inspector's own observation, never
+        # copied from the supplier's COA.
+        detail["coa_suggestions"] = []
         return detail
     try:
-        attr_defs = svc.get_attribute_definitions(db, qc.category)
+        attr_defs = svc.get_attribute_definitions(db, svc.form_key(qc))
         text = coa_parsing_service.extract_text(content, file.filename or "coa", file.content_type)
         detail["coa_suggestions"] = coa_parsing_service.parse_coa_values(
             text,
@@ -386,8 +409,8 @@ def save_fgtray_answers(
     _perm=Depends(require_qc_permission("fill_section")),
 ):
     qc = _get_or_404(db, qc_id)
-    if qc.category not in svc.TRAY_FAMILY_CATEGORIES:
-        raise HTTPException(status_code=400, detail="Only applicable to RM / LNP Tray QC.")
+    if not svc.uses_fgtray(qc):
+        raise HTTPException(status_code=400, detail="Only applicable to the OK / NOT OK checklist QC.")
     valid_ids = {c.id for c in svc.get_fgtray_criteria(db)}
     for item in payload:
         if item.criteria_id not in valid_ids:
@@ -413,9 +436,13 @@ def save_attributes(
     _perm=Depends(require_qc_permission("fill_section")),
 ):
     qc = _get_or_404(db, qc_id)
-    if qc.category in svc.TRAY_FAMILY_CATEGORIES:
-        raise HTTPException(status_code=400, detail="Not applicable to RM / LNP Tray QC.")
-    valid_ids = {d.id for d in svc.get_attribute_definitions(db, qc.category)}
+    if svc.uses_fgtray(qc):
+        raise HTTPException(status_code=400, detail="Not applicable to this QC.")
+    if qc.status == "accepted" and _is_gr_linked(qc):
+        # An approved QC is what its RM QR record was created from; editing it
+        # afterwards would let the record and its QR codes disagree.
+        raise HTTPException(status_code=409, detail="This inspection is already approved and can no longer be edited.")
+    valid_ids = {d.id for d in svc.get_attribute_definitions(db, svc.form_key(qc))}
     for item in payload:
         if item.attribute_definition_id not in valid_ids:
             continue
@@ -458,13 +485,20 @@ def submit_qc(
     current_user: AuthenticatedUser = Depends(get_current_user),
     _perm=Depends(require_qc_permission("approve")),
 ):
+    # Serialise concurrent submits of one QC (double click, retry, two
+    # approvers): the second waits here, then sees "approved" and stops, so a
+    # QC can never create its RM QR record twice.
+    db.execute(select(models.InwardQcRecord.id).where(models.InwardQcRecord.id == qc_id).with_for_update())
     qc = _get_or_404(db, qc_id)
-    new_status = svc.compute_status(db, qc)
+    if qc.status == "accepted" and _is_gr_linked(qc):
+        raise HTTPException(status_code=409, detail="This Inward QC is already approved.")
+    ev = svc.evaluate(db, qc)
+    new_status = ev["outcome"]
     if new_status == "pending":
-        if qc.category in svc.TRAY_FAMILY_CATEGORIES:
+        if svc.uses_fgtray(qc):
             detail = "Mark OK / NOT OK for every criterion to complete this inspection. Until then it stays Pending."
         else:
-            detail = "Fill in every required field (marked *) and the conclusion to complete this inspection. Until then it stays Pending."
+            detail = "Complete every required field (marked *) and the conclusion to finish this inspection. Still needed: " + "; ".join(ev["missing"]) + ". Until then it stays Pending."
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=detail)
 
     if new_status == "accepted" and _is_gr_linked(qc) and not qc.coa_storage_path:
@@ -473,7 +507,7 @@ def submit_qc(
             detail="Upload the COA (PDF, Word doc, or image) before approving this Inward QC.",
         )
 
-    plan = svc.compute_sampling_plan(db, qc.category, float(qc.quantity) if qc.quantity else None)
+    plan = ev["sampling"]
     if plan:
         qc.sampling_sample_size = str(plan.get("sample_size"))
         qc.sampling_upper_limit = plan.get("upper_limit")

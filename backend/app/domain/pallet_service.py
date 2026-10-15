@@ -45,6 +45,9 @@ from app.domain.id_counters import next_seq, next_seq_batch
 CATEGORY_SUFFIX = {
     "tray": "PLT", "lnp_tray": "PLT", "fgtray": "PLT", "pad": "PAD",
     "polybag": "PB", "cfb": "CFB", "glue": "GLUE",
+    # India Factory (migration 0084): film and corner protector have their own
+    # pallet prefix instead of falling back to the generic "PLT".
+    "film": "FILM", "corner_protector": "CP",
 }
 
 
