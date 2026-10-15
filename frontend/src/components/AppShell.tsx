@@ -487,7 +487,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       <div className="auth-gate">
         <div className="auth-gate-card">
           <div className="sb-mark" style={{ margin: "0 auto 16px" }}>C</div>
-          <h1>US Factory</h1>
+          <h1>India Factory</h1>
           <div className="desc">Cirkla Manufacturing — sign in to continue</div>
           <button className="btn btn-primary" style={{ marginTop: 20 }} onClick={() => signInWithGoogle()}>
             Sign in with Google
@@ -526,7 +526,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <div className="sb-mark" style={{ margin: "0 auto 16px" }}>C</div>
           <h1>No access yet</h1>
           <div className="desc">
-            {session.user.email} isn’t set up with access to Factory or US Factory yet. Ask an admin to add you in
+            {session.user.email} isn’t set up with access to Factory or India Factory yet. Ask an admin to add you in
             Portfolio Access.
           </div>
           <button className="btn btn-tertiary" style={{ marginTop: 20 }} onClick={() => signOut()}>
@@ -558,7 +558,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               style={{ flex: "1 1 180px", padding: "18px 14px", fontSize: 15 }}
               onClick={() => setChosenProduct("us_factory")}
             >
-              US Factory
+              India Factory
             </button>
           </div>
           <div className="desc" style={{ marginTop: 20 }}>
@@ -581,7 +581,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         <div className="sb-brand">
           <div className="sb-mark">C</div>
           <div className="sb-brand-text">
-            <div className="name">{isFactory ? "Factory" : "US Factory"}</div>
+            <div className="name">{isFactory ? "Factory" : "India Factory"}</div>
             <div className="sub">Cirkla Manufacturing</div>
           </div>
         </div>

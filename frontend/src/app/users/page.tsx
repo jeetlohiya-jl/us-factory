@@ -34,7 +34,7 @@ const MODULE_LABELS: Record<ModuleKey, string> = {
 
 const PRODUCT_GROUPS: { title: string; modules: ModuleKey[] }[] = [
   { title: "Factory", modules: FACTORY_MODULES },
-  { title: "US Factory", modules: US_FACTORY_MODULES },
+  { title: "India Factory", modules: US_FACTORY_MODULES },
 ];
 
 const ACTIONS: { key: keyof Permissions; label: string }[] = [
