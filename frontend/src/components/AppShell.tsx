@@ -19,6 +19,8 @@ import { MODULE_NAMES } from "@/lib/terms";
  * Inward Vehicle Inspection and Inward QC — matching the prototype's own
  * sidebar order and icon choice for each.
  */
+const INDIA_HIDDEN_NAV_HREFS = ["/inward-vehicle-inspection", "/rm-qr-generation"];
+
 const NAV_ITEMS = [
   // Module 1 (US Factory) -- Goods Receipt: Zoho POs for the US delivery
   // location, one entry per container/SKU. Same page Factory uses.
@@ -573,7 +575,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   // Set synchronously during render (not in an effect) so it's already in
   // place when the children's own first data fetches run.
   setCurrentProduct(chosenProduct);
-  const activeNavItems = isFactory ? FACTORY_NAV_ITEMS : NAV_ITEMS;
+  // India Factory: Inward Vehicle Inspection now happens inside Goods Receipt
+  // and RM QR generation inside Inward QC, so their stand-alone sidebar entries
+  // are hidden. The pages and routes still exist (nothing is deleted, direct
+  // links keep working); Gainesville's sidebar is untouched.
+  const activeNavItems = isFactory ? FACTORY_NAV_ITEMS : NAV_ITEMS.filter((i) => !INDIA_HIDDEN_NAV_HREFS.includes(i.href));
 
   return (
     <div className="app">
