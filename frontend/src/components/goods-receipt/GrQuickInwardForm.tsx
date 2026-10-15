@@ -8,7 +8,7 @@ import { needsCoa } from "./GoodsReceiptDetailPanel";
 export type QuickInwardSubmission =
   | { kind: "pallets"; pallets: number; qrQuantity: number }
   | { kind: "quantity"; receivedQuantity: number; unit: QuantityUnit; qrQuantity: number }
-  // US Factory: quantity + unit (+ pallets for Soaker Pad). No QR count and no
+  // US Factory: quantity + unit only (no pallets; trays use another flow). No QR count and no
   // COA here -- QR codes come after QC approval, and the COA is uploaded in QC.
   | { kind: "us"; receivedQuantity: number; unit: QuantityUnit; pallets?: number };
 
@@ -56,7 +56,10 @@ export default function GrQuickInwardForm({
   // text; `done` once one was completed for this entry.
   inspection?: { label: string; done: boolean; busy: boolean; onOpen: () => void };
 }) {
-  const usesPallets = entry.category === "pad";
+  // Factory: only Soaker Pad is counted in pallets here. India Factory
+  // (usMode): this form is never used for trays, and every non-tray material --
+  // Soaker Pad included -- is received by Quantity Received + Unit alone.
+  const usesPallets = !usMode && entry.category === "pad";
   const [pallets, setPallets] = useState("");
   const [receivedQuantity, setReceivedQuantity] = useState(usMode ? String(entry.po_quantity) : "");
   const [unit, setUnit] = useState<QuantityUnit>(entry.unit);
