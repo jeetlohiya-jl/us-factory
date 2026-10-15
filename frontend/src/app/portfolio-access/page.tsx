@@ -6,7 +6,7 @@ import type { PortfolioAccess } from "@/lib/types";
 
 /**
  * Setup -> Portfolio Access (admin-only). Controls the post-login
- * Factory / US Factory picker in AppShell -- an email added here with
+ * Factory / Falcon picker in AppShell -- an email added here with
  * neither box checked can sign in but sees a "no access" screen; one box
  * checked skips the picker and goes straight there; both shows the picker.
  *
@@ -22,7 +22,7 @@ export default function PortfolioAccessPage() {
 
   const [newEmail, setNewEmail] = useState("");
   const [newFactory, setNewFactory] = useState(false);
-  const [newUsFactory, setNewUsFactory] = useState(true);
+  const [newFalcon, setNewFalcon] = useState(true);
   const [saving, setSaving] = useState(false);
 
   const refresh = useCallback(async () => {
@@ -54,10 +54,10 @@ export default function PortfolioAccessPage() {
     setSaving(true);
     setError(null);
     try {
-      await api.createPortfolioAccess({ email, access_factory: newFactory, access_us_factory: newUsFactory });
+      await api.createPortfolioAccess({ email, access_factory: newFactory, access_falcon: newFalcon });
       setNewEmail("");
       setNewFactory(false);
-      setNewUsFactory(true);
+      setNewFalcon(true);
       refresh();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Failed to add access");
@@ -66,7 +66,7 @@ export default function PortfolioAccessPage() {
     }
   }
 
-  async function toggle(row: PortfolioAccess, key: "access_factory" | "access_us_factory") {
+  async function toggle(row: PortfolioAccess, key: "access_factory" | "access_falcon") {
     setError(null);
     try {
       await api.updatePortfolioAccess(row.id, { [key]: !row[key] });
@@ -92,7 +92,7 @@ export default function PortfolioAccessPage() {
         <div>
           <h1>Portfolio Access</h1>
           <div className="desc">
-            Control which emails see Factory and/or India Factory right after they sign in. Someone with only one
+            Control which emails see Factory and/or Falcon right after they sign in. Someone with only one
             of the two skips straight to it; someone with both is asked to choose every time.
           </div>
         </div>
@@ -112,8 +112,8 @@ export default function PortfolioAccessPage() {
             Factory
           </label>
           <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, paddingBottom: 8 }}>
-            <input type="checkbox" checked={newUsFactory} onChange={(e) => setNewUsFactory(e.target.checked)} />
-            India Factory
+            <input type="checkbox" checked={newFalcon} onChange={(e) => setNewFalcon(e.target.checked)} />
+            Falcon
           </label>
           <button className="btn btn-primary" disabled={saving || !newEmail.trim()} onClick={handleAdd}>
             {saving ? "Adding…" : "+ Add"}
@@ -131,7 +131,7 @@ export default function PortfolioAccessPage() {
             <tr>
               <th>Email</th>
               <th style={{ textAlign: "center" }}>Factory</th>
-              <th style={{ textAlign: "center" }}>India Factory</th>
+              <th style={{ textAlign: "center" }}>Falcon</th>
               <th></th>
             </tr>
           </thead>
@@ -146,7 +146,7 @@ export default function PortfolioAccessPage() {
                     <input type="checkbox" checked={row.access_factory} onChange={() => toggle(row, "access_factory")} />
                   </td>
                   <td style={{ textAlign: "center" }}>
-                    <input type="checkbox" checked={row.access_us_factory} onChange={() => toggle(row, "access_us_factory")} />
+                    <input type="checkbox" checked={row.access_falcon} onChange={() => toggle(row, "access_falcon")} />
                   </td>
                   <td style={{ textAlign: "right" }}>
                     <a className="btn-tertiary" style={{ cursor: "pointer" }} onClick={() => remove(row)}>Remove</a>

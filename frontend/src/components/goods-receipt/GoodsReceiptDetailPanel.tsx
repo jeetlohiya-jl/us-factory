@@ -100,11 +100,11 @@ export default function GoodsReceiptDetailPanel({
   onEdit: () => void;
   onChanged: (next: GoodsReceiptDetail) => void;
 }) {
-  // US Factory: Goods Receipt is Module 1 of the US flow. Inward Vehicle
+  // Falcon: Goods Receipt is Module 1 of the US flow. Inward Vehicle
   // Inspection (mandatory for trays, optional otherwise) never generates QRs;
   // trays then collect one Batch Number per pallet in a separate dialog, and
   // every inwarded entry continues in Inward QC -> QR Generation.
-  const isUs = useProduct() === "us_factory";
+  const isUs = useProduct() === "falcon";
   const [record, setRecord] = useState(detail);
   const [batchEntry, setBatchEntry] = useState<GoodsReceiptEntry | null>(null);
   const [usInspectionDone, setUsInspectionDone] = useState<string | null>(null);
@@ -151,7 +151,7 @@ export default function GoodsReceiptDetailPanel({
   async function openInwardWizard(e: GoodsReceiptEntry, skipQuick = false) {
     // No real Container/Shipment Number -- skip Inward Vehicle Inspection
     // entirely and use the lightweight quick-inward form instead.
-    // (US Factory: a tray always needs its inspection, so only non-trays
+    // (Falcon: a tray always needs its inspection, so only non-trays
     // use the quick form -- see openUsInward.)
     if (isUs && !isTray(e) && !skipQuick) {
       setUsInspectionDone(null);
@@ -191,7 +191,7 @@ export default function GoodsReceiptDetailPanel({
     setError(null);
     try {
       if (submission.kind === "us") {
-        // US Factory non-tray inward: no QR here -- the entry lands in Inward
+        // Falcon non-tray inward: no QR here -- the entry lands in Inward
         // QC as Pending (created by the database in the same call).
         const nextUs = await api.inwardGoodsReceiptEntry(record.id, e.id, {
           received_quantity: submission.receivedQuantity, unit: submission.unit,

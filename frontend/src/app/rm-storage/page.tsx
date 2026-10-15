@@ -17,7 +17,7 @@ export default function RmStoragePage() {
   const me = useMe();
   // Factory product: only pallets generated through Goods Receipt -> RM QR
   // are listed or accepted here (the backend enforces the same rule on
-  // scan/confirm via source="goods_receipt"). US Factory is unchanged.
+  // scan/confirm via source="goods_receipt"). Falcon is unchanged.
   const goodsReceiptOnly = useProduct() === "factory";
   const scanSource = goodsReceiptOnly ? "goods_receipt" : "";
   const [pending, setPending] = useState<Pallet[]>([]);

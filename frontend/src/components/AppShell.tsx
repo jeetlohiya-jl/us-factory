@@ -22,7 +22,7 @@ import { MODULE_NAMES } from "@/lib/terms";
 const INDIA_HIDDEN_NAV_HREFS = ["/inward-vehicle-inspection", "/rm-qr-generation"];
 
 const NAV_ITEMS = [
-  // Module 1 (US Factory) -- Goods Receipt: Zoho POs for the US delivery
+  // Module 1 (Falcon) -- Goods Receipt: Zoho POs for the US delivery
   // location, one entry per container/SKU. Same page Factory uses.
   {
     href: "/goods-receipt",
@@ -142,7 +142,7 @@ const NAV_ITEMS = [
 // signed-in email ends up here). Factory OS is planned as six modules;
 // only Module 2 (Raw Material Consumption / RM -> WIP) is built so far, so
 // only it gets a real nav item. It intentionally points at the exact same
-// route/page/table as US Factory's own "Material Consumption" screen below
+// route/page/table as Falcon's own "Material Consumption" screen below
 // (same Supabase project, same material_consumptions rows, same
 // module_permissions scope) rather than a second copy -- Module 2 IS that
 // feature, just also reachable from here, per the no-duplication mandate.
@@ -159,7 +159,7 @@ const FACTORY_NAV_ITEMS = [
     ),
   },
   // Module 1 (cont.) -- RM Storage. The exact same /rm-storage page and
-  // scan -> location -> confirm flow US Factory uses; inside Factory it
+  // scan -> location -> confirm flow Falcon uses; inside Factory it
   // lists and accepts only Goods-Receipt pallets (useProduct() in that page,
   // enforced server-side too -- storage_service.resolve_pallet_for_storage).
   {
@@ -177,7 +177,7 @@ const FACTORY_NAV_ITEMS = [
     ),
   },
   // Module 3 -- Production (WIP -> Finished Goods). Points at the exact
-  // same /production route/page/table US Factory's own sidebar uses (same
+  // same /production route/page/table Falcon's own sidebar uses (same
   // ProductionRun rows, same module_permissions scope) -- no second copy.
   // Production already auto-populates from Material Consumption (Module 2)
   // via material_consumption_service.find_or_create_production_run, already
@@ -195,7 +195,7 @@ const FACTORY_NAV_ITEMS = [
   // the explicit "not two separate pages" requirement). This is a genuinely
   // new Factory-only page (frontend/src/app/rqc-fg-qr/page.tsx) -- unlike
   // Modules 2/3 it does not point at the existing /rqc or /fg-qr-generation
-  // US Factory routes, since those are two separate pages with the old
+  // Falcon routes, since those are two separate pages with the old
   // 15-item defect list; it reuses the same rqc_records/qr_generation_records
   // tables and backend routes underneath (module_permissions scope "rqc"),
   // just with the QMP05-exact 4-item defect list and Factory-specific COA
@@ -208,7 +208,7 @@ const FACTORY_NAV_ITEMS = [
     ),
   },
   // Module 5 -- Finished Goods Storage. Points at the exact same
-  // /fg-storage route/page US Factory's own sidebar uses -- no second copy,
+  // /fg-storage route/page Falcon's own sidebar uses -- no second copy,
   // no code changes at all: FG Storage's own pending-pallet query already
   // filters purely on pallet_type='fg' + lifecycle_status='pending_storage'
   // (backend/app/domain/storage_service.py), with no dependency on which
@@ -230,7 +230,7 @@ const FACTORY_NAV_ITEMS = [
   // requirement). Like Module 4, this is a genuinely new Factory-only page
   // (frontend/src/app/goods-outward/page.tsx) that reuses the exact same
   // customer_shipments/customer_shipment_line_items/shipment_picking_requests/
-  // shipment_picking_picks tables and FastAPI routes as US Factory's own two
+  // shipment_picking_picks tables and FastAPI routes as Falcon's own two
   // separate pages -- zero backend changes, only a combined read + a
   // combined detail view with an embedded pick-scanning section.
   {
@@ -251,8 +251,8 @@ const FACTORY_NAV_ITEMS = [
     ),
   },
   // "History" (item 11 of the 2026-09-24 feedback batch) -- the feature the
-  // user meant is US Factory's own Traceability export: exact same
-  // /traceability route/page US Factory's own sidebar uses, no second copy,
+  // user meant is Falcon's own Traceability export: exact same
+  // /traceability route/page Falcon's own sidebar uses, no second copy,
   // same reuse pattern as every other module above. Its PDF walks all 8
   // pipeline stages tolerant of missing ones (see traceability_service.py);
   // Factory shipments simply show Inward Vehicle Inspection/Inward QC (the
@@ -354,7 +354,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   // has both accesses they can always be asked" means every sign-in (in
   // practice, every fresh load of this shell) shows the picker again
   // rather than remembering a past choice.
-  const [chosenProduct, setChosenProduct] = useState<"factory" | "us_factory" | null>(null);
+  const [chosenProduct, setChosenProduct] = useState<"factory" | "falcon" | null>(null);
   const pathname = usePathname();
   const router = useRouter();
   // Who the current product choice belongs to -- see onAuthStateChange below.
@@ -363,7 +363,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const setupNavItems = me?.is_admin ? [...SETUP_NAV_ITEMS, USERS_NAV_ITEM, PORTFOLIO_ACCESS_NAV_ITEM] : SETUP_NAV_ITEMS;
 
   // The root "/" route always server-redirects to "/goods-receipt"
-  // (see app/page.tsx) since that predates the Factory/US Factory split --
+  // (see app/page.tsx) since that predates the Factory/Falcon split --
   // once someone has landed in the Factory product, bounce them off that
   // (and any other non-Factory) route to Factory's own landing page instead,
   // rather than showing a US-Factory screen inside the Factory sidebar.
@@ -376,10 +376,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }, [chosenProduct, pathname, router]);
 
   // Mirror of the guard above: Factory-only pages (Goods Receipt, Factory
-  // Module 1) are not part of US Factory -- bounce a US Factory session that
-  // lands there by URL back to US Factory's own landing page.
+  // Module 1) are not part of Falcon -- bounce a Falcon session that
+  // lands there by URL back to Falcon's own landing page.
   useEffect(() => {
-    if (chosenProduct !== "us_factory") return;
+    if (chosenProduct !== "falcon") return;
     if (pathname && FACTORY_ONLY_HREFS.some((href) => pathname.startsWith(href))) {
       router.replace("/goods-receipt");
     }
@@ -392,9 +392,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   function applyAccess(userId: string, access: PortfolioAccessMe) {
     setPortfolioAccess(access);
     const remembered = readRememberedProduct(userId);
-    if (access.access_us_factory && !access.access_factory) setChosenProduct("us_factory");
-    else if (access.access_factory && !access.access_us_factory) setChosenProduct("factory");
-    else if (remembered && (remembered === "factory" ? access.access_factory : access.access_us_factory)) setChosenProduct(remembered);
+    if (access.access_falcon && !access.access_factory) setChosenProduct("falcon");
+    else if (access.access_factory && !access.access_falcon) setChosenProduct("factory");
+    else if (remembered && (remembered === "factory" ? access.access_factory : access.access_falcon)) setChosenProduct(remembered);
     setCheckedPortfolio(true);
   }
 
@@ -489,7 +489,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       <div className="auth-gate">
         <div className="auth-gate-card">
           <div className="sb-mark" style={{ margin: "0 auto 16px" }}>C</div>
-          <h1>India Factory</h1>
+          <h1>Falcon</h1>
           <div className="desc">Cirkla Manufacturing — sign in to continue</div>
           <button className="btn btn-primary" style={{ marginTop: 20 }} onClick={() => signInWithGoogle()}>
             Sign in with Google
@@ -519,16 +519,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   const hasFactory = !!portfolioAccess?.access_factory;
-  const hasUsFactory = !!portfolioAccess?.access_us_factory;
+  const hasFalcon = !!portfolioAccess?.access_falcon;
 
-  if (!hasFactory && !hasUsFactory) {
+  if (!hasFactory && !hasFalcon) {
     return (
       <div className="auth-gate">
         <div className="auth-gate-card">
           <div className="sb-mark" style={{ margin: "0 auto 16px" }}>C</div>
           <h1>No access yet</h1>
           <div className="desc">
-            {session.user.email} isn’t set up with access to Factory or India Factory yet. Ask an admin to add you in
+            {session.user.email} isn’t set up with access to Factory or Falcon yet. Ask an admin to add you in
             Portfolio Access.
           </div>
           <button className="btn btn-tertiary" style={{ marginTop: 20 }} onClick={() => signOut()}>
@@ -540,7 +540,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   // Both accesses and nothing chosen yet this session -- show the picker.
-  if (hasFactory && hasUsFactory && !chosenProduct) {
+  if (hasFactory && hasFalcon && !chosenProduct) {
     return (
       <div className="auth-gate">
         <div className="auth-gate-card" style={{ maxWidth: 480 }}>
@@ -558,9 +558,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <button
               className="btn btn-primary"
               style={{ flex: "1 1 180px", padding: "18px 14px", fontSize: 15 }}
-              onClick={() => setChosenProduct("us_factory")}
+              onClick={() => setChosenProduct("falcon")}
             >
-              India Factory
+              Falcon
             </button>
           </div>
           <div className="desc" style={{ marginTop: 20 }}>
@@ -575,7 +575,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   // Set synchronously during render (not in an effect) so it's already in
   // place when the children's own first data fetches run.
   setCurrentProduct(chosenProduct);
-  // India Factory: Inward Vehicle Inspection now happens inside Goods Receipt
+  // Falcon: Inward Vehicle Inspection now happens inside Goods Receipt
   // and RM QR generation inside Inward QC, so their stand-alone sidebar entries
   // are hidden. The pages and routes still exist (nothing is deleted, direct
   // links keep working); Gainesville's sidebar is untouched.
@@ -587,7 +587,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         <div className="sb-brand">
           <div className="sb-mark">C</div>
           <div className="sb-brand-text">
-            <div className="name">{isFactory ? "Factory" : "India Factory"}</div>
+            <div className="name">{isFactory ? "Factory" : "Falcon"}</div>
             <div className="sub">Cirkla Manufacturing</div>
           </div>
         </div>
@@ -610,7 +610,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         <div className="sb-foot">
           <div>Signed in as {session.user.email}</div>
           <div className="sb-role" style={{ display: "flex", gap: 10 }}>
-            {hasFactory && hasUsFactory && (
+            {hasFactory && hasFalcon && (
               <button className="btn-tertiary" onClick={() => { if (signedInUserId.current) rememberProduct(signedInUserId.current, null); setChosenProduct(null); }}>Switch</button>
             )}
             <button className="btn-tertiary" onClick={() => signOut()}>Sign out</button>
@@ -618,7 +618,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </div>
       <div className="main">
-        <div className="content"><ProductProvider value={isFactory ? "factory" : "us_factory"}>{children}</ProductProvider></div>
+        <div className="content"><ProductProvider value={isFactory ? "factory" : "falcon"}>{children}</ProductProvider></div>
       </div>
     </div>
   );

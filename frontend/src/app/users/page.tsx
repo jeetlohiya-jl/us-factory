@@ -2,7 +2,7 @@
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import { useMe } from "@/lib/useMe";
-import { FACTORY_MODULES, US_FACTORY_MODULES, USER_MODULES } from "@/lib/types";
+import { FACTORY_MODULES, FALCON_MODULES, USER_MODULES } from "@/lib/types";
 import type { AppUser, ModuleKey, Permissions, UserCreateInput } from "@/lib/types";
 import { MODULE_NAMES } from "@/lib/terms";
 
@@ -21,7 +21,7 @@ const MODULE_LABELS: Record<ModuleKey, string> = {
   shipment_picking: MODULE_NAMES.shipment_picking,
   outward_vehicle_inspection: MODULE_NAMES.outward_vehicle_inspection,
   machine_downtime: MODULE_NAMES.machine_downtime,
-  // Factory (independent of US Factory -- migration 0047).
+  // Factory (independent of Falcon -- migration 0047).
   goods_receipt: MODULE_NAMES.goods_receipt,
   factory_rm_storage: MODULE_NAMES.rm_storage,
   factory_material_consumption: MODULE_NAMES.material_consumption,
@@ -34,7 +34,7 @@ const MODULE_LABELS: Record<ModuleKey, string> = {
 
 const PRODUCT_GROUPS: { title: string; modules: ModuleKey[] }[] = [
   { title: "Factory", modules: FACTORY_MODULES },
-  { title: "India Factory", modules: US_FACTORY_MODULES },
+  { title: "Falcon", modules: FALCON_MODULES },
 ];
 
 const ACTIONS: { key: keyof Permissions; label: string }[] = [
@@ -58,7 +58,7 @@ function blankPermissionMap(): Record<ModuleKey, Permissions> {
  * row per module -- used both in the Add User form and inline per-user
  * editing below, so the two never drift out of sync visually. */
 /**
- * Factory and US Factory are independent working units with separate
+ * Factory and Falcon are independent working units with separate
  * permissions, so the matrix is split into one section per product. Each
  * section has a "Full access" checkbox (every module, every action in that
  * product), each module row keeps its own select-all checkbox, and every

@@ -31,7 +31,8 @@
 //   ZOHO_API_DOMAIN       default https://www.zohoapis.com   (.in / .eu / .com.au for other data centres)
 //   ZOHO_ACCOUNTS_DOMAIN  default https://accounts.zoho.com
 //   GAINESVILLE_MATCH     default "gainesville factory" (text identifying the Factory delivery location)
-//   US_FACTORY_MATCH      default "bhiwandi plant" (text identifying the US Factory delivery location)
+//   FALCON_MATCH      default "bhiwandi plant" (text identifying the Falcon delivery location;
+//                     the old name US_FACTORY_MATCH is still read if FALCON_MATCH is not set)
 // Each PO is offered to every unit in turn; the unit whose delivery location it matches owns it.
 // SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are provided by Supabase.
 
@@ -67,12 +68,12 @@ async function zohoGet(env: Env, f: Fetch, path: string, query: Record<string, s
   return j;
 }
 
-type UnitCfg = { product: "factory" | "us_factory"; match: string };
+type UnitCfg = { product: "factory" | "falcon"; match: string };
 
 function unitConfigs(env: Env): UnitCfg[] {
   return [
     { product: "factory", match: env.GAINESVILLE_MATCH || "gainesville factory" },
-    { product: "us_factory", match: env.US_FACTORY_MATCH || "bhiwandi plant" },
+    { product: "falcon", match: env.FALCON_MATCH || env.US_FACTORY_MATCH || "bhiwandi plant" },
   ];
 }
 

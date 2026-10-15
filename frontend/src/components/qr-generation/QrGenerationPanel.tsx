@@ -26,7 +26,7 @@ export default function QrGenerationPanel({
   detail: QrGenerationDetail;
   canGenerate: boolean;
   // Receives the chosen quantity only for a non-tray Goods-Receipt-sourced RM
-  // batch (India Factory), where the user decides how many QRs after QC
+  // batch (Falcon), where the user decides how many QRs after QC
   // approval. Trays (one QR per received pallet) are generated as before.
   onGenerate: (quantity?: number) => Promise<void>;
   onClose: () => void;

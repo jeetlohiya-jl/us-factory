@@ -44,7 +44,7 @@ function LocationQr({ loc }: { loc: LocationAdmin }) {
 
 /**
  * Setup -> Locations: the storage locations RM / FG Storage scan. Per unit
- * (migration 0048) -- Factory and US Factory each manage their own list.
+ * (migration 0048) -- Factory and Falcon each manage their own list.
  * New locations follow the existing naming convention
  * <ZONE>-A##-R##-L##-P##-<letter>, built from the fields below, and get a
  * printable QR label (same 2x2in label printing as pallet QRs).

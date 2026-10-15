@@ -2,7 +2,7 @@
 import type { QcAttributeValue } from "@/lib/types";
 
 /**
- * India Factory's Inward QC form, laid out like the printed inward QC report
+ * Falcon's Inward QC form, laid out like the printed inward QC report
  * for the material: Attributes / Description / Tolerance / Defects Type /
  * Inspection Method / Actual Observations, and (RM Tray) the separate defects
  * list with its acceptable limit, classification and failed-product count.

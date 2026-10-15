@@ -96,7 +96,7 @@ class ScanIn(BaseModel):
     payload: str
     # "goods_receipt" when scanned from the Factory product's RM Storage --
     # restricts to pallets received through Goods Receipt (see
-    # storage_service.resolve_pallet_for_storage). Empty = US Factory, unchanged.
+    # storage_service.resolve_pallet_for_storage). Empty = Falcon, unchanged.
     source: str = ""
 
 

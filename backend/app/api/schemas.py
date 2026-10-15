@@ -335,7 +335,7 @@ class QcDetailOut(BaseModel):
     fgtray_answers: list[QcFgtrayAnswerOut] = []
     attribute_values: list[QcAttributeValueOut] = []
     vehicle_inspection: Optional[dict] = None
-    # 2026-10-14 -- present only for a QC record created from a US Factory
+    # 2026-10-14 -- present only for a QC record created from a Falcon
     # Goods Receipt entry (gr_ensure_qc): the inward details shown read-only
     # on the form, whether a COA is required before approval, and the RM QR
     # batch an Accepted record feeds (so the page can offer "how many QRs?").
@@ -507,7 +507,7 @@ class ProductionMachineEntryAttributesIn(BaseModel):
     rejection_adhesion_issue: Optional[str] = None
     # Factory-only Rejection Classification (migration 0065) -- same
     # None-means-"don't touch", empty-means-0 convention as the US
-    # Factory rejection_* fields above. A US Factory save never sends
+    # Factory rejection_* fields above. A Falcon save never sends
     # these; a Factory save never sends the six above.
     rejection_foreign_material: Optional[str] = None
     rejection_glue_strings: Optional[str] = None
@@ -796,7 +796,7 @@ class MachineOut(BaseModel):
     id: uuid.UUID
     code: str
     is_active: bool = True
-    # Migration 0086 (India Factory); null for legacy / Factory machines.
+    # Migration 0086 (Falcon); null for legacy / Factory machines.
     machine_type: Optional[str] = None
     target_shots: Optional[int] = None
 
@@ -1192,7 +1192,7 @@ class HoldReleaseOut(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Portfolio Access (post-login "Factory" / "US Factory" picker, admin-managed)
+# Portfolio Access (post-login "Factory" / "Falcon" picker, admin-managed)
 # ---------------------------------------------------------------------------
 
 class PortfolioAccessMeOut(BaseModel):
@@ -1200,7 +1200,7 @@ class PortfolioAccessMeOut(BaseModel):
     email -- just the two flags the picker needs to decide whether to show
     itself, skip straight into one product, or show a no-access message."""
     access_factory: bool
-    access_us_factory: bool
+    access_falcon: bool
 
 
 class PortfolioAccessOut(BaseModel):
@@ -1208,19 +1208,19 @@ class PortfolioAccessOut(BaseModel):
     id: uuid.UUID
     email: str
     access_factory: bool
-    access_us_factory: bool
+    access_falcon: bool
     created_at: str
 
 
 class PortfolioAccessIn(BaseModel):
     email: str
     access_factory: bool = False
-    access_us_factory: bool = False
+    access_falcon: bool = False
 
 
 class PortfolioAccessUpdateIn(BaseModel):
     access_factory: Optional[bool] = None
-    access_us_factory: Optional[bool] = None
+    access_falcon: Optional[bool] = None
 
 
 # ---------------------------------------------------------------------------

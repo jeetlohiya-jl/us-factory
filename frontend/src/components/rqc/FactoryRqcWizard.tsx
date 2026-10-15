@@ -5,7 +5,7 @@ import type { RqcDetail, RqcDefectResult, Machine } from "@/lib/types";
 import { RQC_DEFECT_ITEMS_FACTORY, RQC_CLASSIFICATION_SUMMARY_FACTORY } from "@/lib/types";
 
 // Result badge: computed from Found vs. that defect's own reject threshold,
-// never stored -- same rqcRecalcResult logic as the US Factory RQC wizard/
+// never stored -- same rqcRecalcResult logic as the Falcon RQC wizard/
 // detail panel, just against the Factory item list.
 function ResultBadge({ found, reject }: { found: number | null; reject: number }) {
   if (found === null || Number.isNaN(found)) return <span className="result-badge pending">–</span>;

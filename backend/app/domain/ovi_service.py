@@ -24,7 +24,7 @@ migration 0066), at the user's request for Goods Outward's new
 "pick pallets -> Outward Vehicle Inspection" flow. This list is shared by
 both products (OVI has no per-unit checklist mechanism, unlike Inward
 Vehicle Inspection's real `inward_vehicle_inspection_checklist_items`
-table) -- US Factory's existing OVI records are unaffected since only the
+table) -- Falcon's existing OVI records are unaffected since only the
 label text changed, not the `sr` values their answers are keyed by.
 """
 from __future__ import annotations

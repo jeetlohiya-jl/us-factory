@@ -15,9 +15,9 @@ import { MODULE_NAMES } from "@/lib/terms";
  */
 export default function MachinesPage() {
   const me = useMe();
-  // India Factory also shows each machine's type and target shots (read-only
+  // Falcon also shows each machine's type and target shots (read-only
   // here; they come from the machine master data, migration 0086/0087).
-  const isIndia = useProduct() === "us_factory";
+  const isIndia = useProduct() === "falcon";
   const perms = me?.permissions.material_consumption;
   const [machines, setMachines] = useState<Machine[]>([]);
   const [loading, setLoading] = useState(true);

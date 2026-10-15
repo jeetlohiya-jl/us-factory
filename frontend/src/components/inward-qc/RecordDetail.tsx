@@ -20,7 +20,7 @@ function Kv({ label, value }: { label: string; value: React.ReactNode }) {
 
 export default function RecordDetail({ detail, onClose, onEdit, canEdit, onOpenQr }: {
   detail: QcDetail; onClose: () => void; onEdit: () => void; canEdit: boolean;
-  // US Factory: open the RM QR panel for this (approved) record's batch.
+  // Falcon: open the RM QR panel for this (approved) record's batch.
   onOpenQr?: (batchId: string) => void;
 }) {
   const isTray = TRAY_FAMILY_QC_CATEGORIES.includes(detail.category);

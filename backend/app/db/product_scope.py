@@ -1,11 +1,11 @@
 """
-Keeps Factory and US Factory records apart in every ORM query.
+Keeps Factory and Falcon records apart in every ORM query.
 
 Every SELECT the ORM runs -- route queries, relationship loads, counts,
 existence checks inside domain services -- gets
 `WHERE <table>.product = <current unit>` for each ProductScoped table it
 touches (SQLAlchemy's with_loader_criteria). So a Factory request can never
-see, match, number against, scan or edit a US Factory record, or the
+see, match, number against, scan or edit a Falcon record, or the
 reverse, without any route having to remember to filter. New rows are
 stamped by the column default (models.ProductScoped).
 
@@ -42,7 +42,7 @@ def _scope_to_current_product(state):
 
 class CrossUnitReference(Exception):
     """A record of one unit would point at a record of the other unit (e.g. a
-    Factory Material Consumption given a US Factory machine id). Turned into
+    Factory Material Consumption given a Falcon machine id). Turned into
     a 422 by main.py's exception handler."""
     def __init__(self, message: str):
         super().__init__(message)
@@ -90,5 +90,5 @@ def _reject_cross_unit_references(session, flush_context, instances):
             label = table.replace("_", " ")
             raise CrossUnitReference(
                 f"That {label[:-1] if label.endswith('s') else label} belongs to the other unit "
-                f"({'US Factory' if unit == 'factory' else 'Factory'}) and can't be used here."
+                f"({'Falcon' if unit == 'factory' else 'Factory'}) and can't be used here."
             )

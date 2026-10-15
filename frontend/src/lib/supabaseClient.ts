@@ -22,7 +22,7 @@ if (!url || !anonKey) {
   );
 }
 
-// Every Supabase request carries which product (Factory / US Factory) it
+// Every Supabase request carries which product (Factory / Falcon) it
 // comes from, so RLS / RPC permission checks (app_can, migration 0047) use
 // that product's own permissions.
 function productAwareFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {

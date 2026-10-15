@@ -76,22 +76,25 @@ export function clearBootstrap(userId?: string | null) {
 }
 
 // ---------------------------------------------------------------------------
-// Remembered product choice (Factory / US Factory), per person, so a reload
+// Remembered product choice (Factory / Falcon), per person, so a reload
 // or reopening the app returns to where they were instead of the picker.
 // Cleared on sign-out and by the sidebar's "Switch".
 // ---------------------------------------------------------------------------
 const productKey = (userId: string) => `fos:product:${userId}`;
 
-export function readRememberedProduct(userId: string): "factory" | "us_factory" | null {
+export function readRememberedProduct(userId: string): "factory" | "falcon" | null {
   try {
     const v = window.localStorage.getItem(productKey(userId));
-    return v === "factory" || v === "us_factory" ? v : null;
+    // "us_factory" was this unit's key before the Falcon rename -- a choice
+    // remembered by an older session still maps to it.
+    if (v === "us_factory") return "falcon";
+    return v === "factory" || v === "falcon" ? v : null;
   } catch {
     return null;
   }
 }
 
-export function rememberProduct(userId: string, product: "factory" | "us_factory" | null) {
+export function rememberProduct(userId: string, product: "factory" | "falcon" | null) {
   try {
     if (product) window.localStorage.setItem(productKey(userId), product);
     else window.localStorage.removeItem(productKey(userId));

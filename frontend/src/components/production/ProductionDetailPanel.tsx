@@ -27,7 +27,7 @@ function StatusBadge({ status }: { status: string }) {
 
 // Rejection Classification field order/labels, matching the prototype's
 // #prod-rc-* inputs exactly (Damage, Misplaced glue, Misplaced pad, Glue on
-// pad, Pad placement direction, Adhesion issue). US Factory only as of
+// pad, Pad placement direction, Adhesion issue). Falcon only as of
 // migration 0065 -- see FACTORY_REJECTION_FIELDS below for Factory's own
 // replacement list.
 const REJECTION_FIELDS: { key: keyof ProductionDetail["rejection_classification"]; label: string }[] = [
@@ -44,7 +44,7 @@ const REJECTION_FIELDS: { key: keyof ProductionDetail["rejection_classification"
 // PLAN -- PADDED TRAYS" sheet's defect list exactly -- the same 5 items
 // Factory RQC's own defect classification already uses (see
 // FactoryRqcDetailPanel/Wizard's RQC_DEFECT_ITEMS_FACTORY), kept here with
-// identical wording for consistency across the two screens. US Factory is
+// identical wording for consistency across the two screens. Falcon is
 // completely untouched -- it keeps REJECTION_FIELDS above.
 const FACTORY_REJECTION_FIELDS: { key: keyof ProductionDetail["rejection_classification"]; label: string }[] = [
   { key: "foreign_material", label: "Foreign material (insects, hair, dust)" },
@@ -68,7 +68,7 @@ type AttrKey = "machine_no" | "auto_padding" | "container_order_no" | "weight" |
   // Factory-only Rejection Classification (migration 0065).
   | "rejection_foreign_material" | "rejection_glue_strings" | "rejection_pad_direction" | "rejection_pad_placement" | "rejection_stickiness"
   | "pallets_produced"
-  // India Factory (migration 0086): Actual No. of Shots, per machine entry.
+  // Falcon (migration 0086): Actual No. of Shots, per machine entry.
   | "actual_shots";
 
 // Production Details rows, matching the prototype's PROD_ATTRIBUTES exactly
@@ -94,7 +94,7 @@ const PROD_DETAIL_ROWS: { label: string; attrKey?: AttrKey; get: (e: ProductionD
 ];
 
 // ---------------------------------------------------------------------------
-// India Factory (us_factory) Production Details -- machine-type aware.
+// Falcon Production Details -- machine-type aware.
 //
 // Same table, same per-machine columns and same editable-override mechanism as
 // above; the only difference is WHICH rows apply to a machine, decided by the
@@ -195,7 +195,7 @@ export default function ProductionDetailPanel({
   onEdit?: () => void;
 }) {
   const product = useProduct();
-  const isIndia = product === "us_factory";
+  const isIndia = product === "falcon";
   const [wastage, setWastage] = useState<EditableWastage[]>(
     record.wastage_entries.map((w) => ({ machine_id: w.machine_id, trays: w.trays, reason: w.reason }))
   );
@@ -229,7 +229,7 @@ export default function ProductionDetailPanel({
           rejection_pad_placement: e.rejection_classification.pad_placement ? String(e.rejection_classification.pad_placement) : "",
           rejection_stickiness: e.rejection_classification.stickiness ? String(e.rejection_classification.stickiness) : "",
           pallets_produced: e.pallets_produced ? String(e.pallets_produced) : "",
-          // India Factory only (migration 0086) -- never part of a Factory save.
+          // Falcon only (migration 0086) -- never part of a Factory save.
           ...(isIndia ? { actual_shots: e.actual_shots != null ? String(e.actual_shots) : "" } : {}),
         },
       ])
@@ -256,14 +256,14 @@ export default function ProductionDetailPanel({
   const isEdit = mode === "edit";
   const editable = isEdit && canEdit;
   const isFactory = product === "factory";
-  // India Factory now uses the original Factory's Rejection Classification
+  // Falcon now uses the original Factory's Rejection Classification
   // set. Counts already recorded under India's earlier six-field set stay
   // visible (and in the total) for any run that actually has them.
   const legacyIndiaFields = isIndia
     ? REJECTION_FIELDS.filter((f) => record.machine_entries.some((e) => (e.rejection_classification[f.key] || 0) > 0))
     : [];
   const rejectionFields = isFactory || isIndia ? [...FACTORY_REJECTION_FIELDS, ...legacyIndiaFields] : REJECTION_FIELDS;
-  // Trimming machines have no rejection inputs in India Factory.
+  // Trimming machines have no rejection inputs in Falcon.
   const rejectionEntries = isIndia ? record.machine_entries.filter((e) => e.machine_type !== "trimming") : record.machine_entries;
   const totalPcsPerPallet = sumProductionDetails(record.machine_entries, "prod_total_pcs_per_pallet");
   const totalRejections = sumRejections(record.rejection_classification, rejectionFields);
@@ -478,7 +478,7 @@ export default function ProductionDetailPanel({
 
           {/* Migration 0038: one column per selected machine, same pattern
               as Production Details below -- rows = rejectionFields
-              (REJECTION_FIELDS for US Factory, FACTORY_REJECTION_FIELDS
+              (REJECTION_FIELDS for Falcon, FACTORY_REJECTION_FIELDS
               for Factory as of migration 0065), columns =
               record.machine_entries. */}
           {rejectionEntries.length > 0 && (

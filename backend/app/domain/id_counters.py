@@ -40,7 +40,7 @@ def next_seq(db: Session, counter_key: str) -> int:
     transaction later rolls back, this row's increment rolls back with it --
     the number was never actually issued (nothing that used it was
     persisted either), and the next caller gets it instead of a gap."""
-    # Factory and US Factory are independent units: each has its own
+    # Factory and Falcon are independent units: each has its own
     # sequences, in its own key namespace (same "factory:" namespace the
     # Goods Receipt SQL functions use -- factory_next_seq, migration 0046).
     if current_unit() == FACTORY:

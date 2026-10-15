@@ -76,6 +76,6 @@ export function listCacheKey(module: string, params: Record<string, unknown>): s
       if (params[k] !== undefined && params[k] !== "") acc[k] = params[k];
       return acc;
     }, {} as Record<string, unknown>);
-  // Product in the key: Factory and US Factory never share a cached page.
+  // Product in the key: Factory and Falcon never share a cached page.
   return `${module}:${getCurrentProduct() ?? "-"}:${JSON.stringify(sorted)}`;
 }

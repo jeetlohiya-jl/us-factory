@@ -56,17 +56,17 @@ class ModulePermission(Base):
 
 class PortfolioAccess(Base):
     """Portfolio-level access gate (migration 0043) -- which top-level
-    product(s) ("factory" / "us_factory") a signed-in email may open, shown
+    product(s) ("factory" / "falcon") a signed-in email may open, shown
     as the post-login picker. Keyed by email, not app_users.id, on purpose:
     an email with only Factory access may never get an app_users row in
-    this database at all (this database only runs the US Factory app), so
+    this database at all (this database only runs the Falcon app), so
     this can't be another boolean column on app_users. See
     app/api/portfolio_access.py."""
     __tablename__ = "portfolio_access"
     id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
     email = Column(Text, nullable=False, unique=True)
     access_factory = Column(Boolean, nullable=False, default=False)
-    access_us_factory = Column(Boolean, nullable=False, default=False)
+    access_falcon = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -142,7 +142,7 @@ class SkuVersion(Base):
     # the exact same per-SKU-Version reference data.
     prod_dimensions = Column(Text, nullable=True)
     prod_absorption_rate = Column(Text, nullable=True)
-    # Migration 0086 -- India Factory lamination-machine attributes, entered
+    # Migration 0086 -- Falcon lamination-machine attributes, entered
     # once on the SKU Names screen and auto-populated on Production.
     prod_mould_number = Column(Text, nullable=True)
     prod_design = Column(Text, nullable=True)
@@ -212,7 +212,7 @@ class Machine(ProductScoped, Base):
     # Section 11 -- admin-supplied 2-digit "machine number" used as the
     # M<nn> segment of the FG Storage Batch Code. Nullable, populated later.
     batch_number = Column(Text, nullable=True)
-    # Migration 0086 -- India Factory: lamination / trimming / padding, and the
+    # Migration 0086 -- Falcon: lamination / trimming / padding, and the
     # machine's own target number of shots. Both nullable (legacy machines
     # have neither and behave exactly as before).
     machine_type = Column(Text, nullable=True)
@@ -231,7 +231,7 @@ class InwardVehicleInspection(ProductScoped, Base):
     vendor_name = Column(Text, nullable=True)
     # Migration 0066 -- set only when this inspection was opened from
     # Factory's own Goods Receipt "Inward" / "Inward remaining" action
-    # (never by US Factory's own Vehicle Inspection flow). Migration 0068
+    # (never by Falcon's own Vehicle Inspection flow). Migration 0068
     # relaxed the plain unique constraint this column started with to a
     # partial unique index (source_goods_receipt_entry_id, enforced in SQL)
     # scoped to status <> 'approved': only one inspection may be IN
@@ -315,7 +315,7 @@ class InwardVehicleInspectionImage(Base):
 class ChecklistItem(ProductScoped, Base):
     # Migration 0066 -- per-unit master data (same treatment as Vendors/SKU
     # Names/Machines): Factory's own 7-item Inward Inspection checklist is a
-    # different list from US Factory's original 8, not a shared one. The
+    # different list from Falcon's original 8, not a shared one. The
     # ProductScoped mixin's automatic query filtering (product_scope.py) is
     # what makes vehicle_inspection_service.get_active_checklist_items()
     # transparently return only the current unit's own items.
@@ -376,7 +376,7 @@ class InwardQcRecord(Base):
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
     submitted_at = Column(DateTime(timezone=True), nullable=True)
-    # 2026-10-14 (migration 0082) -- US Factory's Goods Receipt entry this
+    # 2026-10-14 (migration 0082) -- Falcon's Goods Receipt entry this
     # record was created for (gr_ensure_qc). Null for every record created
     # the old way (Tray QC from an approved Vehicle Inspection, or manually).
     # One QC per entry, enforced by a partial unique index.
@@ -1211,7 +1211,7 @@ class MaterialConsumptionMachineEntry(Base):
     # Migration 0065 -- Factory's OWN 5-field Rejection Classification
     # (Foreign material / Glue strings / Direction of the pad / Placement
     # of the pad / Stickiness of the pad), replacing the 6 fields above for
-    # Factory only -- US Factory keeps using the 6 fields above unchanged.
+    # Factory only -- Falcon keeps using the 6 fields above unchanged.
     # Both sets coexist on this one row; whichever product a run belongs to
     # determines which set actually gets written (see product_scope.py --
     # this table isn't itself ProductScoped, it's reached through its

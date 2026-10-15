@@ -20,7 +20,7 @@ app = FastAPI(title="Cirkla Factory OS API", version="0.1.0")
 
 @app.middleware("http")
 async def product_context(request, call_next):
-    """Which product (Factory / US Factory) this request comes from -- see
+    """Which product (Factory / Falcon) this request comes from -- see
     deps.current_product. Set before the route runs so every permission
     check in the request sees it."""
     token = deps.current_product.set((request.headers.get("x-product") or "").strip().lower())

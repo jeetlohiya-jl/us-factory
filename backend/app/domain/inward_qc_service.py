@@ -69,7 +69,7 @@ QC_COUNT_LABEL.update({
 
 def form_key(qc: models.InwardQcRecord) -> str:
     """Which field-definition / sampling-plan set a QC record uses. A QC that
-    came from a Goods Receipt entry (India Factory) uses the form built from
+    came from a Goods Receipt entry (Falcon) uses the form built from
     that material's inward QC report; everything else keeps the original
     category-keyed forms, so Gainesville is untouched. LNP Tray and Glue have
     no report and keep their existing form."""

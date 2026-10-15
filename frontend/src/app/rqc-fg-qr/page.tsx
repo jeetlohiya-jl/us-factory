@@ -127,7 +127,7 @@ function FactoryRqcFgQrPageContent() {
     }
   }
 
-  // Deep-link support, same convention as every other Factory/US Factory
+  // Deep-link support, same convention as every other Factory/Falcon
   // list page (e.g. Production linking back to a Material Consumption
   // record) -- ?open=<rqc_record_id>.
   useEffect(() => {
