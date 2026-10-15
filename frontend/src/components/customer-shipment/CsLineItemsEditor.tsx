@@ -55,7 +55,7 @@ function num(v: string | null | undefined): number | null {
  * the SKU's first active version the moment a SKU is chosen (versions[0],
  * same pre-fill logic Trays per Sleeve uses), so sku_version_id is still
  * populated for the required backend field; the operator just never has
- * to see or pick it. US Factory's own Customer Shipment keeps the Version
+ * to see or pick it. Falcon's own Customer Shipment keeps the Version
  * picker unchanged.
  *
  * 2026-09-28 -- per explicit feedback, the manual "Linked Production Run(s)"
@@ -71,7 +71,7 @@ function num(v: string | null | undefined): number | null {
  * pallet. Trays for Factory is therefore always the plain manual number
  * (the pre-existing "no runs linked" fallback path below), same as before
  * this feature existed; production_run_ids stays in the data model/type
- * only because US Factory's own Customer Shipment (isFactory === false)
+ * only because Falcon's own Customer Shipment (isFactory === false)
  * still uses the manual picker unchanged.
  */
 export default function CsLineItemsEditor({

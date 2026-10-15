@@ -8,7 +8,7 @@ import { needsCoa } from "./GoodsReceiptDetailPanel";
 export type QuickInwardSubmission =
   | { kind: "pallets"; pallets: number; qrQuantity: number }
   | { kind: "quantity"; receivedQuantity: number; unit: QuantityUnit; qrQuantity: number }
-  // US Factory: quantity + unit only (no pallets; trays use another flow). No QR count and no
+  // Falcon: quantity + unit only (no pallets; trays use another flow). No QR count and no
   // COA here -- QR codes come after QC approval, and the COA is uploaded in QC.
   | { kind: "us"; receivedQuantity: number; unit: QuantityUnit; pallets?: number };
 
@@ -50,13 +50,13 @@ export default function GrQuickInwardForm({
   error: string | null;
   onClose: () => void;
   onSubmit: (submission: QuickInwardSubmission) => void;
-  // US Factory inward for a non-tray material (see GoodsReceiptDetailPanel).
+  // Falcon inward for a non-tray material (see GoodsReceiptDetailPanel).
   usMode?: boolean;
   // US only: the optional Inward Vehicle Inspection. `label` is the button
   // text; `done` once one was completed for this entry.
   inspection?: { label: string; done: boolean; busy: boolean; onOpen: () => void };
 }) {
-  // Factory: only Soaker Pad is counted in pallets here. India Factory
+  // Factory: only Soaker Pad is counted in pallets here. Falcon
   // (usMode): this form is never used for trays, and every non-tray material --
   // Soaker Pad included -- is received by Quantity Received + Unit alone.
   const usesPallets = !usMode && entry.category === "pad";

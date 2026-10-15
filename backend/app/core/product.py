@@ -1,7 +1,7 @@
 """
-Which working unit the current request belongs to: Factory or US Factory.
+Which working unit the current request belongs to: Factory or Falcon.
 
-Factory and US Factory are two independent working units -- separate
+Factory and Falcon are two independent working units -- separate
 records, sequence numbers, master data and permissions -- that share one
 database and several screens. The frontend sends the unit on every request
 (X-Product header); main.py's middleware puts it in `current_product` for
@@ -13,7 +13,7 @@ from here:
   - app/domain/id_counters.py: each unit has its own number sequences.
   - app/api/deps.py: permission checks use the unit's own permission rows.
 
-No header (or anything other than "factory") means US Factory -- exactly the
+No header (or anything other than "factory") means Falcon -- exactly the
 behaviour every request had before the two units were separated.
 """
 import contextvars
@@ -21,9 +21,9 @@ import contextvars
 current_product: contextvars.ContextVar[str] = contextvars.ContextVar("current_product", default="")
 
 FACTORY = "factory"
-US_FACTORY = "us_factory"
+FALCON = "falcon"
 
 
 def current_unit() -> str:
-    """'factory' or 'us_factory' -- the value stored in every `product` column."""
-    return FACTORY if current_product.get() == FACTORY else US_FACTORY
+    """'factory' or 'falcon' -- the value stored in every `product` column."""
+    return FACTORY if current_product.get() == FACTORY else FALCON

@@ -15,7 +15,7 @@ export function fallbackPayload(p: Pallet): string {
  * Real QR-backed pallet tile — same footprint/id-under-code layout as the
  * prototype's qrPalletTileHtml().
  *
- * US Factory pallets carry a server-rendered QR image (qr_url). Factory
+ * Falcon pallets carry a server-rendered QR image (qr_url). Factory
  * (Goods Receipt) pallets don't: generating them is a single database
  * insert, and the QR is drawn here in the browser from the pallet's own
  * qr_payload -- identical content, no image upload, which is what made

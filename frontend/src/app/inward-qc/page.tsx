@@ -39,7 +39,7 @@ export default function InwardQcPage() {
 
 function InwardQcPageContent() {
   const me = useMe();
-  const isUs = useProduct() === "us_factory";
+  const isUs = useProduct() === "falcon";
   const router = useRouter();
   const searchParams = useSearchParams();
   const [meta, setMeta] = useState<QcMeta | null>(null);
@@ -62,7 +62,7 @@ function InwardQcPageContent() {
   const [detailState, setDetailState] = useState<QcDetail | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<QcListItem | null>(null);
   const [deleteBlockedMsg, setDeleteBlockedMsg] = useState<string | null>(null);
-  // US Factory: RM QR panel for an approved record (asks how many QRs).
+  // Falcon: RM QR panel for an approved record (asks how many QRs).
   const [qrState, setQrState] = useState<{ title: string; detail: QrGenerationDetail } | null>(null);
 
   const perms = me?.permissions.inward_qc;
@@ -161,7 +161,7 @@ function InwardQcPageContent() {
     // simply opens the existing Pending Tray QC" — a still-Pending Tray QC
     // opens straight into the observation form; anything else opens the
     // read-only Record Details view (with Edit available from there / More menu).
-    // US Factory: every Pending record was created from a Goods Receipt entry
+    // Falcon: every Pending record was created from a Goods Receipt entry
     // and opens straight into its observations.
     if ((isUs || TRAY_FAMILY_QC_CATEGORIES.includes(item.category)) && item.status === "pending") {
       openEdit(item.id);
@@ -194,7 +194,7 @@ function InwardQcPageContent() {
             ? "Inwarded Goods Receipt entries appear here as Pending. Upload the COA, complete the checks and approve, then generate the pallet QR codes."
             : "Every Inward QC record created to date, across LNP Tray, Soaker Pad, Polybag and CFB."}</div>
         </div>
-        {/* US Factory: records appear here automatically (Pending) once a
+        {/* Falcon: records appear here automatically (Pending) once a
             Goods Receipt entry is inwarded -- there is nothing to add by hand. */}
         {!isUs && (
           <button
@@ -302,7 +302,7 @@ function InwardQcPageContent() {
           onClose={() => { setWizardState(null); refreshAfterMutation(); }}
           onSaved={refreshAfterMutation}
           onSubmitted={(d) => {
-            // Approved -> straight on to "how many QR codes?" (US Factory).
+            // Approved -> straight on to "how many QR codes?" (Falcon).
             if (d.status === "accepted" && d.rm_qr_batch_id && me?.permissions.rm_qr_generation?.can_edit) {
               openQr(d.rm_qr_batch_id, d.shipment_number);
             }

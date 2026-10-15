@@ -54,7 +54,7 @@ def recompute_total_quantity(inspection: models.InwardVehicleInspection):
 # fresh deploy/restart naturally picks up any future migration change.
 #
 # Migration 0066 made ChecklistItem per-unit (ProductScoped) -- Factory and
-# US Factory now have two different item lists on this one table, filtered
+# Falcon now have two different item lists on this one table, filtered
 # transparently by product_scope.py's with_loader_criteria. A single
 # process serves both products' requests (current_unit() is a per-request
 # contextvar, not a per-process constant), so this cache MUST be keyed by
@@ -133,7 +133,7 @@ def propagate_to_qc(db: Session, inspection: models.InwardVehicleInspection) -> 
     single shared category.
 
     Never fires for a Goods-Receipt-linked inspection (migration 0066,
-    source_goods_receipt_entry_id set) -- Inward QC is a US Factory-only
+    source_goods_receipt_entry_id set) -- Inward QC is a Falcon-only
     downstream module that doesn't exist in Factory's product at all
     (Factory's own Goods Receipt module replaces both Inward Vehicle
     Inspection and Inward QC as separate stages), so creating one here

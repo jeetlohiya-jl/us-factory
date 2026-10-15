@@ -10,8 +10,8 @@ from app.adapters.auth.base import AuthenticatedUser
 
 
 # ---------------------------------------------------------------------------
-# Factory and US Factory are two independent working units with separate
-# permissions. Factory's modules 2-6 reuse US Factory's screens and API
+# Factory and Falcon are two independent working units with separate
+# permissions. Factory's modules 2-6 reuse Falcon's screens and API
 # routes, so the frontend sends which product the person is in (header
 # X-Product, set by main.py's middleware into current_product), and a
 # permission check for a shared module is answered from its Factory row.

@@ -103,7 +103,7 @@ RQC_DEFECT_GROUPS = [
 # independent from RQC_DEFECT_GROUPS's own 1-15, so it merges into
 # _REJECT_BY_SR below with no risk of colliding with or overwriting an
 # existing entry -- a Factory RqcRecord's defect_results only ever carry sr
-# 101-105, a US Factory one only ever 1-15 (ProductScoped rows never mix).
+# 101-105, a Falcon one only ever 1-15 (ProductScoped rows never mix).
 _REJECT_BY_SR_FACTORY: dict[int, int] = {
     101: 1,  # Foreign material (insects, hair, dust) -- Unacceptable
     102: 1,  # Glue strings / glue on side walls -- Unacceptable
@@ -513,7 +513,7 @@ def ensure_pending_rqc_for_run(db: Session, run: models.ProductionRun, shipment_
     exists, linked to it -- same Shipment Number, production date and shift,
     its IPQC, SKU, and its machine when the run has exactly one -- so RQC is
     ready to fill in instead of being created by hand. Idempotent: a run that
-    already has any RQC record (auto or manual) gets nothing new. US Factory
+    already has any RQC record (auto or manual) gets nothing new. Falcon
     keeps creating RQC records manually."""
     from app.core.product import FACTORY, current_unit  # local: avoids an import cycle at module load
     if current_unit() != FACTORY or not shipment_number:

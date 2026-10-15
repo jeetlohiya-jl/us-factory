@@ -6,7 +6,7 @@ import { api, ApiError } from "@/lib/api";
 import { CoaTable, coaListToMap, coaKey } from "@/components/rqc/CoaShared";
 
 /**
- * Factory OS Module 4 -- the same per-shipment COA flow as US Factory's own
+ * Factory OS Module 4 -- the same per-shipment COA flow as Falcon's own
  * CoaEntryPanel (backend/app/api/rqc_coa.py, find-or-create by Shipment
  * Number, one atomic save), except the Base Material table's labels follow
  * the QMP05 sheet exactly (RQC_COA_BASE_FACTORY -- "Tray Weight with Pad",

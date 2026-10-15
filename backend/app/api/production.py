@@ -121,7 +121,7 @@ def _sum_rejections(run: models.ProductionRun) -> dict:
         "rejection_damage": Decimal("0"), "rejection_misplaced_glue": Decimal("0"),
         "rejection_misplaced_pad": Decimal("0"), "rejection_glue_on_pad": Decimal("0"),
         "rejection_pad_placement_direction": Decimal("0"), "rejection_adhesion_issue": Decimal("0"),
-        # Factory-only set (migration 0065) -- a US Factory run's machine
+        # Factory-only set (migration 0065) -- a Falcon run's machine
         # entries never populate these, so they total 0 for it, same as the
         # six above total 0 for a Factory run.
         "rejection_foreign_material": Decimal("0"), "rejection_glue_strings": Decimal("0"),
@@ -276,7 +276,7 @@ def save_production_run(
         if attrs.rejection_adhesion_issue is not None:
             entry.rejection_adhesion_issue = Decimal(attrs.rejection_adhesion_issue or "0")
         # Factory-only Rejection Classification (migration 0065) -- same
-        # empty-means-0 convention; a US Factory save simply never sends
+        # empty-means-0 convention; a Falcon save simply never sends
         # these, so they're never touched for it.
         if attrs.rejection_foreign_material is not None:
             entry.rejection_foreign_material = Decimal(attrs.rejection_foreign_material or "0")

@@ -46,7 +46,7 @@ export default function Wizard({
   // report form is a tray QC too, but an attribute form like the others.
   const isTray = initialDetail.uses_fgtray ?? TRAY_FAMILY_QC_CATEGORIES.includes(initialDetail.category);
   const [detail, setDetail] = useState<QcDetail>(initialDetail);
-  // US Factory: created from a Goods Receipt entry -- its shipment, SKU,
+  // Falcon: created from a Goods Receipt entry -- its shipment, SKU,
   // vendor and quantities are already known (read-only), so it opens straight
   // on the observations, and a COA is required to approve.
   const grLinked = !!initialDetail.source_goods_receipt_entry_id;

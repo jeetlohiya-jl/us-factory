@@ -61,7 +61,7 @@ function classificationTotal(classification: string, defects: Record<number, Rqc
 /**
  * Factory OS Module 4 -- view/edit of one already-saved RQC activity record
  * (a completed FactoryRqcWizard run). Same "view" vs "edit" mode split as
- * the US Factory RqcDetailPanel: "view" is pure traceability/review;
+ * the Falcon RqcDetailPanel: "view" is pure traceability/review;
  * "edit" reopens Page 2/3's own fields (defect grid, Number of Pallets,
  * Date/Machine/Shift/Approved Pallets/Table-Person) for correction and
  * re-saves through the same PUT route the wizard's own final Save uses

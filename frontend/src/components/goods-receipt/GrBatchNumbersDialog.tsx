@@ -5,7 +5,7 @@ import type { GoodsReceiptDetail, GoodsReceiptEntry } from "@/lib/types";
 import { T } from "@/lib/terms";
 
 /**
- * US Factory -- one Batch Number per received pallet, for RM / LNP Tray
+ * Falcon -- one Batch Number per received pallet, for RM / LNP Tray
  * entries. A separate dialog (not a step in the Inward Vehicle Inspection
  * wizard): the pallet count is already known from the inward, so it simply
  * shows that many inputs, linked to this entry (and so its PO, SKU and

@@ -38,7 +38,7 @@ const PROD_DETAIL_FIELDS: { key: keyof SkuVersion; label: string; numeric?: bool
   { key: "prod_absorption_rate", label: "Absorption Rate" },
 ];
 
-// India Factory only (migration 0086) -- lamination-machine attributes,
+// Falcon only (migration 0086) -- lamination-machine attributes,
 // entered once per SKU Version here and auto-populated on Production.
 const INDIA_PROD_DETAIL_FIELDS: { key: keyof SkuVersion; label: string; options?: string[] }[] = [
   { key: "prod_mould_number", label: "Mould Number" },
@@ -63,7 +63,7 @@ function SkuVersionDetailsModal({
   onClose: () => void;
   onSave: (patch: Record<string, string | number | null>) => Promise<void>;
 }) {
-  const isIndia = useProduct() === "us_factory";
+  const isIndia = useProduct() === "falcon";
   const fields: { key: keyof SkuVersion; label: string; numeric?: boolean; options?: string[] }[] = isIndia
     ? [PROD_DETAIL_FIELDS[0], ...INDIA_PROD_DETAIL_FIELDS, ...PROD_DETAIL_FIELDS.slice(1)]
     : PROD_DETAIL_FIELDS;
@@ -163,8 +163,8 @@ const MATERIAL_SHORT: Record<string, string> = { ...MATERIAL_LABELS, tray: "Tray
  * (inward_vehicle_inspection's can_edit), same active/inactive pattern.
  */
 export default function SkusPage() {
-  // Corner Protector is an India Factory material (it has an inward QC report).
-  const isUs = useProduct() === "us_factory";
+  // Corner Protector is an Falcon material (it has an inward QC report).
+  const isUs = useProduct() === "falcon";
   const me = useMe();
   const perms = me?.permissions.inward_vehicle_inspection;
   const canEdit = !!perms?.can_edit;

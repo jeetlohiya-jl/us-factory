@@ -24,8 +24,8 @@ const MANAGED_CATEGORIES: Category[] = ["tray", "lnp_tray", "film", "pad", "poly
  * since this list only exists to serve that one field.
  */
 export default function VendorsPage() {
-  // Corner Protector is an India Factory material (it has an inward QC report).
-  const isUs = useProduct() === "us_factory";
+  // Corner Protector is an Falcon material (it has an inward QC report).
+  const isUs = useProduct() === "falcon";
   const me = useMe();
   const perms = me?.permissions.inward_vehicle_inspection;
   const [vendors, setVendors] = useState<Vendor[]>([]);

@@ -1,7 +1,7 @@
 """
 Portfolio Access -- the post-login "which product do you want to open"
 gate. Today there are two products: "Factory" (not built yet) and
-"US Factory" (this app). An admin manages who can see which via this
+"Falcon" (this app). An admin manages who can see which via this
 router's CRUD routes; the signed-in person's own picker reads
 GET .../me.
 
@@ -11,7 +11,7 @@ database at all (see PortfolioAccess's model docstring), so `/me` below
 authenticates with get_verified_email (JWT-valid, no app_users row
 required) rather than get_current_user. The admin CRUD routes below it
 still gate on require_admin (an existing app_users.is_admin flag) --
-managing this table is done from inside the US Factory app by the same
+managing this table is done from inside the Falcon app by the same
 admins who already manage Setup -> Users, not a separate access tier.
 """
 import uuid
@@ -33,7 +33,7 @@ def _out(row: models.PortfolioAccess) -> schemas.PortfolioAccessOut:
         id=row.id,
         email=row.email,
         access_factory=row.access_factory,
-        access_us_factory=row.access_us_factory,
+        access_falcon=row.access_falcon,
         created_at=row.created_at.isoformat() if row.created_at else "",
     )
 
@@ -52,7 +52,7 @@ def my_portfolio_access(
     # effective_permission()'s "no explicit row => view-only" in deps.py.
     return schemas.PortfolioAccessMeOut(
         access_factory=bool(row and row.access_factory),
-        access_us_factory=bool(row and row.access_us_factory),
+        access_falcon=bool(row and row.access_falcon),
     )
 
 
@@ -76,7 +76,7 @@ def create_portfolio_access(
         raise HTTPException(status_code=422, detail="A valid email is required.")
 
     row = models.PortfolioAccess(
-        email=email, access_factory=payload.access_factory, access_us_factory=payload.access_us_factory,
+        email=email, access_factory=payload.access_factory, access_falcon=payload.access_falcon,
     )
     db.add(row)
     try:
@@ -101,8 +101,8 @@ def update_portfolio_access(
         raise HTTPException(status_code=404, detail="Not found.")
     if payload.access_factory is not None:
         row.access_factory = payload.access_factory
-    if payload.access_us_factory is not None:
-        row.access_us_factory = payload.access_us_factory
+    if payload.access_falcon is not None:
+        row.access_falcon = payload.access_falcon
     db.commit()
     db.refresh(row)
     return _out(row)

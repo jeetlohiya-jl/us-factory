@@ -1,9 +1,9 @@
 import type { ModuleKey, ModulePermissionsMap } from "./types";
 
 /**
- * Factory and US Factory are two independent working units with separate
+ * Factory and Falcon are two independent working units with separate
  * permissions (and separate sequence numbers). Factory's modules 2-6 reuse
- * US Factory's screens, so every request says which product it comes from
+ * Falcon's screens, so every request says which product it comes from
  * -- the X-Product header, added to every Supabase call (supabaseClient.ts)
  * and every FastAPI call (api.ts request()) -- and the permission for a
  * shared module is then read from its Factory row.
@@ -11,7 +11,7 @@ import type { ModuleKey, ModulePermissionsMap } from "./types";
  * Plain module state (not React), because the data layer needs it outside
  * components. AppShell sets it from the post-login product choice.
  */
-export type Product = "factory" | "us_factory";
+export type Product = "factory" | "falcon";
 
 let current: Product | null = null;
 
@@ -23,11 +23,11 @@ export function getCurrentProduct(): Product | null {
   return current;
 }
 
-/** Shared (US Factory) permission key -> its Factory row. Keep in sync with
+/** Shared (Falcon) permission key -> its Factory row. Keep in sync with
  * app_effective_module() (migration 0047) and FACTORY_PERMISSION_MAP in
  * backend/app/api/deps.py. */
 export const FACTORY_PERMISSION_MAP: Partial<Record<ModuleKey, ModuleKey>> = {
-  // Setup -> Vendors / SKU Names are gated on this in US Factory; in
+  // Setup -> Vendors / SKU Names are gated on this in Falcon; in
   // Factory they serve Goods Receipt (RLS mirrors it, migration 0048).
   inward_vehicle_inspection: "goods_receipt",
   rm_storage: "factory_rm_storage",
@@ -41,7 +41,7 @@ export const FACTORY_PERMISSION_MAP: Partial<Record<ModuleKey, ModuleKey>> = {
   customer_shipment: "factory_goods_outward",
   shipment_picking: "factory_goods_outward",
   // 2026-09-28 -- Goods Outward's "pick pallets -> Outward Vehicle
-  // Inspection" flow (migration 0067) reuses this same US Factory module.
+  // Inspection" flow (migration 0067) reuses this same Falcon module.
   outward_vehicle_inspection: "factory_goods_outward",
 };
 

@@ -30,7 +30,7 @@ export function skuFamily(category: string | null | undefined): string {
 export function skuMatchesCategory(skuCategory: string | null | undefined, recordCategory: string | null | undefined): boolean {
   return !!recordCategory && skuFamily(skuCategory) === skuFamily(recordCategory);
 }
-// Inward material categories, in US Factory's Inward Vehicle Inspection
+// Inward material categories, in Falcon's Inward Vehicle Inspection
 // order and wording (its Wizard.tsx CATEGORY_LABELS) -- used by Factory's
 // Goods Receipt Category picker.
 // Both come from the one central list (lib/terms.ts CATEGORY_LABELS).
@@ -63,7 +63,7 @@ export interface SkuVersion {
   // Rate) reads these off the same per-SKU-Version reference data.
   prod_dimensions?: string | null;
   prod_absorption_rate?: string | null;
-  // Migration 0086 -- India Factory lamination-machine attributes.
+  // Migration 0086 -- Falcon lamination-machine attributes.
   prod_mould_number?: string | null;
   prod_design?: string | null;
   prod_liner_thickness?: string | null;
@@ -281,14 +281,14 @@ export const USER_MODULES: ModuleKey[] = [
 ];
 
 // Setup -> Users groups the permission matrix by product.
-export const US_FACTORY_MODULES: ModuleKey[] = [
+export const FALCON_MODULES: ModuleKey[] = [
   "inward_vehicle_inspection", "inward_qc",
   "rm_qr_generation", "rm_storage", "material_consumption", "production", "ipqc", "rqc", "fg_qr_generation", "fg_storage",
   "customer_shipment", "shipment_picking", "outward_vehicle_inspection", "machine_downtime",
 ];
-// Factory-only (migration 0059, same "no separate US Factory row" pattern
+// Factory-only (migration 0059, same "no separate Falcon row" pattern
 // as Goods Receipt itself -- see backend/app/api/deps.py's
-// FACTORY_PERMISSION_MAP, which only remaps modules shared with US Factory).
+// FACTORY_PERMISSION_MAP, which only remaps modules shared with Falcon).
 export const FACTORY_MODULES: ModuleKey[] = [
   "goods_receipt", "factory_rm_storage", "factory_material_consumption", "factory_production",
   "factory_rqc_fg_qr", "factory_fg_storage", "factory_goods_outward", "inventory",
@@ -319,32 +319,32 @@ export interface UserUpdateInput {
 }
 
 // ---------------------------------------------------------------------------
-// Portfolio Access (post-login "Factory" / "US Factory" picker,
+// Portfolio Access (post-login "Factory" / "Falcon" picker,
 // admin-managed via Setup -> Portfolio Access)
 // ---------------------------------------------------------------------------
 
 export interface PortfolioAccessMe {
   access_factory: boolean;
-  access_us_factory: boolean;
+  access_falcon: boolean;
 }
 
 export interface PortfolioAccess {
   id: string;
   email: string;
   access_factory: boolean;
-  access_us_factory: boolean;
+  access_falcon: boolean;
   created_at: string;
 }
 
 export interface PortfolioAccessInput {
   email: string;
   access_factory?: boolean;
-  access_us_factory?: boolean;
+  access_falcon?: boolean;
 }
 
 export interface PortfolioAccessUpdateInput {
   access_factory?: boolean;
-  access_us_factory?: boolean;
+  access_falcon?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -493,7 +493,7 @@ export interface QcDetail {
   fgtray_answers: QcFgtrayAnswer[];
   attribute_values: QcAttributeValue[];
   vehicle_inspection: InspectionDetail | null;
-  // US Factory: set when this QC was created from a Goods Receipt entry
+  // Falcon: set when this QC was created from a Goods Receipt entry
   // (migration 0082). Inward details come from it; COA is required to approve.
   source_goods_receipt_entry_id?: string | null;
   goods_receipt?: {
@@ -690,7 +690,7 @@ export interface Machine {
   // Section 11 -- admin-supplied 2-digit number used as the M<nn> segment
   // of the FG Storage Batch Code. Populated later by the business.
   batch_number: string | null;
-  // Migration 0086 (India Factory): lamination / trimming / padding and the
+  // Migration 0086 (Falcon): lamination / trimming / padding and the
   // machine's own target shots. null for legacy / Factory machines.
   machine_type?: MachineType | null;
   target_shots?: number | null;
@@ -816,12 +816,12 @@ export interface ProductionMachineEntry {
     prod_target_shots: string | null;
     prod_pad_type: string | null;
     prod_pad_color: string | null;
-    // Migration 0086 -- India Factory lamination attributes.
+    // Migration 0086 -- Falcon lamination attributes.
     prod_mould_number: string | null;
     prod_design: string | null;
     prod_liner_thickness: string | null;
   } | null;
-  // Migration 0086 -- the machine's own type / target shots (India Factory)
+  // Migration 0086 -- the machine's own type / target shots (Falcon)
   // and the Actual No. of Shots entered on this Production record.
   machine_type: MachineType | null;
   machine_target_shots: number | null;
@@ -868,7 +868,7 @@ export interface ProductionRejectionClassification {
   // Factory-only Rejection Classification (migration 0065) -- Foreign
   // material / Glue strings / Direction of the pad / Placement of the
   // pad / Stickiness of the pad, replacing the 6 fields above for Factory
-  // only. Always 0 for a US Factory run, same coexistence as the 6 fields
+  // only. Always 0 for a Falcon run, same coexistence as the 6 fields
   // above are always 0 for a Factory run.
   foreign_material: number;
   glue_strings: number;
@@ -1101,7 +1101,7 @@ export const RQC_DEFECT_GROUPS: RqcDefectGroupDef[] = [
 // testing list ("QMP05 - CIROVERWRAP PADDED FG V0 05.08.2026.xlsx", Quality
 // Testing sheet), used only by the Factory product's combined RQC + FG QR
 // page (frontend/src/app/rqc-fg-qr/page.tsx). This does NOT replace
-// RQC_DEFECT_GROUPS above -- US Factory's own /rqc page keeps the full
+// RQC_DEFECT_GROUPS above -- Falcon's own /rqc page keeps the full
 // 15-item list unchanged. All 4 QMP05 items already exist verbatim in
 // RQC_DEFECT_GROUPS (sr 1, 6, 7, 8), with the exact same classification and
 // AQL accept/reject thresholds the QMP05 Sampling Plan sheet specifies
@@ -1136,7 +1136,7 @@ export const RQC_SAMPLING_PLAN: RqcSamplingPlanRow[] = [
 // TRAYS" (Cirkla Inc, Gainesville Factory, Document ID as per ERP, V0,
 // issued 27/09/2026), transcribed verbatim. Supersedes RQC_DEFECT_GROUPS_
 // QMP05 / RQC_SAMPLING_PLAN above for the Factory product's RQC record
-// (US Factory's own /rqc page is untouched -- it keeps RQC_DEFECT_GROUPS,
+// (Falcon's own /rqc page is untouched -- it keeps RQC_DEFECT_GROUPS,
 // the full 15-item list, unchanged). This is a genuinely different
 // sampling plan, not a re-filter of the old one: two of the four items it
 // shares a name with have moved to a different classification (Direction
@@ -1237,7 +1237,7 @@ export const RQC_COA_PRINTING: RqcCoaParamDef[] = [
 // Factory OS Module 4 -- same Base Material COA group as RQC_COA_BASE
 // above, except sr 3's label follows the QMP05 COA sheet exactly ("Tray
 // Weight with Pad (g)", not "with liner"). Used only by the Factory
-// product's FactoryCoaEntryPanel; US Factory's own CoaEntryPanel keeps
+// product's FactoryCoaEntryPanel; Falcon's own CoaEntryPanel keeps
 // RQC_COA_BASE unchanged. The Functional/Packing/Printing groups are
 // identical in QMP05, so those three constants above are reused as-is.
 export const RQC_COA_BASE_FACTORY: RqcCoaParamDef[] = [
@@ -1262,7 +1262,7 @@ export interface RqcListItem {
   // Additive (2026-09-23, Factory Module 4) -- this activity's own Machine/
   // Shift/Date/Number Tested/Approved Pallets/Table-Person, so the Factory
   // combined RQC + FG QR list can show them without a second query per row.
-  // US Factory's own /rqc list ignores these; nothing about that page reads
+  // Falcon's own /rqc list ignores these; nothing about that page reads
   // them, so this is a pure addition to the existing type/select, not a
   // behavior change for it.
   machine: string | null;
@@ -1568,7 +1568,7 @@ export interface ShipmentPickingDetail {
 // Picking combined into ONE module/page for the Factory product. Reuses
 // the exact same customer_shipments / customer_shipment_line_items /
 // shipment_picking_requests / shipment_picking_picks tables and the exact
-// same FastAPI routes (create, delete, pick, undo-pick) as US Factory's own
+// same FastAPI routes (create, delete, pick, undo-pick) as Falcon's own
 // separate Customer Shipment / Shipment Picking pages -- no new tables, no
 // new backend routes. Only the read shape is new (a combined Supabase
 // select joining a shipment's line items straight to each one's own
@@ -1938,7 +1938,7 @@ export interface GoodsReceiptEntry {
   // the real inward (status flips to "inwarded" separately, at that point)
   // -- this field itself doesn't change once Approved.
   inward_inspection?: { id: string; status: InspectionStatus } | null;
-  // US Factory (migration 0082): the Inward QC record this entry became once
+  // Falcon (migration 0082): the Inward QC record this entry became once
   // inwarded, and how many per-pallet Batch Numbers have been captured.
   qc?: { id: string; status: QcStatus } | null;
   batch_count?: number;

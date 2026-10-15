@@ -267,7 +267,7 @@ async function qrGetDetail(qrType: "rm" | "fg", id: string): Promise<QrGeneratio
     pallets: RawPallet[];
   };
   const grEntry = raw.source_goods_receipt_entry;
-  // India Factory: a still-pending RM batch born from an approved Inward QC
+  // Falcon: a still-pending RM batch born from an approved Inward QC
   // asks "how many QR codes should be generated?" for every material EXCEPT
   // trays (RM / LNP Tray keep one QR per received pallet, nothing asked) --
   // validated against what was received (pallets if counted, else the unit).
@@ -772,7 +772,7 @@ type RawProdMcShallowEntry = {
   rejection_damage: number | string; rejection_misplaced_glue: number | string; rejection_misplaced_pad: number | string;
   rejection_glue_on_pad: number | string; rejection_pad_placement_direction: number | string; rejection_adhesion_issue: number | string;
   // Factory-only Rejection Classification (migration 0065) -- always 0 for
-  // a US Factory run, so summing both sets together below is safe: only
+  // a Falcon run, so summing both sets together below is safe: only
   // one set is ever nonzero for any given run.
   rejection_foreign_material: number | string; rejection_glue_strings: number | string;
   rejection_pad_direction: number | string; rejection_pad_placement: number | string; rejection_stickiness: number | string;
@@ -1635,7 +1635,7 @@ async function getShipmentPickingSb(id: string): Promise<ShipmentPickingDetail> 
 
 // -- Factory OS Module 6 -- Goods Outward (Customer Shipment + Shipment
 // Picking combined) -- reads only; every write reuses the exact same
-// FastAPI routes as the two separate US Factory pages (createCustomerShipment,
+// FastAPI routes as the two separate Falcon pages (createCustomerShipment,
 // deleteCustomerShipment, pickPallet, removePick below). Each line item is
 // joined straight to its own 1:1 ShipmentPickingRequest (customer_shipment_
 // line_items -> shipment_picking_requests is a reverse embed via that
@@ -2271,7 +2271,7 @@ export const api = {
   updateUser: (id: string, patch: UserUpdateInput) =>
     request<AppUser>(`/api/v1/users/${id}`, { method: "PUT", body: JSON.stringify(patch) }),
 
-  // -- Portfolio Access (post-login "Factory" / "US Factory" picker) ------
+  // -- Portfolio Access (post-login "Factory" / "Falcon" picker) ------
   // `myPortfolioAccess` deliberately does NOT require an app_users row on
   // the backend (see get_verified_email) -- it's called before we know
   // whether this signed-in email has one, since the picker itself is what
@@ -2578,7 +2578,7 @@ export const api = {
     } else if (params.category) {
       filtered = filtered.eq("category", params.category);
     }
-    // India Factory: records that still need action (Pending, then On Hold)
+    // Falcon: records that still need action (Pending, then On Hold)
     // sort above the finished ones -- 'pending' > 'onhold' > 'draft' >
     // 'accepted' descending -- newest first within each group. Gainesville's
     // order (newest first) is unchanged.
@@ -2931,7 +2931,7 @@ export const api = {
     // Shipment included) is filtered server-side by the current product/
     // unit (see db/product_scope.py); without this header the backend
     // falls back to its default unit, so a Factory-unit shipment's PDF
-    // export from a US Factory session (or vice versa) 404'd even though
+    // export from a Falcon session (or vice versa) 404'd even though
     // the record genuinely exists -- same bug fixed on downloadPackingListPdf
     // below.
     const res = await fetch(`${BASE}/api/v1/traceability/${encodeURIComponent(shipmentNumber)}/pdf`, {
@@ -3351,7 +3351,7 @@ export const api = {
     invalidateListCache("goods-receipt");
     return res;
   },
-  // US Factory: one Batch Number per received pallet, saved in one RPC
+  // Falcon: one Batch Number per received pallet, saved in one RPC
   // (migration 0082). Creates the entry's Pending Inward QC on first save.
   getGoodsReceiptBatchNumbers: async (entryId: string): Promise<string[]> => {
     const rows = await sbRequest<{ pallet_index: number; batch_number: string }[]>(() =>

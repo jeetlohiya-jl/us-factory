@@ -154,7 +154,7 @@ def create_draft(
     category: str = Query(default="tray"),
     # Migration 0066 -- present only when this draft is being opened from
     # Factory's own Goods Receipt "Inward" action (GrInwardWizard.tsx).
-    # Never sent by US Factory's own "+ New Record" flow.
+    # Never sent by Falcon's own "+ New Record" flow.
     source_goods_receipt_entry_id: uuid.UUID | None = Query(default=None),
     db: Session = Depends(get_db),
     current_user: AuthenticatedUser = Depends(get_current_user),
