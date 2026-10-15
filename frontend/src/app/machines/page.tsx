@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import { useMe } from "@/lib/useMe";
+import { useProduct } from "@/lib/productContext";
 import type { Machine } from "@/lib/types";
 import { MODULE_NAMES } from "@/lib/terms";
 
@@ -14,6 +15,9 @@ import { MODULE_NAMES } from "@/lib/terms";
  */
 export default function MachinesPage() {
   const me = useMe();
+  // India Factory also shows each machine's type and target shots (read-only
+  // here; they come from the machine master data, migration 0086/0087).
+  const isIndia = useProduct() === "us_factory";
   const perms = me?.permissions.material_consumption;
   const [machines, setMachines] = useState<Machine[]>([]);
   const [loading, setLoading] = useState(true);
@@ -118,14 +122,20 @@ export default function MachinesPage() {
 
       <div className="card card-flush">
         <table className="data">
-          <thead><tr><th>Machine Code</th><th>Batch Number</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>Machine Code</th>{isIndia && <><th>Type</th><th>Target Shots</th></>}<th>Batch Number</th><th>Status</th><th></th></tr></thead>
           <tbody>
             {visible.length === 0 ? (
-              <tr className="empty-row"><td colSpan={4}>{loading ? "Loading…" : "No machines yet — add one above."}</td></tr>
+              <tr className="empty-row"><td colSpan={isIndia ? 6 : 4}>{loading ? "Loading…" : "No machines yet — add one above."}</td></tr>
             ) : (
               visible.map((m) => (
                 <tr key={m.id}>
                   <td className="mono">{m.code}</td>
+                  {isIndia && (
+                    <>
+                      <td style={{ textTransform: "capitalize" }}>{m.machine_type || "—"}</td>
+                      <td>{m.target_shots ?? "—"}</td>
+                    </>
+                  )}
                   <td>
                     {canEdit ? (
                       <input
