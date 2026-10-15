@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
-import type { ProductionDetail, Machine } from "@/lib/types";
+import type { ProductionDetail, Machine, MachineType } from "@/lib/types";
 import { QC_CATEGORY_LABELS } from "@/lib/types";
 import { formatTime12h, nowHHMM } from "@/components/material-consumption/Wizard";
 import { api } from "@/lib/api";
@@ -67,7 +67,9 @@ type AttrKey = "machine_no" | "auto_padding" | "container_order_no" | "weight" |
   | "rejection_damage" | "rejection_misplaced_glue" | "rejection_misplaced_pad" | "rejection_glue_on_pad" | "rejection_pad_placement_direction" | "rejection_adhesion_issue"
   // Factory-only Rejection Classification (migration 0065).
   | "rejection_foreign_material" | "rejection_glue_strings" | "rejection_pad_direction" | "rejection_pad_placement" | "rejection_stickiness"
-  | "pallets_produced";
+  | "pallets_produced"
+  // India Factory (migration 0086): Actual No. of Shots, per machine entry.
+  | "actual_shots";
 
 // Production Details rows, matching the prototype's PROD_ATTRIBUTES exactly
 // (label text included) -- one row per attribute, one column per machine.
@@ -90,6 +92,61 @@ const PROD_DETAIL_ROWS: { label: string; attrKey?: AttrKey; get: (e: ProductionD
   { label: "Pad Type/Name/Code", attrKey: "pad_type", get: (e) => e.production_details?.prod_pad_type },
   { label: "Pad Color", attrKey: "pad_color", get: (e) => e.production_details?.prod_pad_color },
 ];
+
+// ---------------------------------------------------------------------------
+// India Factory (us_factory) Production Details -- machine-type aware.
+//
+// Same table, same per-machine columns and same editable-override mechanism as
+// above; the only difference is WHICH rows apply to a machine, decided by the
+// machine master's own `machine_type` (migration 0086), never by a hardcoded
+// machine list:
+//   lamination (LM1-LM7): SKU, Weight, Mould No., Design, Trays/Sleeve,
+//       Sleeve/Combo, Total Pcs, Liner Thickness, Target Shots, Actual Shots
+//   trimming   (T1-T3):   SKU, Weight, Trays/Sleeve, Sleeve/Combo, Total Pcs,
+//       Target Shots -- all read-only; Actual Shots is the only input
+//   padding    (P1):      SKU, Weight, Trays/Sleeve, Sleeve/Combo, Total Pcs,
+//       Pad Type, Pad Color, Actual Shots (target only if one is configured)
+// A machine with no type (legacy / unclassified) keeps exactly the original six
+// rows above, so nothing existing changes for it. A row a machine does not
+// use shows "—" in that machine's column. Case Type is not a row here (it was
+// removed from Production on 2026-09-25 and is not read or written any more).
+// ---------------------------------------------------------------------------
+type PMachineEntry = ProductionDetail["machine_entries"][number];
+type IndiaRow = {
+  label: string;
+  types: MachineType[];          // typed machines the row applies to
+  legacy?: boolean;              // also shown for a machine with no type (the original six rows)
+  attrKey?: AttrKey;             // editable override (same keys as the original rows)
+  get: (e: PMachineEntry, operator: string | null) => React.ReactNode;
+};
+const ALL_TYPES: MachineType[] = ["lamination", "trimming", "padding"];
+const INDIA_DETAIL_ROWS: IndiaRow[] = [
+  { label: T.sku, types: ALL_TYPES, legacy: true, get: (e) => e.sku_code },
+  { label: "Weight", types: ALL_TYPES, attrKey: "weight", get: (e) => e.production_details?.prod_weight },
+  { label: "Mould Number", types: ["lamination"], get: (e) => e.production_details?.prod_mould_number },
+  { label: "Design (Old / New)", types: ["lamination"], get: (e) => e.production_details?.prod_design },
+  { label: "Trays/Sleeve", types: ALL_TYPES, legacy: true, attrKey: "pcs_per_sleeve", get: (e) => e.production_details?.prod_pcs_per_sleeve },
+  { label: "Sleeve/Combo", types: ALL_TYPES, legacy: true, attrKey: "sleeve_per_case", get: (e) => e.production_details?.prod_sleeve_per_case },
+  { label: "Total No. of Pcs/Pallet", types: ALL_TYPES, legacy: true, get: (e) => e.production_details?.prod_total_pcs_per_pallet },
+  { label: "Liner Thickness", types: ["lamination"], get: (e) => e.production_details?.prod_liner_thickness },
+  { label: "Pad Type/Name/Code", types: ["padding"], legacy: true, attrKey: "pad_type", get: (e) => e.production_details?.prod_pad_type },
+  { label: "Pad Color", types: ["padding"], legacy: true, attrKey: "pad_color", get: (e) => e.production_details?.prod_pad_color },
+  // The machine master's own target wins; a SKU-level target (the original
+  // Factory source) is only a fallback; nothing configured shows "—".
+  { label: "Target Shots", types: ALL_TYPES, get: (e) => e.machine_target_shots ?? e.production_details?.prod_target_shots },
+  { label: "Actual No. of Shots", types: ALL_TYPES, attrKey: "actual_shots", get: (e) => e.actual_shots },
+  // Recorded automatically from the signed-in user (never typed).
+  { label: "Machine Operator", types: ALL_TYPES, get: (_e, operator) => operator },
+];
+
+function indiaRowApplies(row: IndiaRow, e: PMachineEntry): boolean {
+  return e.machine_type ? row.types.includes(e.machine_type) : !!row.legacy;
+}
+// Trimming machines take exactly one input -- Actual No. of Shots.
+function indiaCellEditable(row: IndiaRow, e: PMachineEntry): boolean {
+  if (!row.attrKey || !indiaRowApplies(row, e)) return false;
+  return e.machine_type === "trimming" ? row.attrKey === "actual_shots" : true;
+}
 
 function sumProductionDetails(entries: ProductionDetail["machine_entries"], key: "prod_total_pcs_per_pallet"): number | null {
   let total = 0;
@@ -137,6 +194,8 @@ export default function ProductionDetailPanel({
   // record doesn't need a trip back out.
   onEdit?: () => void;
 }) {
+  const product = useProduct();
+  const isIndia = product === "us_factory";
   const [wastage, setWastage] = useState<EditableWastage[]>(
     record.wastage_entries.map((w) => ({ machine_id: w.machine_id, trays: w.trays, reason: w.reason }))
   );
@@ -170,6 +229,8 @@ export default function ProductionDetailPanel({
           rejection_pad_placement: e.rejection_classification.pad_placement ? String(e.rejection_classification.pad_placement) : "",
           rejection_stickiness: e.rejection_classification.stickiness ? String(e.rejection_classification.stickiness) : "",
           pallets_produced: e.pallets_produced ? String(e.pallets_produced) : "",
+          // India Factory only (migration 0086) -- never part of a Factory save.
+          ...(isIndia ? { actual_shots: e.actual_shots != null ? String(e.actual_shots) : "" } : {}),
         },
       ])
     )
@@ -194,8 +255,16 @@ export default function ProductionDetailPanel({
   // log rejections.
   const isEdit = mode === "edit";
   const editable = isEdit && canEdit;
-  const isFactory = useProduct() === "factory";
-  const rejectionFields = isFactory ? FACTORY_REJECTION_FIELDS : REJECTION_FIELDS;
+  const isFactory = product === "factory";
+  // India Factory now uses the original Factory's Rejection Classification
+  // set. Counts already recorded under India's earlier six-field set stay
+  // visible (and in the total) for any run that actually has them.
+  const legacyIndiaFields = isIndia
+    ? REJECTION_FIELDS.filter((f) => record.machine_entries.some((e) => (e.rejection_classification[f.key] || 0) > 0))
+    : [];
+  const rejectionFields = isFactory || isIndia ? [...FACTORY_REJECTION_FIELDS, ...legacyIndiaFields] : REJECTION_FIELDS;
+  // Trimming machines have no rejection inputs in India Factory.
+  const rejectionEntries = isIndia ? record.machine_entries.filter((e) => e.machine_type !== "trimming") : record.machine_entries;
   const totalPcsPerPallet = sumProductionDetails(record.machine_entries, "prod_total_pcs_per_pallet");
   const totalRejections = sumRejections(record.rejection_classification, rejectionFields);
   const totalPalletsProduced = record.total_pallets_produced;
@@ -213,6 +282,15 @@ export default function ProductionDetailPanel({
   }
 
   async function handleSave() {
+    if (isIndia) {
+      for (const e of record.machine_entries) {
+        const raw = (attrEdits[e.machine_consumption_id]?.actual_shots ?? "").trim();
+        if (raw !== "" && !(Number.isInteger(Number(raw)) && Number(raw) >= 0)) {
+          setError(`Actual No. of Shots for ${e.machine || "this machine"} must be a whole number of 0 or more.`);
+          return;
+        }
+      }
+    }
     setSaving(true);
     setError(null);
     try {
@@ -309,7 +387,27 @@ export default function ProductionDetailPanel({
                     </tr>
                   </thead>
                   <tbody>
-                    {PROD_DETAIL_ROWS.map((row) => (
+                    {isIndia ? (
+                      INDIA_DETAIL_ROWS.filter((row) => record.machine_entries.some((e) => indiaRowApplies(row, e))).map((row) => (
+                        <tr key={row.label}>
+                          <td>{row.label}</td>
+                          {record.machine_entries.map((e) => (
+                            <td key={e.machine_consumption_id}>
+                              {!indiaRowApplies(row, e) ? "—" : editable && indiaCellEditable(row, e) ? (
+                                <input
+                                  type={row.attrKey === "actual_shots" ? "number" : "text"}
+                                  {...(row.attrKey === "actual_shots" ? { min: 0, step: 1 } : {})}
+                                  value={attrEdits[e.machine_consumption_id]?.[row.attrKey!] ?? ""}
+                                  onChange={(ev) => setAttrEdit(e.machine_consumption_id, row.attrKey!, ev.target.value)}
+                                />
+                              ) : (
+                                row.get(e, record.operator) ?? "—"
+                              )}
+                            </td>
+                          ))}
+                        </tr>
+                      ))
+                    ) : PROD_DETAIL_ROWS.map((row) => (
                       <tr key={row.label}>
                         <td>{row.label}</td>
                         {record.machine_entries.map((e) => (
@@ -383,7 +481,7 @@ export default function ProductionDetailPanel({
               (REJECTION_FIELDS for US Factory, FACTORY_REJECTION_FIELDS
               for Factory as of migration 0065), columns =
               record.machine_entries. */}
-          {record.machine_entries.length > 0 && (
+          {rejectionEntries.length > 0 && (
             <div className="detail-card">
               <h3>Rejection Classification</h3>
               <div style={{ overflowX: "auto" }}>
@@ -391,14 +489,14 @@ export default function ProductionDetailPanel({
                   <thead>
                     <tr>
                       <th>Field</th>
-                      {record.machine_entries.map((e, i) => <th key={e.machine_consumption_id}>{e.machine || `Machine #${i + 1}`}</th>)}
+                      {rejectionEntries.map((e, i) => <th key={e.machine_consumption_id}>{e.machine || `Machine #${i + 1}`}</th>)}
                     </tr>
                   </thead>
                   <tbody>
                     {rejectionFields.map((f) => (
                       <tr key={f.key}>
                         <td>{f.label}</td>
-                        {record.machine_entries.map((e) => {
+                        {rejectionEntries.map((e) => {
                           const attrKey = `rejection_${f.key}` as AttrKey;
                           return (
                             <td key={e.machine_consumption_id} style={{ width: 100 }}>

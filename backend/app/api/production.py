@@ -292,6 +292,21 @@ def save_production_run(
         # empty-means-0 convention as the rejection_* fields above.
         if attrs.pallets_produced is not None:
             entry.pallets_produced = int(Decimal(attrs.pallets_produced or "0"))
+        # Actual No. of Shots (migration 0086): blank clears it; otherwise a
+        # whole number >= 0. Unlike Pallets Produced, blank is "not entered",
+        # not 0 -- a machine that has not reported shots must not read as 0.
+        if attrs.actual_shots is not None:
+            raw_shots = attrs.actual_shots.strip()
+            if raw_shots == "":
+                entry.actual_shots = None
+            else:
+                try:
+                    shots = Decimal(raw_shots)
+                except Exception:
+                    raise HTTPException(status_code=422, detail="Actual No. of Shots must be a whole number.")
+                if shots < 0 or shots != shots.to_integral_value():
+                    raise HTTPException(status_code=422, detail="Actual No. of Shots must be a whole number of 0 or more.")
+                entry.actual_shots = int(shots)
 
     if run.status == "pending":
         run.status = "saved"

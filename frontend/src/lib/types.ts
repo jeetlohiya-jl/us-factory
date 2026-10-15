@@ -63,6 +63,10 @@ export interface SkuVersion {
   // Rate) reads these off the same per-SKU-Version reference data.
   prod_dimensions?: string | null;
   prod_absorption_rate?: string | null;
+  // Migration 0086 -- India Factory lamination-machine attributes.
+  prod_mould_number?: string | null;
+  prod_design?: string | null;
+  prod_liner_thickness?: string | null;
   // 2026-09-25 -- Packing List packaging specs, same "entered once via the
   // SKU Names admin screen" convention as the prod_* fields above.
   hs_code?: string | null;
@@ -686,7 +690,13 @@ export interface Machine {
   // Section 11 -- admin-supplied 2-digit number used as the M<nn> segment
   // of the FG Storage Batch Code. Populated later by the business.
   batch_number: string | null;
+  // Migration 0086 (India Factory): lamination / trimming / padding and the
+  // machine's own target shots. null for legacy / Factory machines.
+  machine_type?: MachineType | null;
+  target_shots?: number | null;
 }
+
+export type MachineType = "lamination" | "trimming" | "padding";
 
 export type SecondaryMaterialCategory = "cfb" | "pad" | "glue" | "polybag";
 
@@ -806,8 +816,16 @@ export interface ProductionMachineEntry {
     prod_target_shots: string | null;
     prod_pad_type: string | null;
     prod_pad_color: string | null;
-    prod_case_type: string | null;
+    // Migration 0086 -- India Factory lamination attributes.
+    prod_mould_number: string | null;
+    prod_design: string | null;
+    prod_liner_thickness: string | null;
   } | null;
+  // Migration 0086 -- the machine's own type / target shots (India Factory)
+  // and the Actual No. of Shots entered on this Production record.
+  machine_type: MachineType | null;
+  machine_target_shots: number | null;
+  actual_shots: number | null;
   // Section 12 -- genuinely new fields, no upstream source, entered per
   // machine entry.
   machine_no: string | null;
@@ -890,7 +908,7 @@ export interface ProductionSavePayload {
   machine_entry_attributes: {
     machine_entry_id: string;
     weight?: string; pcs_per_sleeve?: string; sleeve_per_case?: string; total_pcs_per_pallet?: string;
-    pad_type?: string; pad_color?: string; case_type?: string;
+    pad_type?: string; pad_color?: string;
     machine_no?: string; auto_padding?: string; container_order_no?: string;
     rejection_damage?: string; rejection_misplaced_glue?: string; rejection_misplaced_pad?: string;
     rejection_glue_on_pad?: string; rejection_pad_placement_direction?: string; rejection_adhesion_issue?: string;
@@ -898,6 +916,8 @@ export interface ProductionSavePayload {
     rejection_foreign_material?: string; rejection_glue_strings?: string; rejection_pad_direction?: string;
     rejection_pad_placement?: string; rejection_stickiness?: string;
     pallets_produced?: string;
+    // Migration 0086 -- "" clears it back to "not entered".
+    actual_shots?: string;
   }[];
   // This device's own clock ("HH:MM") -- saving this record now stamps
   // end_time on every Material Consumption machine entry it feeds, same

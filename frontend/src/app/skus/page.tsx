@@ -38,6 +38,14 @@ const PROD_DETAIL_FIELDS: { key: keyof SkuVersion; label: string; numeric?: bool
   { key: "prod_absorption_rate", label: "Absorption Rate" },
 ];
 
+// India Factory only (migration 0086) -- lamination-machine attributes,
+// entered once per SKU Version here and auto-populated on Production.
+const INDIA_PROD_DETAIL_FIELDS: { key: keyof SkuVersion; label: string; options?: string[] }[] = [
+  { key: "prod_mould_number", label: "Mould Number" },
+  { key: "prod_design", label: "Design (Old / New)", options: ["Old", "New"] },
+  { key: "prod_liner_thickness", label: "Liner Thickness" },
+];
+
 function computeTotalPcsPerPallet(form: ProdDetailsForm): number | null {
   const trays = Number((form.prod_pcs_per_sleeve || "").trim());
   const sleeves = Number((form.prod_sleeve_per_case || "").trim());
@@ -55,9 +63,13 @@ function SkuVersionDetailsModal({
   onClose: () => void;
   onSave: (patch: Record<string, string | number | null>) => Promise<void>;
 }) {
+  const isIndia = useProduct() === "us_factory";
+  const fields: { key: keyof SkuVersion; label: string; numeric?: boolean; options?: string[] }[] = isIndia
+    ? [PROD_DETAIL_FIELDS[0], ...INDIA_PROD_DETAIL_FIELDS, ...PROD_DETAIL_FIELDS.slice(1)]
+    : PROD_DETAIL_FIELDS;
   const [form, setForm] = useState<ProdDetailsForm>(() => {
     const init: ProdDetailsForm = {};
-    for (const f of PROD_DETAIL_FIELDS) init[f.key] = version[f.key] != null ? String(version[f.key]) : "";
+    for (const f of fields) init[f.key] = version[f.key] != null ? String(version[f.key]) : "";
     return init;
   });
   const [saving, setSaving] = useState(false);
@@ -68,7 +80,7 @@ function SkuVersionDetailsModal({
     setError(null);
     try {
       const patch: Record<string, string | number | null> = {};
-      for (const f of PROD_DETAIL_FIELDS) {
+      for (const f of fields) {
         const raw = (form[f.key] || "").trim();
         patch[f.key] = raw === "" ? null : (f.numeric ? Number(raw) : raw);
       }
@@ -96,15 +108,22 @@ function SkuVersionDetailsModal({
           <button className="sp-close" onClick={onClose}>×</button>
         </div>
         <div className="sp-body">
-          {PROD_DETAIL_FIELDS.map((f) => (
+          {fields.map((f) => (
             <div key={f.key}>
               <div className="field">
                 <label>{f.label}</label>
-                <input
-                  type={f.numeric ? "number" : "text"}
-                  value={form[f.key] || ""}
-                  onChange={(e) => setForm((prev) => ({ ...prev, [f.key]: e.target.value }))}
-                />
+                {f.options ? (
+                  <select value={form[f.key] || ""} onChange={(e) => setForm((prev) => ({ ...prev, [f.key]: e.target.value }))}>
+                    <option value="">—</option>
+                    {f.options.map((o) => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                ) : (
+                  <input
+                    type={f.numeric ? "number" : "text"}
+                    value={form[f.key] || ""}
+                    onChange={(e) => setForm((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                  />
+                )}
               </div>
               {f.key === "prod_sleeve_per_case" && (
                 <div className="field">

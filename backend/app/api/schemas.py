@@ -519,6 +519,9 @@ class ProductionMachineEntryAttributesIn(BaseModel):
     # pattern as Rejection Classification). None-means-"don't touch",
     # empty/omitted means 0 -- same convention as the rejection_* fields.
     pallets_produced: Optional[str] = None
+    # Migration 0086 -- Actual No. of Shots (whole number >= 0). None means
+    # "don't touch"; empty string clears it back to "not entered".
+    actual_shots: Optional[str] = None
 
 
 class ProductionSaveIn(BaseModel):
@@ -793,6 +796,9 @@ class MachineOut(BaseModel):
     id: uuid.UUID
     code: str
     is_active: bool = True
+    # Migration 0086 (India Factory); null for legacy / Factory machines.
+    machine_type: Optional[str] = None
+    target_shots: Optional[int] = None
 
 
 class MachineIn(BaseModel):

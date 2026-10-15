@@ -973,11 +973,12 @@ function prodFlattenPallet(row: RawProdPallet): MaterialConsumptionPalletRow {
 type RawProdSkuVersionDetails = {
   prod_weight: string | null; prod_pcs_per_sleeve: string | null; prod_sleeve_per_case: string | null;
   prod_total_pcs_per_pallet: number | null; prod_total_pallets: number | null; prod_target_shots: string | null;
-  prod_pad_type: string | null; prod_pad_color: string | null; prod_case_type: string | null;
+  prod_pad_type: string | null; prod_pad_color: string | null;
+  prod_mould_number: string | null; prod_design: string | null; prod_liner_thickness: string | null;
 } | null;
 
 type RawProdMachineEntry = {
-  id: string; machine: { code: string } | null; category: string | null;
+  id: string; machine: { code: string; machine_type: string | null; target_shots: number | null } | null; category: string | null;
   sku_code: string | null; sku_version: string | null; sku_version_id: string | null;
   start_time: string | null; end_time: string | null;
   sort_order: number; pallets: RawProdPallet[];
@@ -985,7 +986,6 @@ type RawProdMachineEntry = {
   // Section 12 -- per-machine-entry overrides / new fields (migration 0034).
   override_weight: string | null; override_pcs_per_sleeve: string | null; override_sleeve_per_case: string | null;
   override_total_pcs_per_pallet: string | null; override_pad_type: string | null; override_pad_color: string | null;
-  override_case_type: string | null;
   machine_no: string | null; auto_padding: string | null; container_order_no: string | null;
   // Rejection Classification, per machine entry (migration 0038).
   rejection_damage: number | string; rejection_misplaced_glue: number | string; rejection_misplaced_pad: number | string;
@@ -995,6 +995,8 @@ type RawProdMachineEntry = {
   rejection_pad_direction: number | string; rejection_pad_placement: number | string; rejection_stickiness: number | string;
   // Pallets Produced, per machine entry (migration 0039, task section 1).
   pallets_produced: number | string;
+  // Migration 0086 -- Actual No. of Shots entered on the Production record.
+  actual_shots: number | null;
 };
 
 // sku_version_ref is the SKU-derived Production Details lookup (migration
@@ -1003,14 +1005,14 @@ type RawProdMachineEntry = {
 // Section 12 (migration 0034) each of these has a per-machine-entry
 // override column, selected alongside it and merged in flattenProductionDetail.
 const PRODUCTION_MACHINE_ENTRY_SELECT =
-  "id,machine:machines(code),category,sku_code:sku_code_snapshot,sku_version:sku_version_snapshot,sku_version_id,start_time,end_time,sort_order," +
+  "id,machine:machines(code,machine_type,target_shots),category,sku_code:sku_code_snapshot,sku_version:sku_version_snapshot,sku_version_id,start_time,end_time,sort_order," +
   `pallets:material_consumption_pallets(${PRODUCTION_PALLET_SELECT}),` +
-  "sku_version_ref:sku_versions(prod_weight,prod_pcs_per_sleeve,prod_sleeve_per_case,prod_total_pcs_per_pallet,prod_total_pallets,prod_target_shots,prod_pad_type,prod_pad_color,prod_case_type)," +
-  "override_weight,override_pcs_per_sleeve,override_sleeve_per_case,override_total_pcs_per_pallet,override_pad_type,override_pad_color,override_case_type," +
+  "sku_version_ref:sku_versions(prod_weight,prod_pcs_per_sleeve,prod_sleeve_per_case,prod_total_pcs_per_pallet,prod_total_pallets,prod_target_shots,prod_pad_type,prod_pad_color,prod_mould_number,prod_design,prod_liner_thickness)," +
+  "override_weight,override_pcs_per_sleeve,override_sleeve_per_case,override_total_pcs_per_pallet,override_pad_type,override_pad_color," +
   "machine_no,auto_padding,container_order_no," +
   "rejection_damage,rejection_misplaced_glue,rejection_misplaced_pad,rejection_glue_on_pad,rejection_pad_placement_direction,rejection_adhesion_issue," +
   "rejection_foreign_material,rejection_glue_strings,rejection_pad_direction,rejection_pad_placement,rejection_stickiness," +
-  "pallets_produced";
+  "pallets_produced,actual_shots";
 
 type RawProdMc = { id: string; status: string; machine_entries: RawProdMachineEntry[] };
 
@@ -1084,12 +1086,14 @@ function flattenProductionDetail(raw: RawProductionRunDetail): ProductionDetail 
             prod_total_pcs_per_pallet: e.override_total_pcs_per_pallet ? Number(e.override_total_pcs_per_pallet) : ref.prod_total_pcs_per_pallet,
             prod_pad_type: e.override_pad_type || ref.prod_pad_type,
             prod_pad_color: e.override_pad_color || ref.prod_pad_color,
-            prod_case_type: e.override_case_type || ref.prod_case_type,
           }
         : null;
       machineEntries.push({
         machine_consumption_id: e.id, material_consumption_id: mc.id,
         machine: e.machine?.code ?? null, category: e.category,
+        machine_type: (e.machine?.machine_type ?? null) as ProductionMachineEntry["machine_type"],
+        machine_target_shots: e.machine?.target_shots ?? null,
+        actual_shots: e.actual_shots ?? null,
         sku_code: e.sku_code, sku_version: e.sku_version, sku_version_id: e.sku_version_id,
         start_time: e.start_time, end_time: e.end_time,
         pallets: sortedBySortOrder(e.pallets || []).filter((p) => p.role === "primary").map(prodFlattenPallet),
@@ -2071,7 +2075,7 @@ const SKU_SELECT =
   "id, code, category, is_active, batch_number, sku_code, default_unit, description, " +
   "versions:sku_versions(id, version, is_active, prod_weight, prod_pcs_per_sleeve, prod_sleeve_per_case, " +
   "prod_total_pcs_per_pallet, prod_total_pallets, prod_target_shots, prod_pad_type, prod_pad_color, prod_case_type, " +
-  "prod_dimensions, prod_absorption_rate)";
+  "prod_dimensions, prod_absorption_rate, prod_mould_number, prod_design, prod_liner_thickness)";
 
 /**
  * `GET /api/v1/inward-qc/meta` was FastAPI for a plain read: three ordered/
@@ -2737,7 +2741,7 @@ export const api = {
       listCacheKey("ref:machines", { includeInactive }),
       () =>
         sbRequest<Machine[]>(() => {
-          let q = supabase.from("machines").select("id, code, is_active, batch_number");
+          let q = supabase.from("machines").select("id, code, is_active, batch_number, machine_type, target_shots");
           if (!includeInactive) q = q.eq("is_active", true);
           return q.order("code") as unknown as Promise<{ data: Machine[] | null; error: { message: string; code?: string } | null }>;
         }),

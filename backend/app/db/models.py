@@ -142,6 +142,11 @@ class SkuVersion(Base):
     # the exact same per-SKU-Version reference data.
     prod_dimensions = Column(Text, nullable=True)
     prod_absorption_rate = Column(Text, nullable=True)
+    # Migration 0086 -- India Factory lamination-machine attributes, entered
+    # once on the SKU Names screen and auto-populated on Production.
+    prod_mould_number = Column(Text, nullable=True)
+    prod_design = Column(Text, nullable=True)
+    prod_liner_thickness = Column(Text, nullable=True)
     # 2026-09-25 -- Packing List packaging specs (migration 0058), same
     # "entered once via the SKU Names admin screen" reference-data
     # convention as the prod_* columns above. Trays/Combo on the printed
@@ -207,6 +212,11 @@ class Machine(ProductScoped, Base):
     # Section 11 -- admin-supplied 2-digit "machine number" used as the
     # M<nn> segment of the FG Storage Batch Code. Nullable, populated later.
     batch_number = Column(Text, nullable=True)
+    # Migration 0086 -- India Factory: lamination / trimming / padding, and the
+    # machine's own target number of shots. Both nullable (legacy machines
+    # have neither and behave exactly as before).
+    machine_type = Column(Text, nullable=True)
+    target_shots = Column(Integer, nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
 
@@ -1224,6 +1234,9 @@ class MaterialConsumptionMachineEntry(Base):
     # what QC actually approved for release, and the two are intentionally
     # allowed to differ.
     pallets_produced = Column(Integer, nullable=False, default=0)
+    # Migration 0086 -- Actual No. of Shots entered on the Production record
+    # (nullable = not entered yet).
+    actual_shots = Column(Integer, nullable=True)
 
     material_consumption = relationship("MaterialConsumption", back_populates="machine_entries")
     machine = relationship("Machine")
