@@ -92,7 +92,7 @@ export default function PortfolioAccessPage() {
         <div>
           <h1>Portfolio Access</h1>
           <div className="desc">
-            Control which emails see Factory and/or US Factory right after they sign in. Someone with only one
+            Control which emails see Factory and/or India Factory right after they sign in. Someone with only one
             of the two skips straight to it; someone with both is asked to choose every time.
           </div>
         </div>
@@ -113,7 +113,7 @@ export default function PortfolioAccessPage() {
           </label>
           <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, paddingBottom: 8 }}>
             <input type="checkbox" checked={newUsFactory} onChange={(e) => setNewUsFactory(e.target.checked)} />
-            US Factory
+            India Factory
           </label>
           <button className="btn btn-primary" disabled={saving || !newEmail.trim()} onClick={handleAdd}>
             {saving ? "Adding…" : "+ Add"}
@@ -131,7 +131,7 @@ export default function PortfolioAccessPage() {
             <tr>
               <th>Email</th>
               <th style={{ textAlign: "center" }}>Factory</th>
-              <th style={{ textAlign: "center" }}>US Factory</th>
+              <th style={{ textAlign: "center" }}>India Factory</th>
               <th></th>
             </tr>
           </thead>
