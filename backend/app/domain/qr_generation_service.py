@@ -84,6 +84,20 @@ def _resolve_qc_country(db: Session, qc: models.InwardQcRecord) -> str:
     return (vendor.country if vendor and vendor.country else "US")
 
 
+def is_tray_category(category: str | None) -> bool:
+    """RM Tray / LNP Tray (and legacy fgtray). Trays keep the original QR
+    workflow: one QR per received pallet, nothing asked of the user."""
+    return category in ("tray", "lnp_tray", "fgtray")
+
+
+def gr_quantity_unit(entry) -> str:
+    """What the received quantity is counted in, for messages: pallets when a
+    pallet count was recorded, else the unit the container was inwarded in."""
+    if entry is not None and entry.pallet_count:
+        return "pallet(s)"
+    return (entry.unit or "unit").lower() if entry is not None else "unit"
+
+
 def _gr_max_quantity(db: Session, entry_id) -> int | None:
     """Upper bound on RM pallet QRs for a Goods-Receipt-sourced batch: the
     pallet count recorded at inward (one QR per received pallet), else the
@@ -116,11 +130,16 @@ def get_or_create_rm_qr_for_qc(db: Session, qc: models.InwardQcRecord) -> models
     quantity = int(qc.quantity or 0)
     gr_entry_id = getattr(qc, "source_goods_receipt_entry_id", None)
     if gr_entry_id:
-        # Goods-Receipt-linked: default the batch to the received pallet
-        # count; the user confirms/edits it when generating.
-        gr_max = _gr_max_quantity(db, gr_entry_id)
-        if gr_max:
-            quantity = gr_max
+        if is_tray_category(qc.category):
+            # Trays: unchanged -- the batch is the received pallet count.
+            gr_max = _gr_max_quantity(db, gr_entry_id)
+            if gr_max:
+                quantity = gr_max
+        else:
+            # Every other material: how many QR codes to generate is the
+            # user's decision when they start generation. Nothing is
+            # defaulted from the received quantity (0 = "not chosen yet").
+            quantity = 0
 
     existing = (
         db.query(models.QrGenerationRecord)
@@ -141,7 +160,8 @@ def get_or_create_rm_qr_for_qc(db: Session, qc: models.InwardQcRecord) -> models
             existing.sku_code_snapshot = sku_code
             existing.sku_version_snapshot = sku_version
             existing.country_code = country_code
-            existing.quantity = quantity
+            if not (gr_entry_id and not is_tray_category(qc.category)):
+                existing.quantity = quantity  # a non-tray batch's count is only ever set by the user at Generate
             if gr_entry_id:
                 existing.source_goods_receipt_entry_id = gr_entry_id
             db.flush()
@@ -484,17 +504,13 @@ def generate_pallets(
         return rec
 
     gr_batch_codes: list[str] = []
-    if rec.qr_type == "rm" and rec.source_goods_receipt_entry_id:
+    if rec.qr_type == "rm" and rec.source_goods_receipt_entry_id and is_tray_category(rec.category):
+        # Trays: the original behaviour -- exactly one QR per received pallet,
+        # no count is asked for (a supplied count must match, never change it).
         gr_max = rm_qr_max_quantity(db, rec)
-        if quantity is not None:
-            if quantity <= 0:
-                raise QrGenerationError("Enter a quantity greater than 0 before generating QR codes.")
-            if gr_max is not None and quantity > gr_max:
-                raise QrGenerationError(
-                    f"Only {gr_max} pallet(s) were received for this shipment, so at most {gr_max} QR code(s) can be generated."
-                )
-            rec.quantity = quantity
-        elif gr_max is not None and rec.quantity > gr_max:
+        if quantity is not None and quantity != rec.quantity:
+            raise QrGenerationError("The quantity can't be changed for a tray QR batch: one QR code is generated per received pallet.")
+        if gr_max is not None and rec.quantity > gr_max:
             raise QrGenerationError(
                 f"Only {gr_max} pallet(s) were received for this shipment, so at most {gr_max} QR code(s) can be generated."
             )
@@ -506,6 +522,21 @@ def generate_pallets(
             .order_by(models.GoodsReceiptPalletBatch.pallet_index)
             .all()
         ]
+    elif rec.qr_type == "rm" and rec.source_goods_receipt_entry_id:
+        # Every non-tray material: the user must say how many QR codes to
+        # generate; it is validated against what was received.
+        gr_max = rm_qr_max_quantity(db, rec)
+        if quantity is None:
+            raise QrGenerationError("How many QR codes should be generated? Enter a number before generating.")
+        if quantity <= 0:
+            raise QrGenerationError("Enter a quantity greater than 0 before generating QR codes.")
+        if gr_max is not None and quantity > gr_max:
+            unit = gr_quantity_unit(db.get(models.GoodsReceiptEntry, rec.source_goods_receipt_entry_id))
+            raise QrGenerationError(
+                f"Only {gr_max} {unit} were received for this shipment, so at most {gr_max} QR code(s) can be generated."
+            )
+        rec.quantity = quantity
+        gr_batch_codes = []
     elif quantity is not None:
         raise QrGenerationError("The quantity can't be changed for this QR batch.")
 

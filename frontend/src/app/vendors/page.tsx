@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
+import { useProduct } from "@/lib/productContext";
 import { api, ApiError } from "@/lib/api";
 import { useMe } from "@/lib/useMe";
 import type { Category, Vendor } from "@/lib/types";
@@ -13,7 +14,7 @@ const CATEGORY_LABELS: Record<Category, string> = INWARD_CATEGORY_LABELS;
 // inspection doesn't change that -- the inspection's own Vendor Name is
 // entered regardless of category), so every category needs its own vendor
 // list here too.
-const MANAGED_CATEGORIES: Category[] = ["tray", "lnp_tray", "film", "pad", "polybag", "cfb", "glue"];
+const MANAGED_CATEGORIES: Category[] = ["tray", "lnp_tray", "film", "pad", "polybag", "cfb", "glue", "corner_protector"];
 
 /**
  * Admin screen for the per-category Vendor master list backing the Vendor
@@ -23,6 +24,8 @@ const MANAGED_CATEGORIES: Category[] = ["tray", "lnp_tray", "film", "pad", "poly
  * since this list only exists to serve that one field.
  */
 export default function VendorsPage() {
+  // Corner Protector is an India Factory material (it has an inward QC report).
+  const isUs = useProduct() === "us_factory";
   const me = useMe();
   const perms = me?.permissions.inward_vehicle_inspection;
   const [vendors, setVendors] = useState<Vendor[]>([]);
@@ -121,7 +124,7 @@ export default function VendorsPage() {
             <div className="field" style={{ maxWidth: 200 }}>
               <label>Category</label>
               <select value={category} onChange={(e) => setCategory(e.target.value as Category)}>
-                {MANAGED_CATEGORIES.map((c) => <option key={c} value={c}>{CATEGORY_LABELS[c]}</option>)}
+                {MANAGED_CATEGORIES.filter((c) => isUs || c !== "corner_protector").map((c) => <option key={c} value={c}>{CATEGORY_LABELS[c]}</option>)}
               </select>
             </div>
             <div className="field" style={{ flex: 1, minWidth: 220 }}>

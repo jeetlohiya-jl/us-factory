@@ -25,8 +25,9 @@ export default function QrGenerationPanel({
   title: string;
   detail: QrGenerationDetail;
   canGenerate: boolean;
-  // Receives the chosen quantity only for a Goods-Receipt-sourced RM batch
-  // (US Factory), where the user decides how many QRs after QC approval.
+  // Receives the chosen quantity only for a non-tray Goods-Receipt-sourced RM
+  // batch (India Factory), where the user decides how many QRs after QC
+  // approval. Trays (one QR per received pallet) are generated as before.
   onGenerate: (quantity?: number) => Promise<void>;
   onClose: () => void;
 }) {
@@ -35,12 +36,14 @@ export default function QrGenerationPanel({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const isGenerated = detail.status === "generated";
   const maxQty = detail.max_quantity ?? null;
-  const askQuantity = !isGenerated && maxQty != null;
-  const [qtyText, setQtyText] = useState(String(detail.quantity || maxQty || ""));
+  const askQuantity = !isGenerated && detail.max_quantity_unit != null;
+  // No default: the user states how many QR codes to generate.
+  const [qtyText, setQtyText] = useState("");
   const qtyNum = Number(qtyText);
   const qtyError = !askQuantity ? null
+    : qtyText.trim() === "" ? "Enter how many QR codes should be generated."
     : !Number.isInteger(qtyNum) || qtyNum < 1 ? "Enter a whole number of at least 1."
-    : maxQty != null && qtyNum > maxQty ? `Only ${maxQty} pallet(s) were received, so at most ${maxQty} QR code(s) can be generated.`
+    : maxQty != null && qtyNum > maxQty ? `Only ${maxQty} ${detail.max_quantity_unit || "unit(s)"} were received, so at most ${maxQty} QR code(s) can be generated.`
     : null;
   const effectiveQty = askQuantity ? (qtyError ? 0 : qtyNum) : detail.quantity;
 
@@ -93,10 +96,10 @@ export default function QrGenerationPanel({
             <div className="field"><label>Country</label><div className="readonly-val mono">{detail.country_code || "—"}</div></div>
             {askQuantity ? (
               <div className="field">
-                <label>How many QR codes to generate? <span style={{ color: "var(--red)" }}>*</span></label>
+                <label>How many QR codes should be generated? <span style={{ color: "var(--red)" }}>*</span></label>
                 <input type="number" min={1} max={maxQty ?? undefined} step={1} disabled={busy || !canGenerate}
-                  value={qtyText} onChange={(e) => setQtyText(e.target.value)} style={{ fontFamily: "var(--mono)" }} />
-                <div className="hint-text" style={{ margin: "4px 0 0" }}>{maxQty} pallet(s) received.</div>
+                  value={qtyText} placeholder="Enter a number" onChange={(e) => setQtyText(e.target.value)} style={{ fontFamily: "var(--mono)" }} />
+                <div className="hint-text" style={{ margin: "4px 0 0" }}>{maxQty != null ? `${maxQty} ${detail.max_quantity_unit || "unit(s)"} received.` : "The received quantity isn't recorded; confirm the number before generating."}</div>
               </div>
             ) : (
               <div className="field"><label>Quantity</label><div className="readonly-val mono">{detail.quantity}</div></div>
@@ -110,7 +113,7 @@ export default function QrGenerationPanel({
           {!isGenerated && (
             <div className="hint-text" style={{ marginBottom: 6 }}>
               {qtyError ? qtyError
-                : effectiveQty > 0 ? `This will generate ${effectiveQty} unique pallet QR code(s).` : "Enter a quantity greater than 0 before generating QR codes."}
+                : effectiveQty > 0 ? `This will generate ${effectiveQty} unique pallet QR code(s).` : "Enter how many QR codes should be generated."}
             </div>
           )}
 

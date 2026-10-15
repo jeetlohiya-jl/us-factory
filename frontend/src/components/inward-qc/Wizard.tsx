@@ -2,14 +2,17 @@
 import { skuMatchesCategory } from "@/lib/types";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "@/lib/api";
-import type { QcDetail, QcMeta, Permissions, SkuCode, QcManualCategory, QuantityUnit } from "@/lib/types";
+import type { QcDetail, QcMeta, Permissions, SkuCode, QuantityUnit } from "@/lib/types";
 import { QUANTITY_UNITS, TRAY_FAMILY_QC_CATEGORIES, QC_CATEGORY_LABELS } from "@/lib/types";
 import CoaField from "./CoaField";
 import FgtrayObservations from "./FgtrayObservations";
 import AttributeObservations from "./AttributeObservations";
+import ReportObservations from "./ReportObservations";
 import { T, statusLabel } from "@/lib/terms";
 
 const CATEGORY_LABELS = QC_CATEGORY_LABELS;
+// Forms built from the India inward QC reports (migration 0084).
+const INDIA_FORM_KEYS = ["rm_tray", "in_pad", "in_polybag", "in_cfb", "film", "corner_protector"];
 
 function computeClientSamplingPlan(meta: QcMeta, category: string, qty: number | null) {
   if (!category || !qty || qty <= 0) return null;
@@ -39,7 +42,9 @@ export default function Wizard({
   // (never yet explicitly Saved/Submitted) -- see handleCancel.
   isNew?: boolean;
 }) {
-  const isTray = TRAY_FAMILY_QC_CATEGORIES.includes(initialDetail.category);
+  // "Tray" here means the fixed OK / NOT OK checklist. The India RM Tray
+  // report form is a tray QC too, but an attribute form like the others.
+  const isTray = initialDetail.uses_fgtray ?? TRAY_FAMILY_QC_CATEGORIES.includes(initialDetail.category);
   const [detail, setDetail] = useState<QcDetail>(initialDetail);
   // US Factory: created from a Goods Receipt entry -- its shipment, SKU,
   // vendor and quantities are already known (read-only), so it opens straight
@@ -105,20 +110,27 @@ export default function Wizard({
   }
 
   const attrSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  function scheduleAttributeSave(nextValues: typeof detail.attribute_values, nextConclusion: string) {
+  const pendingAttrSave = useRef<{ values: typeof detail.attribute_values; conclusion: string } | null>(null);
+  async function flushAttributeSave() {
+    const pending = pendingAttrSave.current;
+    if (!pending) return;
+    pendingAttrSave.current = null;
     if (attrSaveTimer.current) clearTimeout(attrSaveTimer.current);
-    attrSaveTimer.current = setTimeout(async () => {
-      try {
-        const updated = await api.saveQcAttributes(
-          qcId,
-          nextValues.map((v) => ({ attribute_definition_id: v.attribute_definition_id, value: v.value })),
-          nextConclusion
-        );
-        setDetail(updated);
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Failed to save observation");
-      }
-    }, 500);
+    try {
+      const updated = await api.saveQcAttributes(
+        qcId,
+        pending.values.map((v) => ({ attribute_definition_id: v.attribute_definition_id, value: v.value })),
+        pending.conclusion
+      );
+      setDetail(updated);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to save observation");
+    }
+  }
+  function scheduleAttributeSave(nextValues: typeof detail.attribute_values, nextConclusion: string) {
+    pendingAttrSave.current = { values: nextValues, conclusion: nextConclusion };
+    if (attrSaveTimer.current) clearTimeout(attrSaveTimer.current);
+    attrSaveTimer.current = setTimeout(flushAttributeSave, 500);
   }
 
   function handleAttributeChange(attributeDefinitionId: string, value: string) {
@@ -132,6 +144,9 @@ export default function Wizard({
     scheduleAttributeSave(detail.attribute_values, value);
   }
 
+  const formKey = detail.form_key || detail.category;
+  const india = INDIA_FORM_KEYS.includes(formKey);
+  const ev = detail.evaluation;
   // Completion / status preview mirroring the backend's exact rules, purely
   // to drive the Submit button and hint text — the backend re-validates.
   let complete = false;
@@ -139,6 +154,11 @@ export default function Wizard({
   if (isTray) {
     complete = detail.fgtray_answers.length > 0 && detail.fgtray_answers.every((a) => a.answer === "ok" || a.answer === "not_ok");
     hasNotOk = detail.fgtray_answers.some((a) => a.answer === "not_ok");
+  } else if (india) {
+    // India report forms: the server decides (required fields, valid numbers,
+    // sampling plan, the report's accept / hold rule) and sends its reading
+    // back with every save -- the form just shows it.
+    complete = !!ev?.complete;
   } else {
     const requiredFilled = detail.attribute_values.filter((v) => v.is_required).every((v) => v.value != null && v.value !== "");
     complete = requiredFilled && conclusion.trim() !== "";
@@ -146,7 +166,9 @@ export default function Wizard({
 
   const coaOk = !grLinked || !!detail.coa_filename;
   const canSubmit = complete && coaOk;
-  const plan = computeClientSamplingPlan(meta, detail.category, quantity ? Number(quantity) : (detail.quantity ? Number(detail.quantity) : null));
+  const plan = india
+    ? (ev?.sampling ? { sampleSize: ev.sampling.sample_size, upperLimit: ev.sampling.upper_limit, note: ev.sampling.note } : null)
+    : computeClientSamplingPlan(meta, detail.category, quantity ? Number(quantity) : (detail.quantity ? Number(detail.quantity) : null));
 
   async function handleNext() {
     setSaving(true);
@@ -160,6 +182,7 @@ export default function Wizard({
     setError(null);
     try {
       if (!isTray && !grLinked) await persistBasic();
+      await flushAttributeSave();
       const updated = await api.saveQcDraft(qcId);
       setDetail(updated);
       onSaved();
@@ -176,6 +199,7 @@ export default function Wizard({
     setError(null);
     try {
       if (!isTray && !grLinked) await persistBasic();
+      await flushAttributeSave();  // never submit ahead of the last typed value
       const updated = await api.submitQc(qcId);
       setDetail(updated);
       onSubmitted?.(updated);
@@ -203,11 +227,12 @@ export default function Wizard({
     if (!touched && detail.status === "draft" && !isTray && !grLinked) {
       try { await api.discardQcIfBlank(qcId); } catch { /* best-effort */ }
     }
+    await flushAttributeSave();  // keep what was typed in the last half second
     onClose(false);
   }
 
-  const conclusionLabel = !isTray ? meta.conclusion_labels[detail.category as QcManualCategory] : "";
-  const countLabel = !isTray ? meta.count_labels[detail.category as QcManualCategory] : "";
+  const conclusionLabel = !isTray ? (meta.conclusion_labels[formKey] || "Conclusion") : "";
+  const countLabel = !isTray ? (meta.count_labels[formKey] || "") : "";
 
   return (
     <>
@@ -237,7 +262,21 @@ export default function Wizard({
                 {detail.goods_receipt.pallet_count != null && (
                   <div><div className="detail-kv-label">Pallets</div><div className="detail-kv-value">{detail.goods_receipt.pallet_count}</div></div>
                 )}
+                {detail.goods_receipt.received_at && (
+                  <div><div className="detail-kv-label">Receiving Date</div><div className="detail-kv-value">{new Date(detail.goods_receipt.received_at).toLocaleString()}</div></div>
+                )}
+                {detail.submitted_at && (
+                  <div><div className="detail-kv-label">Inspection Date</div><div className="detail-kv-value">{new Date(detail.submitted_at).toLocaleString()}</div></div>
+                )}
               </div>
+              {detail.goods_receipt.sku_spec && (
+                <div style={{ marginTop: 12 }}>
+                  <div className="detail-kv-label">SKU specification (for reference)</div>
+                  <div style={{ fontSize: 12.5, lineHeight: 1.7 }}>
+                    {Object.entries(detail.goods_receipt.sku_spec).map(([k, v]) => `${k}: ${v}`).join("  ·  ")}
+                  </div>
+                </div>
+              )}
               {detail.goods_receipt.batch_numbers.length > 0 && (
                 <div style={{ marginTop: 12 }}>
                   <div className="detail-kv-label">Batch Numbers ({detail.goods_receipt.batch_numbers.length})</div>
@@ -326,11 +365,31 @@ export default function Wizard({
                     <>
                       <div className="pc-item"><div className="k">Sampling Size</div><div className="v">{plan.sampleSize} samples</div></div>
                       <div className="pc-item"><div className="k">Upper Limit for Acceptance</div><div className="v">{plan.upperLimit === null ? "Not specified" : `${plan.upperLimit} defects`}</div></div>
+                      {plan.note && <div className="pc-item"><div className="k">Note</div><div className="v" style={{ fontSize: 13 }}>{plan.note}</div></div>}
                     </>
                   )}
                 </div>
               )}
-              <div className="hint-text" style={{ fontWeight: 700, marginBottom: 14, color: complete ? (hasNotOk ? "var(--red)" : "var(--green-deep)") : "var(--ink-50)" }}>
+              {india && !plan && (
+                <div className="hint-text" style={{ marginBottom: 12 }}>
+                  {ev?.lot_quantity
+                    ? `The report's sampling plan has no entry for a lot of ${ev.lot_quantity}. Confirm the sample size with QA.`
+                    : "Enter the quantity received (or Quantity/Pallet for the RM Tray) to see the sampling plan."}
+                </div>
+              )}
+              {india && (
+                <div className="hint-text" style={{ fontWeight: 700, marginBottom: 14, color: !complete ? "var(--ink-50)" : ev?.outcome === "onhold" ? "var(--red)" : "var(--green-deep)" }}>
+                  {!complete
+                    ? `Still needed before this can be approved: ${(ev?.missing || []).join("; ") || "—"}. Until then it stays Pending.`
+                    : !coaOk
+                    ? "Upload the COA to approve this record. Until then it stays Pending."
+                    : ev?.outcome === "onhold"
+                    ? "Complete — this record will be set to On Hold."
+                    : "Complete — this record will be set to Accepted."}
+                  {(ev?.messages || []).map((m, i) => <div key={i} style={{ fontWeight: 600 }}>{m}</div>)}
+                </div>
+              )}
+              <div hidden={india} className="hint-text" style={{ fontWeight: 700, marginBottom: 14, color: complete ? (hasNotOk ? "var(--red)" : "var(--green-deep)") : "var(--ink-50)" }}>
                 {complete && !coaOk
                   ? "Upload the COA to approve this record. Until then it stays Pending."
                   : complete
@@ -343,10 +402,13 @@ export default function Wizard({
               ) : (
                 <>
                   {countLabel && <div className="hint-text" style={{ marginBottom: 10 }}>{countLabel}: {plan ? `${plan.sampleSize} samples (auto, from Sampling Plan)` : ""}</div>}
-                  <AttributeObservations values={detail.attribute_values} coaFilename={detail.coa_filename} onChange={handleAttributeChange} disabled={!canFillSection} />
+                  {india && ev?.failed_count != null && <div className="hint-text" style={{ marginBottom: 10 }}>Failed products so far: {ev.failed_count}{ev.upper_limit != null ? ` of an upper limit of ${ev.upper_limit}` : ""}</div>}
+                  {india
+                    ? <ReportObservations values={detail.attribute_values} onChange={handleAttributeChange} disabled={!canFillSection || (detail.status === "accepted")} />
+                    : <AttributeObservations values={detail.attribute_values} coaFilename={detail.coa_filename} onChange={handleAttributeChange} disabled={!canFillSection} />}
                   <div className="field" style={{ marginTop: 14 }}>
                     <label>{conclusionLabel}</label>
-                    <textarea rows={2} disabled={!canFillSection} defaultValue={conclusion} onBlur={(e) => handleConclusionChange(e.target.value)} />
+                    <textarea rows={2} disabled={!canFillSection || (grLinked && detail.status === "accepted")} defaultValue={conclusion} onBlur={(e) => handleConclusionChange(e.target.value)} />
                   </div>
                 </>
               )}

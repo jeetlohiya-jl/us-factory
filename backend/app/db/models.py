@@ -421,6 +421,15 @@ class InwardQcAttributeDefinition(Base):
     is_required = Column(Boolean, nullable=False, default=False)
     sort_order = Column(Integer, nullable=False, default=0)
     is_active = Column(Boolean, nullable=False, default=True)
+    # India report forms (migration 0084): the printed report's own columns.
+    description = Column(Text, nullable=True)
+    tolerance = Column(Text, nullable=True)
+    defect_type = Column(Text, nullable=True)        # Critical | Major | Minor
+    inspection_method = Column(Text, nullable=True)
+    acceptable_limit = Column(Text, nullable=True)   # defect rows (RM Tray)
+    section = Column(Text, nullable=False, default="attribute")  # attribute | defect
+    lot_role = Column(Text, nullable=True)           # lot_qty | qty_per_pallet
+    auto_source = Column(Text, nullable=True)
 
 
 class InwardQcAttributeValue(Base):

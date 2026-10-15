@@ -72,8 +72,8 @@ function InwardQcPageContent() {
     setLoading(true);
     setLoadError(null);
     try {
-      const key = listCacheKey(MODULE, { search, status: fStatus, category: fCategory, date: fDate, page });
-      const res = await cachedList(key, () => api.listQc({ search, status: fStatus, category: fCategory, date: fDate, page }));
+      const key = listCacheKey(MODULE, { search, status: fStatus, category: fCategory, date: fDate, page, pendingFirst: isUs ? "1" : "" });
+      const res = await cachedList(key, () => api.listQc({ search, status: fStatus, category: fCategory, date: fDate, page, pendingFirst: isUs }));
       setItems(res.items);
       setMatchedCount(res.matched_count);
       setTotalCount(res.total_count);
@@ -82,7 +82,7 @@ function InwardQcPageContent() {
     } finally {
       setLoading(false);
     }
-  }, [search, fStatus, fCategory, fDate, page]);
+  }, [search, fStatus, fCategory, fDate, page, isUs]);
 
   useEffect(() => {
     cachedList("inward-qc-meta:meta", () => api.qcMeta(), REFERENCE_STALE_MS).then(setMeta).catch(() => setMeta(null));
@@ -223,7 +223,10 @@ function InwardQcPageContent() {
               <div className="f-row"><label>Category</label>
                 <select value={fCategory} onChange={(e) => setFCategory(e.target.value)}>
                   <option value="">All</option>
+                  {isUs && <option value="tray">{CATEGORY_LABELS.tray}</option>}
                   <option value="lnp_tray">LNP Tray</option>
+                  {isUs && <option value="film">{CATEGORY_LABELS.film}</option>}
+                  {isUs && <option value="corner_protector">{CATEGORY_LABELS.corner_protector}</option>}
                   <option value="pad">Soaker Pad</option>
                   <option value="polybag">Polybag</option>
                   <option value="cfb">CFB</option>
@@ -255,16 +258,17 @@ function InwardQcPageContent() {
       <div className="card card-flush">
         <table className="data">
           <thead>
-            <tr><th>{T.shipmentNumber}</th><th>Category</th><th>COA</th><th>Status</th><th>Date</th><th></th></tr>
+            <tr><th>{T.shipmentNumber}</th><th>Category</th>{isUs && <th>{T.sku}</th>}<th>COA</th><th>Status</th><th>Date</th><th></th></tr>
           </thead>
           <tbody>
             {items.length === 0 ? (
-              <tr className="empty-row"><td colSpan={6}>{loading ? "Loading…" : "No records match your search/filters."}</td></tr>
+              <tr className="empty-row"><td colSpan={isUs ? 7 : 6}>{loading ? "Loading…" : "No records match your search/filters."}</td></tr>
             ) : (
               items.map((r) => (
                 <tr key={r.id} className={r.status === "pending" ? "row-pending" : ""} style={{ cursor: "pointer" }} onClick={() => handleRowClick(r)}>
                   <td className="mono">{r.shipment_number}</td>
                   <td>{CATEGORY_LABELS[r.category]}</td>
+                  {isUs && <td className="mono">{r.sku_code_snapshot || "—"}{r.sku_version_snapshot ? ` · ${r.sku_version_snapshot}` : ""}</td>}
                   <td>{r.coa_filename || "—"}</td>
                   <td><StatusBadge status={r.status} /></td>
                   <td>{new Date(r.created_at).toLocaleDateString()}</td>

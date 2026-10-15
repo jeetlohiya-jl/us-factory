@@ -33,12 +33,17 @@ import type {
 // exactly, since CategoryPicker renders these in array order and a
 // different order here would be a visible (if minor) UI change.
 const QC_MANUAL_CATEGORIES: QcManualCategory[] = ["cfb", "glue", "pad", "polybag"];
-const QC_COUNT_LABEL: Record<QcManualCategory, string> = {
+const QC_COUNT_LABEL: Record<string, string> = {
   pad: "Number of pads to be checked", polybag: "Number of bags to be checked",
   cfb: "Number of bags to be checked", glue: "Number of units to be checked",
+  // India report forms -- the label each printed report uses.
+  rm_tray: "No. of Samples Checked", in_pad: "No. of pads checked", in_polybag: "No. of bags checked",
+  in_cfb: "No. of box checked", film: "No. of rolls checked", corner_protector: "No. of Corner Protector checked",
 };
-const QC_CONCLUSION_LABEL: Record<QcManualCategory, string> = {
+const QC_CONCLUSION_LABEL: Record<string, string> = {
   pad: "Suggestions", polybag: "Conclusion", cfb: "Conclusion", glue: "Conclusion",
+  rm_tray: "Conclusion", in_pad: "Suggestions", in_polybag: "Remarks", in_cfb: "Conclusion",
+  film: "Conclusion", corner_protector: "Suggestions",
 };
 
 // Reference/master data (machines, vendors, SKUs) changes only through the
@@ -245,7 +250,7 @@ async function qrGetDetail(qrType: "rm" | "fg", id: string): Promise<QrGeneratio
       "id,batch_display_id,qr_type,category,shipment_number,sku_code_snapshot,sku_version_snapshot,country_code,quantity,status,created_at,generated_at," +
         "source_inward_qc_id,source_production_run_id,source_goods_receipt_entry_id," +
         "source_inward_qc:inward_qc_records(shipment_number),source_production_run:production_runs(run_number)," +
-        "source_goods_receipt_entry:goods_receipt_entries!qr_generation_records_source_goods_receipt_entry_id_fkey(shipment_number,pallet_count,received_quantity,goods_receipt:goods_receipts(po_number))," +
+        "source_goods_receipt_entry:goods_receipt_entries!qr_generation_records_source_goods_receipt_entry_id_fkey(shipment_number,pallet_count,received_quantity,unit,goods_receipt:goods_receipts(po_number))," +
         `pallets(${PALLET_SELECT})`
     )
     .eq("id", id)
@@ -258,17 +263,23 @@ async function qrGetDetail(qrType: "rm" | "fg", id: string): Promise<QrGeneratio
     status: "pending" | "generated"; created_at: string; generated_at: string | null;
     source_inward_qc_id: string | null; source_production_run_id: string | null; source_goods_receipt_entry_id: string | null;
     source_inward_qc: { shipment_number: string } | null; source_production_run: { run_number: string } | null;
-    source_goods_receipt_entry: { shipment_number: string; pallet_count: number | null; received_quantity: number | string | null; goods_receipt: { po_number: string } | null } | null;
+    source_goods_receipt_entry: { shipment_number: string; pallet_count: number | null; received_quantity: number | string | null; unit: string | null; goods_receipt: { po_number: string } | null } | null;
     pallets: RawPallet[];
   };
   const grEntry = raw.source_goods_receipt_entry;
-  // US Factory: a still-pending RM batch born from an approved Inward QC asks
-  // "how many QR codes?" -- capped at the pallets actually received.
-  const maxQuantity = raw.qr_type === "rm" && raw.status === "pending" && raw.source_inward_qc_id && grEntry
+  // India Factory: a still-pending RM batch born from an approved Inward QC
+  // asks "how many QR codes should be generated?" for every material EXCEPT
+  // trays (RM / LNP Tray keep one QR per received pallet, nothing asked) --
+  // validated against what was received (pallets if counted, else the unit).
+  const isTray = raw.category === "tray" || raw.category === "lnp_tray" || raw.category === "fgtray";
+  const asksCount = raw.qr_type === "rm" && raw.status === "pending" && !!raw.source_inward_qc_id && !!grEntry && !isTray;
+  const maxQuantity = asksCount && grEntry
     ? (grEntry.pallet_count ?? (grEntry.received_quantity != null ? Math.floor(Number(grEntry.received_quantity)) : null))
     : null;
+  const maxQuantityUnit = asksCount && grEntry ? (grEntry.pallet_count ? "pallet(s)" : (grEntry.unit || "unit").toLowerCase()) : null;
   return {
     max_quantity: maxQuantity,
+    max_quantity_unit: maxQuantityUnit,
     id: raw.id, batch_display_id: raw.batch_display_id, qr_type: raw.qr_type, category: raw.category,
     shipment_number: raw.shipment_number, sku_code_snapshot: raw.sku_code_snapshot, sku_version_snapshot: raw.sku_version_snapshot,
     country_code: raw.country_code, quantity: raw.quantity, status: raw.status, created_at: raw.created_at,
@@ -2078,7 +2089,7 @@ async function qcMetaSb(): Promise<QcMeta> {
     await Promise.all([
       supabase
         .from("inward_qc_attribute_definitions")
-        .select("id,category,label,field_type,options_json,is_required,sort_order")
+        .select("id,category,label,field_type,options_json,is_required,sort_order,description,tolerance,defect_type,inspection_method,acceptable_limit,section,lot_role")
         .eq("is_active", true)
         .order("category")
         .order("sort_order") as unknown as Promise<{ data: QcAttributeDefinition[] | null; error: { message: string } | null }>,
@@ -2096,10 +2107,10 @@ async function qcMetaSb(): Promise<QcMeta> {
   const err = attrErr || critErr || tierErr;
   if (err) throw new ApiError(500, err.message);
 
-  const attribute_definitions = QC_MANUAL_CATEGORIES.reduce((acc, cat) => {
-    acc[cat] = (attrRows || []).filter((a) => a.category === cat);
-    return acc;
-  }, {} as Record<QcManualCategory, QcAttributeDefinition[]>);
+  // Every form key that has definitions (the four manual categories plus the
+  // India report forms), grouped in one pass over the rows already fetched.
+  const attribute_definitions: Record<string, QcAttributeDefinition[]> = { cfb: [], glue: [], pad: [], polybag: [] };
+  for (const a of attrRows || []) (attribute_definitions[a.category] ||= []).push(a);
 
   // First tier row per category is this category's qty_label -- same
   // "first match wins" lookup `quantity_label_for()` does server-side.
@@ -2546,11 +2557,11 @@ export const api = {
   // only the initial read risks a URL-shape mismatch FastAPI itself
   // hasn't resolved yet; listQc has no coa_url field at all, so it's free
   // of that ambiguity.
-  listQc: async (params: { search?: string; status?: string; category?: string; date?: string; page?: number }) => {
+  listQc: async (params: { search?: string; status?: string; category?: string; date?: string; page?: number; pendingFirst?: boolean }) => {
     const page = params.page && params.page > 0 ? params.page : 1;
     const base = supabase
       .from("inward_qc_records")
-      .select("id,shipment_number,category,coa_filename,status,created_at", { count: "exact" });
+      .select("id,shipment_number,category,coa_filename,status,created_at,sku_code_snapshot,sku_version_snapshot", { count: "exact" });
     // Every current LNP Tray QC record is written with category="lnp_tray",
     // but records auto-created before that passthrough existed still carry
     // the old "fgtray" value (see inward_qc_service.TRAY_FAMILY_CATEGORIES)
@@ -2563,7 +2574,13 @@ export const api = {
     } else if (params.category) {
       filtered = filtered.eq("category", params.category);
     }
-    const ordered = (filtered as unknown as typeof base).order("created_at", { ascending: false }).range((page - 1) * LIST_PAGE_SIZE, page * LIST_PAGE_SIZE - 1);
+    // India Factory: records that still need action (Pending, then On Hold)
+    // sort above the finished ones -- 'pending' > 'onhold' > 'draft' >
+    // 'accepted' descending -- newest first within each group. Gainesville's
+    // order (newest first) is unchanged.
+    let ordered0 = filtered as unknown as typeof base;
+    if (params.pendingFirst) ordered0 = ordered0.order("status", { ascending: false });
+    const ordered = ordered0.order("created_at", { ascending: false }).range((page - 1) * LIST_PAGE_SIZE, page * LIST_PAGE_SIZE - 1);
     const { data, error, count } = await ordered;
     if (error) throw new ApiError(500, error.message);
     // 2026-09-24 -- mirror listInspections' hasActiveFilter guard: with no

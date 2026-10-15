@@ -95,6 +95,7 @@ export const CATEGORY_LABELS: Record<string, string> = {
   lnp_tray: T.lnpTray,
   fgtray: T.lnpTray,
   film: "Film",
+  corner_protector: "Corner Protector",
   pad: "Soaker Pad",
   polybag: "Polybag",
   cfb: "CFB",

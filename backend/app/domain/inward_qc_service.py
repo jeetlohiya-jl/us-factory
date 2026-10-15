@@ -25,7 +25,15 @@ MANUAL_CATEGORIES = {"pad", "polybag", "cfb", "glue"}
 # only LNP Tray is an active workflow; RM is wired up for future
 # use), each producing its own correctly-labeled QC record.
 TRAY_FAMILY_CATEGORIES = {"tray", "lnp_tray", "fgtray"}
-ALL_CATEGORIES = MANUAL_CATEGORIES | TRAY_FAMILY_CATEGORIES
+# India report forms (migration 0084). film / corner_protector exist only as
+# Goods Receipt-created QC records (never created by hand); the rest of the
+# India forms are additional "form keys" of existing categories -- see
+# form_key().
+REPORT_CATEGORIES = {"film", "corner_protector"}
+ALL_CATEGORIES = MANUAL_CATEGORIES | TRAY_FAMILY_CATEGORIES | REPORT_CATEGORIES
+INDIA_FORM_KEYS = {"rm_tray", "in_pad", "in_polybag", "in_cfb", "film", "corner_protector"}
+# Every key that has field definitions (what /meta returns).
+FORM_KEYS = MANUAL_CATEGORIES | INDIA_FORM_KEYS
 
 QC_ID_PREFIX = {"pad": "US-PAD", "polybag": "US-PB", "cfb": "US-CFB", "glue": "US-GLUE"}
 
@@ -41,7 +49,43 @@ CONCLUSION_LABEL = {
     "polybag": "Conclusion",
     "cfb": "Conclusion",
     "glue": "Conclusion",
+    # India report forms -- the label each printed report uses.
+    "rm_tray": "Conclusion",
+    "in_pad": "Suggestions",
+    "in_polybag": "Remarks",
+    "in_cfb": "Conclusion",
+    "film": "Conclusion",
+    "corner_protector": "Suggestions",
 }
+QC_COUNT_LABEL.update({
+    "rm_tray": "No. of Samples Checked",
+    "in_pad": "No. of pads checked",
+    "in_polybag": "No. of bags checked",
+    "in_cfb": "No. of box checked",
+    "film": "No. of rolls checked",
+    "corner_protector": "No. of Corner Protector checked",
+})
+
+
+def form_key(qc: models.InwardQcRecord) -> str:
+    """Which field-definition / sampling-plan set a QC record uses. A QC that
+    came from a Goods Receipt entry (India Factory) uses the form built from
+    that material's inward QC report; everything else keeps the original
+    category-keyed forms, so Gainesville is untouched. LNP Tray and Glue have
+    no report and keep their existing form."""
+    if qc.source_goods_receipt_entry_id is not None:
+        if qc.category == "tray":
+            return "rm_tray"
+        if qc.category in ("pad", "polybag", "cfb"):
+            return "in_" + qc.category
+    return qc.category
+
+
+def uses_fgtray(qc: models.InwardQcRecord) -> bool:
+    """True for the fixed OK / NOT OK checklist (LNP Tray, and tray QCs that
+    did not come from a Goods Receipt entry); False for every attribute form,
+    including the India RM Tray report form."""
+    return qc.category in TRAY_FAMILY_CATEGORIES and form_key(qc) != "rm_tray"
 
 
 def next_shipment_number(db: Session, category: str) -> tuple[str, bool]:
@@ -60,7 +104,10 @@ def quantity_label_for(db: Session, category: str) -> str:
     return tier.qty_label if tier else "Quantity"
 
 
-def tier_for(db: Session, category: str, qty: float) -> models.InwardQcSamplingPlanTier | None:
+def tier_for(db: Session, category: str, qty: float, strict: bool = False) -> models.InwardQcSamplingPlanTier | None:
+    """strict (India report forms): a lot size that falls in no printed tier
+    has no plan -- nothing is guessed. The original forms keep falling back to
+    the last tier."""
     tiers = (
         db.query(models.InwardQcSamplingPlanTier)
         .filter(models.InwardQcSamplingPlanTier.category == category)
@@ -74,17 +121,17 @@ def tier_for(db: Session, category: str, qty: float) -> models.InwardQcSamplingP
         max_q = float(t.max_qty) if t.max_qty is not None else float("inf")
         if min_q <= qty <= max_q:
             return t
-    return tiers[-1]
+    return None if strict else tiers[-1]
 
 
-def compute_sampling_plan(db: Session, category: str, qty: float | None) -> dict | None:
+def compute_sampling_plan(db: Session, category: str, qty: float | None, strict: bool = False) -> dict | None:
     """Mirrors qcComputeSamplingPlan(). Returns None while quantity/category
     are missing, exactly like the prototype leaves the callout blank."""
     if not category or qty is None or qty <= 0:
         return None
     if category in TRAY_FAMILY_CATEGORIES:
         return {"sample_size": "Full carton-box check", "upper_limit": "0", "note": None, "sampling_approach": "Fixed 3-point box check"}
-    tier = tier_for(db, category, qty)
+    tier = tier_for(db, category, qty, strict)
     if not tier:
         return None
     return {
@@ -167,10 +214,128 @@ def compute_manual_status(db: Session, qc: models.InwardQcRecord) -> str:
     return "accepted" if (all_required_filled and conclusion_filled) else "pending"
 
 
+def _num(value) -> float | None:
+    try:
+        return float(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def lot_quantity(db: Session, qc: models.InwardQcRecord) -> float | None:
+    """The quantity the sampling plan is looked up with. Original forms: the
+    QC's own quantity. India report forms: the field that drives the plan --
+    pieces / rolls received (lot_role 'lot_qty'), or, for the RM Tray report,
+    Quantity/Pallet x pallets received (the plan counts pieces per container)."""
+    key = form_key(qc)
+    if key not in INDIA_FORM_KEYS:
+        return float(qc.quantity) if qc.quantity else None
+    values = {v.attribute_definition_id: v.value for v in qc.attribute_values}
+    defs = get_attribute_definitions(db, key)
+    if key == "rm_tray":
+        per = next((_num(values.get(d.id)) for d in defs if d.lot_role == "qty_per_pallet"), None)
+        pallets = float(qc.quantity) if qc.quantity else None
+        return per * pallets if per and per > 0 and pallets else None
+    lot = next((_num(values.get(d.id)) for d in defs if d.lot_role == "lot_qty"), None)
+    return lot if lot and lot > 0 else None
+
+
+def sampling_plan_for(db: Session, qc: models.InwardQcRecord) -> dict | None:
+    if uses_fgtray(qc):
+        return compute_sampling_plan(db, qc.category, float(qc.quantity) if qc.quantity else None)
+    key = form_key(qc)
+    return compute_sampling_plan(db, key, lot_quantity(db, qc), strict=key in INDIA_FORM_KEYS)
+
+
+def evaluate(db: Session, qc: models.InwardQcRecord) -> dict:
+    """The one place a QC's completeness and outcome are decided. Returns
+    {complete, outcome, missing, messages, failed_count, upper_limit,
+    lot_quantity, sampling}; outcome is pending / accepted / onhold.
+
+    Original forms (Gainesville) behave exactly as before. India report forms
+    add: numeric fields must be valid non-negative numbers, dropdown fields
+    must hold one of their options, and the outcome follows the report --
+      * RM Tray: defects found across the sample > the sampling plan's upper
+        limit (6 / 8), or a defect over its own printed limit (Metal burrs 1,
+        Uneven thickness 2, Holes 1)  ->  On Hold (100% inspection);
+      * RM Film: "Accept / Reject" = Reject  ->  On Hold;
+      * Soaker Pad / Polybag / CFB / Corner Protector: their reports have no
+        failed-count field, so a complete inspection is Accepted.
+    """
+    key = form_key(qc)
+    if uses_fgtray(qc):
+        status = compute_fgtray_status(db, qc)
+        answers = {a.criteria_id: a.answer for a in qc.fgtray_answers}
+        unanswered = [c.label for c in get_fgtray_criteria(db) if answers.get(c.id) not in ("ok", "not_ok")]
+        return {"complete": status != "pending", "outcome": status, "missing": unanswered, "messages": [],
+                "failed_count": sum(1 for a in answers.values() if a == "not_ok"), "upper_limit": 0,
+                "lot_quantity": None, "sampling": sampling_plan_for(db, qc)}
+
+    defs = get_attribute_definitions(db, key)
+    values = {v.attribute_definition_id: v.value for v in qc.attribute_values}
+    india = key in INDIA_FORM_KEYS
+    missing: list[str] = []
+    messages: list[str] = []
+    for d in defs:
+        val = values.get(d.id)
+        blank = val in (None, "") or not str(val).strip()
+        if blank:
+            if d.is_required:
+                missing.append(d.label)
+            continue
+        if not india:
+            continue
+        if d.field_type == "number":
+            n = _num(val)
+            if n is None or n < 0:
+                missing.append(f"{d.label} (enter a number, 0 or more)")
+            elif d.section == "defect" and n != int(n):
+                missing.append(f"{d.label} (enter a whole number)")
+        elif d.field_type == "dropdown" and d.options_json and val not in d.options_json:
+            missing.append(f"{d.label} (choose one of the options)")
+    if not (qc.conclusion_or_suggestions or "").strip():
+        missing.append(CONCLUSION_LABEL.get(key, "Conclusion"))
+
+    lot = lot_quantity(db, qc)
+    plan = sampling_plan_for(db, qc)
+    if india and lot and plan is None:
+        messages.append(f"The report's sampling plan has no entry for a lot of {lot:g}; confirm the sample size with QA.")
+
+    failed = None
+    upper = None
+    outcome = "pending" if missing else "accepted"
+    if india and not missing:
+        if key == "rm_tray":
+            upper = int(plan["upper_limit"]) if plan and plan.get("upper_limit") is not None else None
+            if upper is None:
+                missing.append("Sampling plan (enter Quantity/Pallet within the report's plan)")
+                outcome = "pending"
+            else:
+                failed = 0
+                over = []
+                for d in defs:
+                    if d.section != "defect":
+                        continue
+                    n = int(_num(values.get(d.id)) or 0)
+                    failed += n
+                    lim = _num(d.acceptable_limit)
+                    if lim is not None and n > lim:
+                        over.append(f"{d.label} {n} > limit {int(lim)}")
+                if failed > upper:
+                    messages.append(f"{failed} failed products exceeds the upper limit of {upper}: 100% inspection to be followed.")
+                if over:
+                    messages.append("Over a defect's acceptable limit: " + "; ".join(over) + ".")
+                outcome = "onhold" if (failed > upper or over) else "accepted"
+        elif key == "film":
+            decision = next((values.get(d.id) for d in defs if d.label == "Accept / Reject"), None)
+            if decision == "Reject":
+                outcome = "onhold"
+                messages.append("Rejected: failed rolls to be kept separate in the quarantine area.")
+    return {"complete": not missing, "outcome": outcome, "missing": missing, "messages": messages,
+            "failed_count": failed, "upper_limit": upper, "lot_quantity": lot, "sampling": plan}
+
+
 def compute_status(db: Session, qc: models.InwardQcRecord) -> str:
-    if qc.category in TRAY_FAMILY_CATEGORIES:
-        return compute_fgtray_status(db, qc)
-    return compute_manual_status(db, qc)
+    return evaluate(db, qc)["outcome"]
 
 
 def find_dependent_qr(db: Session, qc_id: uuid.UUID) -> models.QrGenerationRecord | None:

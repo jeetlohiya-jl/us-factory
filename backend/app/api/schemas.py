@@ -209,6 +209,14 @@ class QcAttributeDefinitionOut(BaseModel):
     options_json: Optional[list[str]] = None
     is_required: bool
     sort_order: int
+    description: Optional[str] = None
+    tolerance: Optional[str] = None
+    defect_type: Optional[str] = None
+    inspection_method: Optional[str] = None
+    acceptable_limit: Optional[str] = None
+    section: str = "attribute"
+    lot_role: Optional[str] = None
+    auto_source: Optional[str] = None
 
 
 class QcFgtrayCriterionOut(BaseModel):
@@ -260,6 +268,14 @@ class QcAttributeValueOut(BaseModel):
     options_json: Optional[list[str]] = None
     is_required: bool
     value: Optional[str]
+    description: Optional[str] = None
+    tolerance: Optional[str] = None
+    defect_type: Optional[str] = None
+    inspection_method: Optional[str] = None
+    acceptable_limit: Optional[str] = None
+    section: str = "attribute"
+    lot_role: Optional[str] = None
+    auto_source: Optional[str] = None
 
 
 class QcFgtrayAnswerIn(BaseModel):
@@ -328,6 +344,14 @@ class QcDetailOut(BaseModel):
     requires_coa: bool = False
     rm_qr_batch_id: Optional[uuid.UUID] = None
     rm_qr_status: Optional[str] = None
+    # India report forms: which field-definition set this record uses
+    # (rm_tray / in_pad / in_polybag / in_cfb / film / corner_protector, or
+    # the plain category), whether it is the fixed OK / NOT OK checklist, and
+    # the server's own reading of the form: what is missing, the sampling plan
+    # and the outcome Submit would record. The form just displays this.
+    form_key: Optional[str] = None
+    uses_fgtray: bool = False
+    evaluation: Optional[dict] = None
 
 
 # ============================================================================
@@ -384,6 +408,8 @@ class QrGenerationDetailOut(BaseModel):
     # sourced RM batch that hasn't been generated yet (pallets received, or
     # the whole-number received quantity when the entry isn't palletised).
     max_quantity: Optional[int] = None
+    # What max_quantity counts ("pallet(s)", "rolls", "pcs"...), for the prompt.
+    max_quantity_unit: Optional[str] = None
     pallets: list[PalletOut] = []
 
 

@@ -3,6 +3,7 @@ records, reused by the RM and FG variants of each router so the JSON shape
 returned to the frontend never drifts between the two."""
 from app.db import models
 from app.api import schemas
+from app.domain import qr_generation_service
 
 
 def serialize_pallet(pallet: models.Pallet) -> schemas.PalletOut:
@@ -42,14 +43,19 @@ def serialize_qr_detail(rec: models.QrGenerationRecord) -> schemas.QrGenerationD
         e = rec.source_goods_receipt_entry
         source_display_id = f"{e.goods_receipt.po_number} / {e.shipment_number}" if e.goods_receipt else e.shipment_number
     max_quantity = None
-    if rec.qr_type == "rm" and rec.status == "pending" and rec.source_goods_receipt_entry_id and rec.source_goods_receipt_entry:
+    max_quantity_unit = None
+    # Only non-tray materials ask "how many QR codes?" (trays generate one per
+    # received pallet, unchanged), so only they get a maximum to validate against.
+    if (rec.qr_type == "rm" and rec.status == "pending" and rec.source_goods_receipt_entry_id and rec.source_goods_receipt_entry
+            and not qr_generation_service.is_tray_category(rec.category)):
         ge = rec.source_goods_receipt_entry
+        max_quantity_unit = qr_generation_service.gr_quantity_unit(ge)
         if ge.pallet_count:
             max_quantity = int(ge.pallet_count)
         elif ge.received_quantity is not None:
             max_quantity = int(ge.received_quantity)
     return schemas.QrGenerationDetailOut(
-        max_quantity=max_quantity,
+        max_quantity=max_quantity, max_quantity_unit=max_quantity_unit,
         id=rec.id, batch_display_id=rec.batch_display_id, qr_type=rec.qr_type, category=rec.category,
         shipment_number=rec.shipment_number, sku_code_snapshot=rec.sku_code_snapshot,
         sku_version_snapshot=rec.sku_version_snapshot, country_code=rec.country_code,

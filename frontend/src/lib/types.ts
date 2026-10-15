@@ -3,7 +3,7 @@ import { CATEGORY_LABELS } from "./terms";
 // these are Inward Vehicle Inspection's "tray options" (renamed/expanded
 // per the updated spec); "film" is a new material option alongside them.
 // See components/inward-vehicle-inspection/Wizard.tsx's CATEGORY_LABELS.
-export type Category = "tray" | "lnp_tray" | "film" | "pad" | "polybag" | "cfb" | "glue";
+export type Category = "tray" | "lnp_tray" | "film" | "pad" | "polybag" | "cfb" | "glue" | "corner_protector";
 export type InspectionStatus = "draft" | "hold" | "approved";
 
 // An Inward QC record auto-created from an approved Tray-family Vehicle
@@ -37,6 +37,7 @@ export function skuMatchesCategory(skuCategory: string | null | undefined, recor
 export const INWARD_CATEGORY_LABELS: Record<Category, string> = {
   tray: CATEGORY_LABELS.tray, lnp_tray: CATEGORY_LABELS.lnp_tray, film: CATEGORY_LABELS.film,
   pad: CATEGORY_LABELS.pad, polybag: CATEGORY_LABELS.polybag, cfb: CATEGORY_LABELS.cfb, glue: CATEGORY_LABELS.glue,
+  corner_protector: CATEGORY_LABELS.corner_protector,
 };
 export const QC_CATEGORY_LABELS: Record<string, string> = CATEGORY_LABELS;
 
@@ -346,19 +347,30 @@ export interface PortfolioAccessUpdateInput {
 // Inward QC
 // ---------------------------------------------------------------------------
 
-export type QcCategory = "tray" | "lnp_tray" | "fgtray" | "pad" | "polybag" | "cfb" | "glue";
+export type QcCategory = "tray" | "lnp_tray" | "fgtray" | "pad" | "polybag" | "cfb" | "glue" | "film" | "corner_protector";
 export type QcManualCategory = "pad" | "polybag" | "cfb" | "glue";
 export type QcStatus = "draft" | "pending" | "accepted" | "onhold";
 export type QcFieldType = "text" | "number" | "dropdown";
 
 export interface QcAttributeDefinition {
   id: string;
-  category: QcManualCategory;
+  // The form key (see inward_qc_service.form_key): a manual category, or one
+  // of the India report forms (rm_tray / in_pad / in_polybag / in_cfb / film /
+  // corner_protector).
+  category: string;
   label: string;
   field_type: QcFieldType;
   options_json: string[] | null;
   is_required: boolean;
   sort_order: number;
+  // India report forms (migration 0084): the printed report's own columns.
+  description?: string | null;
+  tolerance?: string | null;
+  defect_type?: string | null;
+  inspection_method?: string | null;
+  acceptable_limit?: string | null;
+  section?: string;
+  lot_role?: string | null;
 }
 
 export interface QcFgtrayCriterion {
@@ -368,7 +380,7 @@ export interface QcFgtrayCriterion {
 }
 
 export interface QcSamplingPlanTier {
-  category: QcManualCategory;
+  category: string;
   qty_label: string;
   min_qty: string | number;
   max_qty: string | number | null;
@@ -379,12 +391,12 @@ export interface QcSamplingPlanTier {
 
 export interface QcMeta {
   manual_categories: QcManualCategory[];
-  attribute_definitions: Record<QcManualCategory, QcAttributeDefinition[]>;
+  attribute_definitions: Record<string, QcAttributeDefinition[]>;
   fgtray_criteria: QcFgtrayCriterion[];
   sampling_plan_tiers: QcSamplingPlanTier[];
-  quantity_labels: Record<QcCategory, string>;
-  conclusion_labels: Record<QcManualCategory, string>;
-  count_labels: Record<QcManualCategory, string>;
+  quantity_labels: Record<string, string>;
+  conclusion_labels: Record<string, string>;
+  count_labels: Record<string, string>;
 }
 
 export interface QcListItem {
@@ -394,6 +406,8 @@ export interface QcListItem {
   coa_filename: string | null;
   status: QcStatus;
   created_at: string;
+  sku_code_snapshot?: string | null;
+  sku_version_snapshot?: string | null;
 }
 
 export interface QcAttributeValue {
@@ -403,6 +417,26 @@ export interface QcAttributeValue {
   options_json: string[] | null;
   is_required: boolean;
   value: string | null;
+  description?: string | null;
+  tolerance?: string | null;
+  defect_type?: string | null;
+  inspection_method?: string | null;
+  acceptable_limit?: string | null;
+  section?: string;
+  lot_role?: string | null;
+  auto_source?: string | null;
+}
+
+/** The server's own reading of a QC form (inward_qc_service.evaluate). */
+export interface QcEvaluation {
+  complete: boolean;
+  outcome: "pending" | "accepted" | "onhold";
+  missing: string[];
+  messages: string[];
+  failed_count: number | null;
+  upper_limit: number | null;
+  lot_quantity: number | null;
+  sampling: { sample_size: string; upper_limit: string | null; note: string | null; sampling_approach?: string | null } | null;
 }
 
 export interface CoaSuggestion {
@@ -463,10 +497,17 @@ export interface QcDetail {
     sku_code: string | null; sku_version: string | null; category: string | null;
     po_quantity: number | null; received_quantity: number | null; unit: string | null;
     pallet_count: number | null; batch_numbers: string[];
+    received_at?: string | null;
+    sku_spec?: Record<string, string> | null;
   } | null;
   requires_coa?: boolean;
   rm_qr_batch_id?: string | null;
   rm_qr_status?: "pending" | "generated" | null;
+  // India report forms: which field set this record uses, whether it is the
+  // OK / NOT OK checklist, and what the server makes of the form right now.
+  form_key?: string | null;
+  uses_fgtray?: boolean;
+  evaluation?: QcEvaluation | null;
   // Only ever present on the response to uploadQcCoa — a one-shot batch of
   // suggested Observation values parsed from the COA just uploaded.
   coa_suggestions?: CoaSuggestion[];
@@ -522,6 +563,7 @@ export interface QrGenerationDetail extends QrGenerationListItem {
   // Pending Goods-Receipt-sourced RM batch: the most QR codes that may be
   // generated (received pallet count). The user picks 1..max.
   max_quantity?: number | null;
+  max_quantity_unit?: string | null;
   category: string | null;
   generated_at: string | null;
   source_locked: boolean;
