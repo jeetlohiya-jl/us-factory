@@ -11,6 +11,8 @@ import NewIpqcPanel from "@/components/ipqc/NewIpqcPanel";
 import MoreMenu from "@/components/inward-vehicle-inspection/MoreMenu";
 import Pagination from "@/components/Pagination";
 import { MODULE_NAMES, T, statusLabel } from "@/lib/terms";
+import { useProduct } from "@/lib/productContext";
+import IpqcTestsTab from "@/components/ipqc/IpqcTestsTab";
 
 const MODULE = "ipqc";
 
@@ -25,8 +27,54 @@ const STATUSES = [
 export default function IpqcPage() {
   return (
     <Suspense fallback={null}>
-      <IpqcPageContent />
+      <IpqcPageShell />
     </Suspense>
+  );
+}
+
+type IpqcTab = "records" | "burst" | "pinhole";
+
+// Falcon only: IPQC Records (the existing page, untouched) plus Burst Tests and
+// Pinhole Tests. Gainesville renders the existing page exactly as before.
+function IpqcPageShell() {
+  const product = useProduct();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  // The tab (and an optional single-run filter, from a link on an IPQC record)
+  // live in the URL: ?tab=burst|pinhole&run=<production run id>.
+  const paramTab = searchParams.get("tab");
+  const tab: IpqcTab = paramTab === "burst" || paramTab === "pinhole" ? paramTab : "records";
+  const runFilter = searchParams.get("run") || undefined;
+
+  if (product !== "falcon") return <IpqcPageContent />;
+
+  const tabs: { key: IpqcTab; label: string }[] = [
+    { key: "records", label: "IPQC Records" },
+    { key: "burst", label: "Burst Tests" },
+    { key: "pinhole", label: "Pinhole Tests" },
+  ];
+  return (
+    <>
+      <div className="tab-bar" role="tablist">
+        {tabs.map((t) => (
+          <button
+            key={t.key} role="tab" aria-selected={tab === t.key} className={`tab-btn ${tab === t.key ? "active" : ""}`}
+            onClick={() => router.replace(t.key === "records" ? "/ipqc" : `/ipqc?tab=${t.key}`)}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      {tab === "records" && <IpqcPageContent />}
+      {tab !== "records" && (
+        <IpqcTestsTab
+          key={`${tab}:${runFilter ?? ""}`}
+          kind={tab}
+          runFilterId={runFilter}
+          onClearRunFilter={() => router.replace(`/ipqc?tab=${tab}`)}
+        />
+      )}
+    </>
   );
 }
 

@@ -14,7 +14,8 @@ exactly.
 """
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from app.db.session import get_db
@@ -24,6 +25,9 @@ from app.api.deps import get_current_user
 from app.api import deps
 from app.adapters.auth.base import AuthenticatedUser
 from app.domain import ipqc_service
+from app.domain import ipqc_attachments as att_svc
+from app.adapters.storage.factory import get_storage_adapter
+from app.core.product import FALCON, current_unit
 
 router = APIRouter(prefix="/api/v1/ipqc-records", tags=["ipqc"])
 
@@ -153,3 +157,101 @@ def save_ipqc_record(
     db.commit()
     db.refresh(rec)
     return _serialize_save(rec)
+
+
+# ---------------------------------------------------------------------------
+# Attachments (images / PDF / DOCX) on an IPQC record -- Falcon only
+# (migration 0090). Several files per record; stored with the existing
+# storage adapter; permissions are the IPQC module's own (view to list,
+# fill_section to add / remove).
+# ---------------------------------------------------------------------------
+
+def _falcon_only():
+    if current_unit() != FALCON:
+        raise HTTPException(status_code=404, detail="Not found.")
+
+
+def _record_or_404(db: Session, record_id: uuid.UUID) -> models.IpqcRecord:
+    rec = db.query(models.IpqcRecord).filter(models.IpqcRecord.id == record_id).first()
+    if not rec:
+        raise HTTPException(status_code=404, detail="IPQC record not found.")
+    return rec
+
+
+def _attachment_out(db: Session, a: models.IpqcAttachment) -> schemas.IpqcAttachmentOut:
+    user = db.query(models.AppUser).filter(models.AppUser.id == a.uploaded_by).first() if a.uploaded_by else None
+    return schemas.IpqcAttachmentOut(
+        id=a.id, filename=a.filename, content_type=a.content_type, size_bytes=a.size_bytes,
+        public_url=a.public_url, uploaded_by_name=user.full_name if user else None, created_at=a.created_at,
+    )
+
+
+@router.get("/{record_id}/attachments", response_model=list[schemas.IpqcAttachmentOut])
+def list_ipqc_attachments(
+    record_id: uuid.UUID, db: Session = Depends(get_db),
+    _f=Depends(_falcon_only), _perm: models.ModulePermission = Depends(require("view")),
+):
+    _record_or_404(db, record_id)
+    rows = db.query(models.IpqcAttachment).filter(models.IpqcAttachment.ipqc_record_id == record_id).order_by(models.IpqcAttachment.created_at).all()
+    return [_attachment_out(db, a) for a in rows]
+
+
+@router.post("/{record_id}/attachments", response_model=schemas.IpqcAttachmentOut, status_code=status.HTTP_201_CREATED)
+async def upload_ipqc_attachment(
+    record_id: uuid.UUID,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    _f=Depends(_falcon_only),
+    _perm: models.ModulePermission = Depends(require("fill_section")),
+):
+    rec = _record_or_404(db, record_id)
+    content = await file.read(att_svc.MAX_BYTES + 1)
+    try:
+        info = att_svc.validate_upload(file.filename, content)
+    except att_svc.AttachmentError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message)
+    q = db.query(models.IpqcAttachment).filter(models.IpqcAttachment.ipqc_record_id == rec.id)
+    if q.count() >= att_svc.MAX_FILES_PER_RECORD:
+        raise HTTPException(status_code=422, detail=f"A record can have at most {att_svc.MAX_FILES_PER_RECORD} attachments.")
+    dup = q.filter(models.IpqcAttachment.content_sha256 == info["sha256"]).first()
+    if dup:
+        raise HTTPException(status_code=409, detail=f"This file is already attached ({dup.filename}).")
+    storage = get_storage_adapter()
+    stored = storage.save(att_svc.storage_path_for("record", rec.id, info["filename"], info["ext"]), content, info["content_type"])
+    row = models.IpqcAttachment(
+        ipqc_record_id=rec.id, filename=info["filename"], content_type=info["content_type"], size_bytes=info["size_bytes"],
+        content_sha256=info["sha256"], storage_path=stored.storage_path, public_url=stored.public_url,
+        uploaded_by=uuid.UUID(current_user.user_id),
+    )
+    db.add(row)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        try:
+            storage.delete(stored.storage_path)
+        except Exception:
+            pass
+        raise HTTPException(status_code=409, detail="This file is already attached.")
+    db.refresh(row)
+    return _attachment_out(db, row)
+
+
+@router.delete("/{record_id}/attachments/{attachment_id}", status_code=204)
+def delete_ipqc_attachment(
+    record_id: uuid.UUID, attachment_id: uuid.UUID, db: Session = Depends(get_db),
+    _f=Depends(_falcon_only), _perm: models.ModulePermission = Depends(require("fill_section")),
+):
+    _record_or_404(db, record_id)
+    row = db.query(models.IpqcAttachment).filter(models.IpqcAttachment.id == attachment_id, models.IpqcAttachment.ipqc_record_id == record_id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Attachment not found.")
+    path = row.storage_path
+    db.delete(row)
+    db.commit()
+    try:
+        get_storage_adapter().delete(path)
+    except Exception:
+        pass
+    return None

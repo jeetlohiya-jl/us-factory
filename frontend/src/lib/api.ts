@@ -9,6 +9,7 @@ import type {
   Vendor, Machine, Customer, MaterialConsumptionListItem, MaterialConsumptionDetail, MaterialConsumptionScanPreview, SecondaryMaterialCategory,
   MaterialConsumptionPalletRow, ProductionListItem, ProductionDetail, ProductionMachineEntry, ProductionSavePayload,
   IpqcListItem, IpqcDetail, IpqcSavePayload,
+  IpqcTestKind, IpqcTestListItem, IpqcRunOption, IpqcAttachment, BurstTest, PinholeTest, BurstTestSavePayload, PinholeTestSavePayload,
   RqcListItem, RqcDetail, RqcSavePayload, RqcApprovalEntryPayload, RqcCoaEntry, RqcCoaObservation,
   CustomerShipmentListItem, CustomerShipmentDetail, CustomerShipmentCreatePayload, CustomerShipmentCreateResult, CustomerShipmentUpdatePayload, LinkedProductionRun,
   ShipmentPickingListItem, ShipmentPickingDetail, PalletLifecycleStatus,
@@ -3012,6 +3013,50 @@ export const api = {
     invalidateListCache("ipqc");
     return res;
   },
+
+  // -- Falcon IPQC: Burst Test, Pinhole Test, attachments (migration 0090) ------
+  // All through FastAPI (one call per action): the list / detail reads, the one
+  // atomic save, the idempotent create (client_request_id) and the file routes.
+  ipqcRunOptions: (search: string) =>
+    request<IpqcRunOption[]>(`/api/v1/ipqc-tests/run-options?search=${encodeURIComponent(search)}`),
+  listIpqcTests: (kind: IpqcTestKind, params: { search?: string; status?: string; machine?: string; production_run_id?: string; page?: number } = {}) => {
+    const qs = new URLSearchParams();
+    if (params.search) qs.set("search", params.search);
+    if (params.status) qs.set("status", params.status);
+    if (params.machine) qs.set("machine", params.machine);
+    if (params.production_run_id) qs.set("production_run_id", params.production_run_id);
+    qs.set("page", String(params.page && params.page > 0 ? params.page : 1));
+    return request<{ items: IpqcTestListItem[]; matched_count: number }>(`/api/v1/ipqc-tests/${kind}-tests?${qs.toString()}`);
+  },
+  getBurstTest: (id: string) => request<BurstTest>(`/api/v1/ipqc-tests/burst-tests/${id}`),
+  getPinholeTest: (id: string) => request<PinholeTest>(`/api/v1/ipqc-tests/pinhole-tests/${id}`),
+  // Safe to call again with the SAME client_request_id (retry / double click):
+  // the server returns the record it already created instead of a second one.
+  createBurstTest: (payload: { client_request_id: string; production_run_id: string; machine_id?: string | null }) =>
+    request<BurstTest>("/api/v1/ipqc-tests/burst-tests", { method: "POST", body: JSON.stringify(payload) }),
+  createPinholeTest: (payload: { client_request_id: string; production_run_id: string; machine_id?: string | null }) =>
+    request<PinholeTest>("/api/v1/ipqc-tests/pinhole-tests", { method: "POST", body: JSON.stringify(payload) }),
+  saveBurstTest: (id: string, payload: BurstTestSavePayload) =>
+    request<BurstTest>(`/api/v1/ipqc-tests/burst-tests/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
+  savePinholeTest: (id: string, payload: PinholeTestSavePayload) =>
+    request<PinholeTest>(`/api/v1/ipqc-tests/pinhole-tests/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
+  deleteIpqcTest: (kind: IpqcTestKind, id: string) =>
+    request<void>(`/api/v1/ipqc-tests/${kind}-tests/${id}`, { method: "DELETE" }),
+  uploadIpqcTestAttachment: (kind: IpqcTestKind, id: string, file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return request<IpqcAttachment>(`/api/v1/ipqc-tests/${kind}-tests/${id}/attachments`, { method: "POST", body: form });
+  },
+  deleteIpqcTestAttachment: (kind: IpqcTestKind, id: string, attachmentId: string) =>
+    request<void>(`/api/v1/ipqc-tests/${kind}-tests/${id}/attachments/${attachmentId}`, { method: "DELETE" }),
+  listIpqcAttachments: (recordId: string) => request<IpqcAttachment[]>(`/api/v1/ipqc-records/${recordId}/attachments`),
+  uploadIpqcAttachment: (recordId: string, file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return request<IpqcAttachment>(`/api/v1/ipqc-records/${recordId}/attachments`, { method: "POST", body: form });
+  },
+  deleteIpqcAttachment: (recordId: string, attachmentId: string) =>
+    request<void>(`/api/v1/ipqc-records/${recordId}/attachments/${attachmentId}`, { method: "DELETE" }),
 
   // -- RQC (Final Quality Control) --------------------------------------
   // Same split as IPQC: list/detail reads Supabase-direct, create + the one
