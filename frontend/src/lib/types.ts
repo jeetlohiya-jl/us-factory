@@ -886,6 +886,12 @@ export interface ProductionWastageEntry {
   sort_order: number;
 }
 
+// Falcon Daily Quality Checks -- Vision Inspection 1 / 2 (migration 0089).
+export type VisionKey =
+  | "vi1_pass" | "vi1_reject" | "vi1_recheck_pass" | "vi1_recheck_reject"
+  | "vi2_pass" | "vi2_reject" | "vi2_recheck_pass" | "vi2_recheck_reject";
+export type VisionInspection = Record<VisionKey, number | null>;
+
 // Payload for api.saveProduction -- the single atomic write for the
 // editable Production feature (backend/app/api/production.py's PUT route).
 export interface ProductionSavePayload {
@@ -919,6 +925,8 @@ export interface ProductionSavePayload {
     // Migration 0086 -- "" clears it back to "not entered".
     actual_shots?: string;
   }[];
+  // Falcon Daily Quality Checks (migration 0089). "" clears a value.
+  vision_inspection?: Partial<Record<VisionKey, string>>;
   // This device's own clock ("HH:MM") -- saving this record now stamps
   // end_time on every Material Consumption machine entry it feeds, same
   // convention as start_time (see Wizard.tsx's nowHHMM()).
@@ -942,6 +950,7 @@ export interface ProductionDetail {
   total_pallets_produced: number;
   rejection_classification: ProductionRejectionClassification;
   wastage_entries: ProductionWastageEntry[];
+  vision_inspection: VisionInspection;
   // Who actually filled in and saved the editable fields (migration 0014)
   // -- distinct from `operator`, which is whoever's Material Consumption
   // save auto-created this run.

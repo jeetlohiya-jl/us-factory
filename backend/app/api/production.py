@@ -10,6 +10,7 @@ Generation.
 import uuid
 from datetime import datetime
 from decimal import Decimal
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session, joinedload
@@ -22,6 +23,7 @@ from app.api import deps
 from app.adapters.auth.base import AuthenticatedUser
 from app.domain import material_consumption_service as mc_svc
 from app.domain import rqc_service
+from app.core.product import FALCON, current_unit
 from app.domain.material_consumption_service import MaterialConsumptionError
 
 router = APIRouter(prefix="/api/v1/production-runs", tags=["production-runs"])
@@ -156,6 +158,54 @@ def _serialize_save(run: models.ProductionRun) -> schemas.ProductionSaveOut:
             for w in sorted(run.wastage_entries, key=lambda w: w.sort_order)
         ],
     )
+
+
+_VI_FIELDS = (
+    "vi1_pass", "vi1_reject", "vi1_recheck_pass", "vi1_recheck_reject",
+    "vi2_pass", "vi2_reject", "vi2_recheck_pass", "vi2_recheck_reject",
+)
+_VI_LABELS = {
+    "vi1_pass": "VI 1 Pass", "vi1_reject": "VI 1 Reject",
+    "vi1_recheck_pass": "VI 1 Reject Recheck Pass", "vi1_recheck_reject": "VI 1 Reject Recheck Reject",
+    "vi2_pass": "VI 2 Pass", "vi2_reject": "VI 2 Reject",
+    "vi2_recheck_pass": "VI 2 Reject Check Pass", "vi2_recheck_reject": "VI 2 Reject Check Reject",
+}
+
+
+def _apply_vision_inspection(run: models.ProductionRun, vi: schemas.VisionInspectionIn) -> None:
+    """Falcon Daily Quality Checks (migration 0089). Blank clears a value
+    ("not entered"); otherwise a whole number >= 0. The recheck only covers
+    pieces rejected at that inspection, so Recheck Pass + Recheck Reject may
+    not exceed that inspection's Reject. Validates everything before writing."""
+    if current_unit() != FALCON:
+        # Gainesville never sends this; ignore rather than store it.
+        return
+    new: dict[str, Optional[int]] = {f: getattr(run, f) for f in _VI_FIELDS}
+    for f in _VI_FIELDS:
+        raw = getattr(vi, f)
+        if raw is None:
+            continue
+        raw = raw.strip()
+        if raw == "":
+            new[f] = None
+            continue
+        try:
+            d = Decimal(raw)
+        except Exception:
+            raise HTTPException(status_code=422, detail=f"{_VI_LABELS[f]} must be a whole number.")
+        if d < 0 or d != d.to_integral_value():
+            raise HTTPException(status_code=422, detail=f"{_VI_LABELS[f]} must be a whole number of 0 or more.")
+        new[f] = int(d)
+    for n, label in (("1", "VI 1"), ("2", "VI 2")):
+        rej = new[f"vi{n}_reject"] or 0
+        rc = (new[f"vi{n}_recheck_pass"] or 0) + (new[f"vi{n}_recheck_reject"] or 0)
+        if rc > rej:
+            raise HTTPException(
+                status_code=422,
+                detail=f"{label} recheck (Pass + Reject = {rc}) cannot be more than the {label} Reject count ({rej}).",
+            )
+    for f, v in new.items():
+        setattr(run, f, v)
 
 
 @router.put("/{run_id}", response_model=schemas.ProductionSaveOut)
@@ -307,6 +357,9 @@ def save_production_run(
                 if shots < 0 or shots != shots.to_integral_value():
                     raise HTTPException(status_code=422, detail="Actual No. of Shots must be a whole number of 0 or more.")
                 entry.actual_shots = int(shots)
+
+    if payload.vision_inspection is not None:
+        _apply_vision_inspection(run, payload.vision_inspection)
 
     if run.status == "pending":
         run.status = "saved"

@@ -1020,6 +1020,7 @@ const PRODUCTION_WASTAGE_SELECT = "id,machine_id,machine:machines(code),trays,re
 
 const PRODUCTION_DETAIL_SELECT =
   "id,run_number,shipment_number,shift,production_date,status,total_fg_pallets,completed_at," +
+  "vi1_pass,vi1_reject,vi1_recheck_pass,vi1_recheck_reject,vi2_pass,vi2_reject,vi2_recheck_pass,vi2_recheck_reject," +
   // Rejection Classification is now read per machine entry (migration
   // 0038, via PRODUCTION_MACHINE_ENTRY_SELECT below) -- the flat
   // production_runs.rejection_* columns are legacy/unused as of this
@@ -1039,6 +1040,8 @@ type RawProdWastageEntry = {
 type RawProductionRunDetail = {
   id: string; run_number: string; shipment_number: string | null; shift: string | null; production_date: string | null; status: string;
   total_fg_pallets: number; completed_at: string | null;
+  vi1_pass: number | null; vi1_reject: number | null; vi1_recheck_pass: number | null; vi1_recheck_reject: number | null;
+  vi2_pass: number | null; vi2_reject: number | null; vi2_recheck_pass: number | null; vi2_recheck_reject: number | null;
   created_by_user: { full_name: string } | null;
   completed_by_user: { full_name: string } | null;
   ipqc_record: { id: string; status: string } | { id: string; status: string }[] | null;
@@ -1154,6 +1157,12 @@ function flattenProductionDetail(raw: RawProductionRunDetail): ProductionDetail 
       id: w.id, machine_id: w.machine_id, machine: w.machine?.code ?? null,
       trays: w.trays == null ? null : Number(w.trays), reason: w.reason, sort_order: w.sort_order,
     })),
+    vision_inspection: {
+      vi1_pass: raw.vi1_pass ?? null, vi1_reject: raw.vi1_reject ?? null,
+      vi1_recheck_pass: raw.vi1_recheck_pass ?? null, vi1_recheck_reject: raw.vi1_recheck_reject ?? null,
+      vi2_pass: raw.vi2_pass ?? null, vi2_reject: raw.vi2_reject ?? null,
+      vi2_recheck_pass: raw.vi2_recheck_pass ?? null, vi2_recheck_reject: raw.vi2_recheck_reject ?? null,
+    },
     completed_by: raw.completed_by_user?.full_name ?? null,
     completed_at: raw.completed_at,
     ipqc_id: ipqcObj?.id ?? null, ipqc_status: ipqcObj?.status ?? null,

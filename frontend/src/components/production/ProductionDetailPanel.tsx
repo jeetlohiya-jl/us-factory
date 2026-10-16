@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
-import type { ProductionDetail, Machine, MachineType } from "@/lib/types";
+import type { ProductionDetail, Machine, MachineType, VisionKey } from "@/lib/types";
 import { QC_CATEGORY_LABELS } from "@/lib/types";
 import { formatTime12h, nowHHMM } from "@/components/material-consumption/Wizard";
 import { api } from "@/lib/api";
@@ -148,6 +148,48 @@ function indiaCellEditable(row: IndiaRow, e: PMachineEntry): boolean {
   return e.machine_type === "trimming" ? row.attrKey === "actual_shots" : true;
 }
 
+// ---- Falcon Daily Quality Checks (Vision Inspection 1 / 2, migration 0089) ----
+// Sheet CTPL/DQCD/FRM/01. Entered: Pass + Reject at each inspection, then the
+// recheck's Pass + Reject (the recheck covers only that inspection's rejects).
+// Everything else is calculated here: Total Checked, Totals, Rejection %.
+type ViCalc = {
+  checked: number | null; pass: number | null; reject: number | null; pct: number | null;
+  rcChecked: number | null; rcPass: number | null; rcReject: number | null; rcPct: number | null;
+  totChecked: number | null; totPass: number | null; totReject: number | null; totPct: number | null;
+  toRecheck: number | null; // rejected pieces not yet rechecked
+};
+function viNum(v: string | undefined): number | null {
+  const t = (v ?? "").trim();
+  return t === "" || !Number.isFinite(Number(t)) ? null : Number(t);
+}
+function viPct(part: number | null, whole: number | null): number | null {
+  return part == null || !whole ? null : (part / whole) * 100;
+}
+function calcVi(n: "1" | "2", v: Partial<Record<VisionKey, string>>): ViCalc {
+  const p = viNum(v[`vi${n}_pass` as VisionKey]), r = viNum(v[`vi${n}_reject` as VisionKey]);
+  const rp = viNum(v[`vi${n}_recheck_pass` as VisionKey]), rr = viNum(v[`vi${n}_recheck_reject` as VisionKey]);
+  const any = p != null || r != null;
+  const checked = any ? (p ?? 0) + (r ?? 0) : null;
+  const rcAny = rp != null || rr != null;
+  const rcChecked = rcAny ? (rp ?? 0) + (rr ?? 0) : null;
+  // Final outcome: pieces that passed the recheck move to pass; whatever was
+  // rejected and has not passed the recheck stays a reject.
+  const totPass = any ? (p ?? 0) + (rp ?? 0) : null;
+  const totReject = any ? Math.max((r ?? 0) - (rp ?? 0), 0) : null;
+  return {
+    checked, pass: p, reject: r, pct: viPct(r, checked),
+    rcChecked, rcPass: rp, rcReject: rr, rcPct: viPct(rr, rcChecked),
+    totChecked: checked, totPass, totReject, totPct: viPct(totReject, checked),
+    toRecheck: r != null ? Math.max(r - (rcChecked ?? 0), 0) : null,
+  };
+}
+const fmtN = (v: number | null) => (v == null ? "—" : String(v));
+const fmtPct = (v: number | null) => (v == null ? "—" : `${v.toFixed(2)}%`);
+const VI_KEYS: VisionKey[] = [
+  "vi1_pass", "vi1_reject", "vi1_recheck_pass", "vi1_recheck_reject",
+  "vi2_pass", "vi2_reject", "vi2_recheck_pass", "vi2_recheck_reject",
+];
+
 function sumProductionDetails(entries: ProductionDetail["machine_entries"], key: "prod_total_pcs_per_pallet"): number | null {
   let total = 0;
   let any = false;
@@ -235,6 +277,9 @@ export default function ProductionDetailPanel({
       ])
     )
   );
+  const [viEdits, setViEdits] = useState<Partial<Record<VisionKey, string>>>(
+    Object.fromEntries(VI_KEYS.map((k) => [k, record.vision_inspection[k] != null ? String(record.vision_inspection[k]) : ""]))
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Phase 5 -- shown right before the real save, per the user's explicit
@@ -291,6 +336,22 @@ export default function ProductionDetailPanel({
         }
       }
     }
+    if (isIndia) {
+      for (const n of ["1", "2"] as const) {
+        for (const k of VI_KEYS.filter((k) => k.startsWith(`vi${n}_`))) {
+          const raw = (viEdits[k] ?? "").trim();
+          if (raw !== "" && !(Number.isInteger(Number(raw)) && Number(raw) >= 0)) {
+            setError(`Vision Inspection ${n}: every count must be a whole number of 0 or more.`);
+            return;
+          }
+        }
+        const c = calcVi(n, viEdits);
+        if ((c.rcChecked ?? 0) > (c.reject ?? 0)) {
+          setError(`VI ${n}: the recheck (Pass + Reject = ${c.rcChecked}) cannot be more than the VI ${n} Reject count (${c.reject ?? 0}).`);
+          return;
+        }
+      }
+    }
     setSaving(true);
     setError(null);
     try {
@@ -316,6 +377,8 @@ export default function ProductionDetailPanel({
         machine_entry_attributes: Object.entries(attrEdits).map(([machine_entry_id, edits]) => ({
           machine_entry_id, ...edits,
         })),
+        // Falcon Daily Quality Checks (migration 0089) -- never sent for Factory.
+        ...(isIndia ? { vision_inspection: viEdits } : {}),
         // This save is now what stamps End Time on every Material
         // Consumption machine entry it feeds -- send this device's own
         // clock, same convention as Material Consumption's Start Time.
@@ -517,6 +580,82 @@ export default function ProductionDetailPanel({
                     ))}
                   </tbody>
                 </table>
+              </div>
+            </div>
+          )}
+
+          {isIndia && (
+            <div className="detail-card">
+              <h3>Daily Quality Checks (Vision Inspection)</h3>
+              <div className="hint-text" style={{ marginBottom: 10 }}>
+                Enter Pass and Reject for each Vision Inspection, then the recheck of the rejected pieces.
+                Total Checked, Totals and Rejection % are calculated. Doc ID: CTPL/DQCD/FRM/01
+              </div>
+              {(["1", "2"] as const).map((n) => {
+                const c = calcVi(n, viEdits);
+                const key = (suffix: string) => `vi${n}_${suffix}` as VisionKey;
+                const input = (k: VisionKey, max?: number) =>
+                  editable ? (
+                    <input
+                      type="number" min={0} max={max} style={{ width: 90 }}
+                      value={viEdits[k] ?? ""}
+                      onChange={(ev) => setViEdits((prev) => ({ ...prev, [k]: ev.target.value }))}
+                    />
+                  ) : (
+                    fmtN(viNum(viEdits[k]))
+                  );
+                const over = (c.rcChecked ?? 0) > (c.reject ?? 0);
+                return (
+                  <div key={n} style={{ marginBottom: 14, overflowX: "auto" }}>
+                    <table className="qc-obs-table">
+                      <thead>
+                        <tr>
+                          <th></th>
+                          <th>Vision Inspection {n}</th>
+                          <th>{n === "1" ? "VI 1 Reject Recheck" : "VI 2 Reject Check"}</th>
+                          <th>Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td>Total Checked Pcs</td>
+                          <td>{fmtN(c.checked)}</td>
+                          <td>{fmtN(c.rcChecked)}</td>
+                          <td>{fmtN(c.totChecked)}</td>
+                        </tr>
+                        <tr>
+                          <td>Pass</td>
+                          <td>{input(key("pass"))}</td>
+                          <td>{input(key("recheck_pass"), c.reject ?? undefined)}</td>
+                          <td>{fmtN(c.totPass)}</td>
+                        </tr>
+                        <tr>
+                          <td>Reject</td>
+                          <td>{input(key("reject"))}</td>
+                          <td>{input(key("recheck_reject"), c.reject ?? undefined)}</td>
+                          <td>{fmtN(c.totReject)}</td>
+                        </tr>
+                        <tr>
+                          <td>Rejection %</td>
+                          <td>{fmtPct(c.pct)}</td>
+                          <td>{fmtPct(c.rcPct)}</td>
+                          <td>{fmtPct(c.totPct)}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                    {c.reject != null && c.reject > 0 && (
+                      <div className="hint-text" style={{ marginTop: 4, color: over ? "var(--red, #b42318)" : undefined }}>
+                        {over
+                          ? `Recheck Pass + Reject (${c.rcChecked}) is more than the ${c.reject} rejected pieces.`
+                          : `${c.reject} piece${c.reject === 1 ? "" : "s"} to recheck${c.toRecheck ? ` — ${c.toRecheck} not yet rechecked` : " — all rechecked"}.`}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              <div className="hint-text">
+                Total Pass = Pass + recheck Pass. Total Reject = Reject − recheck Pass (pieces not yet rechecked count as rejects).
+                Total Rejection % = Total Reject ÷ Total Checked.
               </div>
             </div>
           )}
