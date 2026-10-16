@@ -215,6 +215,7 @@ export default function GoodsOutwardPage() {
           <div className="panel-overlay open" onClick={() => setNewPanelOpen(false)} />
           <NewCustomerShipmentPanel
             skuCodes={skuCodes}
+            asGoodsOutward
             onClose={() => setNewPanelOpen(false)}
             onSaved={refreshAfterMutation}
           />
@@ -226,6 +227,7 @@ export default function GoodsOutwardPage() {
           <div className="panel-overlay open" onClick={() => setEditTarget(null)} />
           <NewCustomerShipmentPanel
             skuCodes={skuCodes}
+            asGoodsOutward
             editTarget={editTarget}
             onClose={() => setEditTarget(null)}
             onSaved={refreshAfterMutation}

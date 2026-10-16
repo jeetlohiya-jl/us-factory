@@ -44,18 +44,21 @@ import { useProduct } from "@/lib/productContext";
  * with edit rights doesn't have to leave this panel to add one on the fly.
  */
 export default function NewCustomerShipmentPanel({
-  skuCodes, onClose, onSaved, editTarget,
+  skuCodes, onClose, onSaved, editTarget, asGoodsOutward,
 }: {
   skuCodes: SkuCode[];
   onClose: () => void;
   onSaved: () => void;
   editTarget?: GoodsOutwardDetail | null;
+  /** Opened from the Goods Outward page: name the record "Goods Outward Record" for either unit. */
+  asGoodsOutward?: boolean;
 }) {
   const isEdit = !!editTarget;
   const isFactory = useProduct() === "factory";
   // One name per product for this record: Factory calls it Goods Outward;
-  // Falcon keeps its own module name, Customer Shipment.
-  const recordName = isFactory ? `${MODULE_NAMES.goods_outward} Record` : MODULE_NAMES.customer_shipment;
+  // Falcon's stand-alone Customer Shipment page keeps its own name; opened
+  // from the Goods Outward page it is a Goods Outward Record for both.
+  const recordName = isFactory || asGoodsOutward ? `${MODULE_NAMES.goods_outward} Record` : MODULE_NAMES.customer_shipment;
   const [customer, setCustomer] = useState(editTarget?.customer || "");
   const [shipmentNumber, setShipmentNumber] = useState(editTarget?.shipment_number || "");
   const [customers, setCustomers] = useState<Customer[]>([]);
