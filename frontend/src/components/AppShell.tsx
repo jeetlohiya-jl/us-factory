@@ -21,6 +21,12 @@ import { MODULE_NAMES } from "@/lib/terms";
  */
 const INDIA_HIDDEN_NAV_HREFS = ["/inward-vehicle-inspection", "/rm-qr-generation"];
 
+// Falcon Goods Outward -- Customer Shipment, Shipment Picking and Outward
+// Vehicle Inspection are one "Goods Outward" sidebar entry (the same page
+// Gainesville uses), shown where Customer Shipment used to be. The three old
+// pages and routes still exist (direct links keep working).
+const FALCON_GOODS_OUTWARD_REPLACED_HREFS = ["/customer-shipment", "/shipment-picking", "/outward-vehicle-inspection"];
+
 const NAV_ITEMS = [
   // Module 1 (Falcon) -- Goods Receipt: Zoho POs for the US delivery
   // location, one entry per container/SKU. Same page Factory uses.
@@ -577,9 +583,17 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   setCurrentProduct(chosenProduct);
   // Falcon: Inward Vehicle Inspection now happens inside Goods Receipt
   // and RM QR generation inside Inward QC, so their stand-alone sidebar entries
-  // are hidden. The pages and routes still exist (nothing is deleted, direct
-  // links keep working); Gainesville's sidebar is untouched.
-  const activeNavItems = isFactory ? FACTORY_NAV_ITEMS : NAV_ITEMS.filter((i) => !INDIA_HIDDEN_NAV_HREFS.includes(i.href));
+  // are hidden, and Customer Shipment + Shipment Picking + Outward Vehicle
+  // Inspection are replaced by one Goods Outward entry. The pages and routes
+  // still exist (nothing is deleted, direct links keep working);
+  // Gainesville's sidebar is untouched.
+  const goodsOutwardNavItem = FACTORY_NAV_ITEMS.find((i) => i.href === "/goods-outward");
+  type NavItem = { href: string; label: string; icon: React.ReactNode };
+  const falconNavItems: NavItem[] = NAV_ITEMS.filter((i) => !INDIA_HIDDEN_NAV_HREFS.includes(i.href))
+    .filter((i) => i.href === "/customer-shipment" || !FALCON_GOODS_OUTWARD_REPLACED_HREFS.includes(i.href))
+    .map((i) => (i.href === "/customer-shipment" && goodsOutwardNavItem ? goodsOutwardNavItem : i));
+  const activeNavItems: NavItem[] = isFactory ? FACTORY_NAV_ITEMS : falconNavItems;
+
 
   return (
     <div className="app">
