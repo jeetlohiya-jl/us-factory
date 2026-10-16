@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import type { IpqcDetail, IpqcBlockDefect } from "@/lib/types";
 import { IPQC_DEFECTS } from "@/lib/types";
@@ -7,6 +7,9 @@ import { nowHHMM, formatTime12h } from "@/components/material-consumption/Wizard
 import { api } from "@/lib/api";
 import HoldReleaseSection from "@/components/HoldReleaseSection";
 import { T } from "@/lib/terms";
+import { useProduct } from "@/lib/productContext";
+import type { IpqcAttachment } from "@/lib/types";
+import AttachmentList from "./AttachmentList";
 
 function Kv({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -83,6 +86,17 @@ export default function IpqcDetailPanel({
   const [blocks, setBlocks] = useState<EditableBlock[]>(blocksToEditable(record.check_blocks));
   const [saving, setSaving] = useState<"draft" | "final" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Falcon only: files (images / PDF / DOCX) attached to this record.
+  const isFalcon = useProduct() === "falcon";
+  const [attachments, setAttachments] = useState<IpqcAttachment[] | null>(null);
+  useEffect(() => {
+    if (!isFalcon) return;
+    let cancelled = false;
+    api.listIpqcAttachments(record.id)
+      .then((a) => { if (!cancelled) setAttachments(a); })
+      .catch((e) => { if (!cancelled) { setAttachments([]); setError(e instanceof Error ? e.message : "Failed to load attachments"); } });
+    return () => { cancelled = true; };
+  }, [isFalcon, record.id]);
 
   // Editing is only live in "edit" mode -- "view" always renders read-only,
   // even for a user who otherwise has edit permission on this module.
@@ -251,6 +265,35 @@ export default function IpqcDetailPanel({
               <button className="btn btn-secondary" onClick={addBlock} style={{ marginTop: 6 }}>+ Add Another Record</button>
             )}
           </div>
+
+          {isFalcon && (
+            <div className="detail-card">
+              <h3>Attachments</h3>
+              {attachments === null ? (
+                <div className="hint-text">Loading…</div>
+              ) : (
+                <AttachmentList
+                  attachments={attachments}
+                  canEdit={editable}
+                  upload={(f) => api.uploadIpqcAttachment(record.id, f)}
+                  remove={(id) => api.deleteIpqcAttachment(record.id, id)}
+                  onChange={setAttachments}
+                  emptyHint="No attachments. Add photos, scans or reports (images, PDF, DOCX)."
+                />
+              )}
+            </div>
+          )}
+
+          {isFalcon && record.production_run_id && (
+            <div className="detail-card">
+              <h3>Burst &amp; Pinhole Tests</h3>
+              <div className="hint-text" style={{ marginBottom: 8 }}>Tests are recorded per Production Run and lamination machine.</div>
+              <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+                <Link className="btn-tertiary" href={`/ipqc?tab=burst&run=${record.production_run_id}`} style={{ textDecoration: "underline" }}>Burst Tests for this run →</Link>
+                <Link className="btn-tertiary" href={`/ipqc?tab=pinhole&run=${record.production_run_id}`} style={{ textDecoration: "underline" }}>Pinhole Tests for this run →</Link>
+              </div>
+            </div>
+          )}
 
           {showContextCards && (
             <div className="detail-card">

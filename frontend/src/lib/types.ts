@@ -2025,3 +2025,129 @@ export interface GoodsReceiptInwardPayload {
   // auto-shipment entry (GrQuickInwardForm.tsx); omitted otherwise.
   qr_quantity?: number;
 }
+
+// ---------------------------------------------------------------------------
+// Falcon IPQC -- Burst Test, Pinhole Test, attachments (migration 0090).
+// Source: "Burst Test Container wise Record Sheet". Burst: above 16 inHg is
+// acceptable, below 16 inHg fails; EXACTLY 16 is not defined by the sheet, so
+// it is "undetermined" and the test cannot be saved as final while it stands.
+// ---------------------------------------------------------------------------
+export type IpqcTestKind = "burst" | "pinhole";
+export type IpqcTestStatus = "draft" | "passed" | "failed";
+export const BURST_THRESHOLD_INHG = 16;
+
+export interface IpqcAttachment {
+  id: string;
+  filename: string;
+  content_type: string | null;
+  size_bytes: number | null;
+  public_url: string | null;
+  uploaded_by_name: string | null;
+  created_at: string | null;
+}
+
+export interface IpqcTestEvent {
+  id: string;
+  action: string; // created | saved | attachment_added | attachment_removed
+  status_after: string | null;
+  detail: string | null;
+  user_name: string | null;
+  created_at: string | null;
+}
+
+export interface IpqcTestCommon {
+  id: string;
+  production_run_id: string;
+  run_number: string | null;
+  machine_id: string;
+  machine_code: string;
+  sku_code: string | null;
+  sku_version: string | null;
+  shift: string | null;
+  production_date: string | null;
+  test_number: number;
+  container_number: string | null;
+  remarks: string | null;
+  status: IpqcTestStatus;
+  fail_count: number;
+  tested_at: string | null;
+  recorded_by_name: string | null;
+  updated_by_name: string | null;
+  updated_at: string | null;
+  attachments: IpqcAttachment[];
+  events: IpqcTestEvent[];
+  created: boolean;
+}
+
+export interface BurstReading {
+  sr: number;
+  sealing_temp_c: number | string | null;
+  sealing_time_s: number | string | null;
+  burst_inhg: number | string | null;
+  result: "pass" | "fail" | "undetermined" | null;
+}
+export interface BurstTest extends IpqcTestCommon {
+  undetermined_count: number;
+  readings: BurstReading[];
+}
+
+export interface PinholeReading {
+  sr: number;
+  shot_number: string | null;
+  avg_weight_g: number | string | null;
+  trays_failed: number | null;
+  remarks: string | null;
+  result: "pass" | "fail" | null;
+}
+export interface PinholeTest extends IpqcTestCommon {
+  sku_weight: string | null;
+  readings: PinholeReading[];
+}
+
+export interface IpqcTestListItem {
+  id: string;
+  run_number: string | null;
+  production_run_id: string;
+  machine_code: string;
+  sku_code: string | null;
+  sku_version: string | null;
+  shift: string | null;
+  test_number: number;
+  container_number: string | null;
+  status: IpqcTestStatus;
+  reading_count: number;
+  attachment_count: number;
+  tested_at: string | null;
+  recorded_by_name: string | null;
+}
+
+export interface IpqcRunMachine {
+  machine_id: string;
+  machine_code: string;
+  sku_code: string | null;
+  sku_version: string | null;
+}
+export interface IpqcRunOption {
+  production_run_id: string;
+  run_number: string;
+  shipment_number: string | null;
+  shift: string | null;
+  production_date: string | null;
+  sku_code: string | null;
+  sku_version: string | null;
+  machines: IpqcRunMachine[];
+  all_machines: IpqcRunMachine[];
+}
+
+export interface BurstTestSavePayload {
+  save_mode: "draft" | "final";
+  container_number: string | null;
+  remarks: string | null;
+  readings: { sealing_temp_c: string; sealing_time_s: string; burst_inhg: string }[];
+}
+export interface PinholeTestSavePayload {
+  save_mode: "draft" | "final";
+  container_number: string | null;
+  remarks: string | null;
+  readings: { shot_number: string; avg_weight_g: string; trays_failed: string; remarks: string }[];
+}

@@ -442,6 +442,16 @@ def delete_production_run(run_id: uuid.UUID, db: Session = Depends(get_db), _per
             detail=f"{run.run_number} is used by {mcs} RM Requisition record{'s' if mcs != 1 else ''}. "
                    "Delete or correct those first, then delete this Production record.",
         )
+    tests = (
+        db.query(models.IpqcBurstTest.id).filter(models.IpqcBurstTest.production_run_id == run.id).count()
+        + db.query(models.IpqcPinholeTest.id).filter(models.IpqcPinholeTest.production_run_id == run.id).count()
+    )
+    if tests:
+        raise HTTPException(
+            status_code=409,
+            detail=f"{run.run_number} has {tests} IPQC Burst / Pinhole test record{'s' if tests != 1 else ''}. "
+                   "Delete those first, then delete this Production record.",
+        )
     rqcs = db.query(models.RqcRecord).filter(models.RqcRecord.production_run_id == run.id).all()
     if any(not rqc_service.is_untouched_auto_rqc(db, r) for r in rqcs):
         raise HTTPException(status_code=409, detail=f"{run.run_number} has RQC records with inspection data. Delete them first, then delete this Production record.")

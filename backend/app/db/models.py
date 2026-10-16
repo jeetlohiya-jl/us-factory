@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
-    Column, String, Text, Boolean, Numeric, DateTime, Date, ForeignKey, Integer, UniqueConstraint
+    Column, String, Text, Boolean, Numeric, DateTime, Date, ForeignKey, Integer, UniqueConstraint, text
 )
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
@@ -1770,3 +1770,147 @@ class InventoryCompatibleTray(Base):
     tray_sku_code = relationship("SkuCode")
 
     __table_args__ = (UniqueConstraint("inventory_item_id", "tray_sku_code_id"),)
+
+
+# ---------------------------------------------------------------------------
+# Falcon IPQC -- Burst Test, Pinhole Test, attachments (migration 0090)
+# ---------------------------------------------------------------------------
+
+class IpqcBurstTest(ProductScoped, Base):
+    """One Burst Test (sheet: "Burst Test Container wise Record Sheet") for one
+    Production Run on one lamination machine (LM1-LM7). Tied to the RUN, never
+    to a SKU alone; SKU / Version / Shift / Run Number are snapshots taken at
+    creation. status is always computed by the API from the readings (never
+    sent by the client); fail_count / undetermined_count back the database
+    rule "a test with a failed or undetermined reading is never 'passed'"."""
+    __tablename__ = "ipqc_burst_tests"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    client_request_id = Column(UUID(as_uuid=True), nullable=False)
+    production_run_id = Column(UUID(as_uuid=True), ForeignKey("production_runs.id", ondelete="RESTRICT"), nullable=False)
+    run_number_snapshot = Column(Text, nullable=True)
+    machine_id = Column(UUID(as_uuid=True), ForeignKey("machines.id"), nullable=False)
+    machine_code = Column(Text, nullable=False)
+    sku_code_id = Column(UUID(as_uuid=True), ForeignKey("sku_codes.id"), nullable=True)
+    sku_version_id = Column(UUID(as_uuid=True), ForeignKey("sku_versions.id"), nullable=True)
+    sku_code_snapshot = Column(Text, nullable=True)
+    sku_version_snapshot = Column(Text, nullable=True)
+    shift = Column(Text, nullable=True)
+    production_date = Column(Text, nullable=True)
+    test_number = Column(Integer, nullable=False)
+    container_number = Column(Text, nullable=True)
+    remarks = Column(Text, nullable=True)
+    status = Column(Text, nullable=False, default="draft")
+    fail_count = Column(Integer, nullable=False, default=0)
+    undetermined_count = Column(Integer, nullable=False, default=0)
+    # Testing time = the database clock at creation; recorded_by = the signed-in user.
+    tested_at = Column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    recorded_by = Column(UUID(as_uuid=True), ForeignKey("app_users.id"), nullable=True)
+    updated_by = Column(UUID(as_uuid=True), ForeignKey("app_users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"))
+    updated_at = Column(DateTime(timezone=True), server_default=text("now()"), onupdate=datetime.utcnow)
+
+    readings = relationship(
+        "IpqcBurstTestReading", back_populates="test", cascade="all, delete-orphan",
+        order_by="IpqcBurstTestReading.sr",
+    )
+    attachments = relationship("IpqcAttachment", back_populates="burst_test", cascade="all, delete-orphan")
+    events = relationship("IpqcTestEvent", back_populates="burst_test", cascade="all, delete-orphan")
+
+
+class IpqcBurstTestReading(Base):
+    __tablename__ = "ipqc_burst_test_readings"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    test_id = Column(UUID(as_uuid=True), ForeignKey("ipqc_burst_tests.id", ondelete="CASCADE"), nullable=False)
+    sr = Column(Integer, nullable=False)
+    sealing_temp_c = Column(Numeric, nullable=True)
+    sealing_time_s = Column(Numeric, nullable=True)
+    burst_inhg = Column(Numeric, nullable=True)
+    result = Column(Text, nullable=True)  # 'pass' | 'fail' | 'undetermined' (exactly 16 inHg)
+
+    test = relationship("IpqcBurstTest", back_populates="readings")
+
+
+class IpqcPinholeTest(ProductScoped, Base):
+    """One Pinhole Test -- same linkage / audit / status rules as IpqcBurstTest."""
+    __tablename__ = "ipqc_pinhole_tests"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    client_request_id = Column(UUID(as_uuid=True), nullable=False)
+    production_run_id = Column(UUID(as_uuid=True), ForeignKey("production_runs.id", ondelete="RESTRICT"), nullable=False)
+    run_number_snapshot = Column(Text, nullable=True)
+    machine_id = Column(UUID(as_uuid=True), ForeignKey("machines.id"), nullable=False)
+    machine_code = Column(Text, nullable=False)
+    sku_code_id = Column(UUID(as_uuid=True), ForeignKey("sku_codes.id"), nullable=True)
+    sku_version_id = Column(UUID(as_uuid=True), ForeignKey("sku_versions.id"), nullable=True)
+    sku_code_snapshot = Column(Text, nullable=True)
+    sku_version_snapshot = Column(Text, nullable=True)
+    sku_weight_snapshot = Column(Text, nullable=True)
+    shift = Column(Text, nullable=True)
+    production_date = Column(Text, nullable=True)
+    test_number = Column(Integer, nullable=False)
+    container_number = Column(Text, nullable=True)
+    remarks = Column(Text, nullable=True)
+    status = Column(Text, nullable=False, default="draft")
+    fail_count = Column(Integer, nullable=False, default=0)
+    tested_at = Column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    recorded_by = Column(UUID(as_uuid=True), ForeignKey("app_users.id"), nullable=True)
+    updated_by = Column(UUID(as_uuid=True), ForeignKey("app_users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"))
+    updated_at = Column(DateTime(timezone=True), server_default=text("now()"), onupdate=datetime.utcnow)
+
+    readings = relationship(
+        "IpqcPinholeTestReading", back_populates="test", cascade="all, delete-orphan",
+        order_by="IpqcPinholeTestReading.sr",
+    )
+    attachments = relationship("IpqcAttachment", back_populates="pinhole_test", cascade="all, delete-orphan")
+    events = relationship("IpqcTestEvent", back_populates="pinhole_test", cascade="all, delete-orphan")
+
+
+class IpqcPinholeTestReading(Base):
+    __tablename__ = "ipqc_pinhole_test_readings"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    test_id = Column(UUID(as_uuid=True), ForeignKey("ipqc_pinhole_tests.id", ondelete="CASCADE"), nullable=False)
+    sr = Column(Integer, nullable=False)
+    shot_number = Column(Text, nullable=True)
+    avg_weight_g = Column(Numeric, nullable=True)
+    trays_failed = Column(Integer, nullable=True)
+    remarks = Column(Text, nullable=True)
+    result = Column(Text, nullable=True)  # 'pass' | 'fail' (trays_failed > 0)
+
+    test = relationship("IpqcPinholeTest", back_populates="readings")
+
+
+class IpqcAttachment(Base):
+    """A file (image / PDF / DOCX) attached to an IPQC record, a Burst Test or a
+    Pinhole Test -- exactly one owner (enforced in the database)."""
+    __tablename__ = "ipqc_attachments"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    ipqc_record_id = Column(UUID(as_uuid=True), ForeignKey("ipqc_records.id", ondelete="CASCADE"), nullable=True)
+    burst_test_id = Column(UUID(as_uuid=True), ForeignKey("ipqc_burst_tests.id", ondelete="CASCADE"), nullable=True)
+    pinhole_test_id = Column(UUID(as_uuid=True), ForeignKey("ipqc_pinhole_tests.id", ondelete="CASCADE"), nullable=True)
+    filename = Column(Text, nullable=False)
+    content_type = Column(Text, nullable=True)
+    size_bytes = Column(Integer, nullable=True)
+    content_sha256 = Column(Text, nullable=True)
+    storage_path = Column(Text, nullable=False)
+    public_url = Column(Text, nullable=True)
+    uploaded_by = Column(UUID(as_uuid=True), ForeignKey("app_users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"))
+
+    burst_test = relationship("IpqcBurstTest", back_populates="attachments")
+    pinhole_test = relationship("IpqcPinholeTest", back_populates="attachments")
+
+
+class IpqcTestEvent(Base):
+    """Audit trail of a Burst / Pinhole test: created, saved, attachment added/removed."""
+    __tablename__ = "ipqc_test_events"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=gen_uuid)
+    burst_test_id = Column(UUID(as_uuid=True), ForeignKey("ipqc_burst_tests.id", ondelete="CASCADE"), nullable=True)
+    pinhole_test_id = Column(UUID(as_uuid=True), ForeignKey("ipqc_pinhole_tests.id", ondelete="CASCADE"), nullable=True)
+    action = Column(Text, nullable=False)
+    status_after = Column(Text, nullable=True)
+    detail = Column(Text, nullable=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("app_users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=text("now()"))
+
+    burst_test = relationship("IpqcBurstTest", back_populates="events")
+    pinhole_test = relationship("IpqcPinholeTest", back_populates="events")

@@ -11,7 +11,7 @@ from app.api import (
     rm_qr, rm_storage, fg_qr, fg_storage, production, ipqc, rqc, rqc_coa, locations, vendors, skus,
     machines, material_consumption, users, customer_shipment, shipment_picking,
     outward_vehicle_inspection, traceability, hold_release, portfolio_access, customers,
-    inventory, goods_receipt_coa,
+    inventory, goods_receipt_coa, ipqc_tests,
 )
 
 settings = get_settings()
@@ -59,6 +59,7 @@ app.include_router(fg_qr.router)
 app.include_router(fg_storage.router)
 app.include_router(production.router)
 app.include_router(ipqc.router)
+app.include_router(ipqc_tests.router)
 app.include_router(rqc.router)
 app.include_router(rqc_coa.router)
 app.include_router(customer_shipment.router)
