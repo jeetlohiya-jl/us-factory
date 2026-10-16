@@ -524,6 +524,16 @@ class ProductionRun(ProductScoped, Base):
     # while before a (possibly different) user opens and completes it.
     completed_by = Column(UUID(as_uuid=True), ForeignKey("app_users.id"), nullable=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)
+    # Falcon Daily Quality Checks (migration 0089) -- Vision Inspection 1/2
+    # counts; NULL = not entered. Totals / Rejection % are derived in the app.
+    vi1_pass = Column(Integer, nullable=True)
+    vi1_reject = Column(Integer, nullable=True)
+    vi1_recheck_pass = Column(Integer, nullable=True)
+    vi1_recheck_reject = Column(Integer, nullable=True)
+    vi2_pass = Column(Integer, nullable=True)
+    vi2_reject = Column(Integer, nullable=True)
+    vi2_recheck_pass = Column(Integer, nullable=True)
+    vi2_recheck_reject = Column(Integer, nullable=True)
 
     sku_code = relationship("SkuCode")
     sku_version = relationship("SkuVersion")

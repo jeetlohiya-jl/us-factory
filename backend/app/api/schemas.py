@@ -524,6 +524,20 @@ class ProductionMachineEntryAttributesIn(BaseModel):
     actual_shots: Optional[str] = None
 
 
+class VisionInspectionIn(BaseModel):
+    """Falcon Daily Quality Checks (migration 0089). Each value is a string:
+    "" clears it (not entered), otherwise a whole number >= 0. A key that is
+    left None is not touched."""
+    vi1_pass: Optional[str] = None
+    vi1_reject: Optional[str] = None
+    vi1_recheck_pass: Optional[str] = None
+    vi1_recheck_reject: Optional[str] = None
+    vi2_pass: Optional[str] = None
+    vi2_reject: Optional[str] = None
+    vi2_recheck_pass: Optional[str] = None
+    vi2_recheck_reject: Optional[str] = None
+
+
 class ProductionSaveIn(BaseModel):
     # DEPRECATED as of migration 0038 -- Rejection Classification is now
     # collected per machine entry (see ProductionMachineEntryAttributesIn's
@@ -539,6 +553,7 @@ class ProductionSaveIn(BaseModel):
     total_fg_pallets: int = 0
     wastage_entries: list[ProductionWastageEntryIn] = []
     machine_entry_attributes: list[ProductionMachineEntryAttributesIn] = []
+    vision_inspection: Optional[VisionInspectionIn] = None
     # This device's own clock, same convention as Material Consumption's
     # start_time -- saving this record is now what stamps end_time on every
     # machine entry that fed it (see stamp_end_times_for_production_run).
