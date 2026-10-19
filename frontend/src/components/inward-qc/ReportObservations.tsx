@@ -3,8 +3,10 @@ import type { QcAttributeValue } from "@/lib/types";
 
 /**
  * Falcon's Inward QC form, laid out like the printed inward QC report
- * for the material: Attributes / Description / Tolerance / Defects Type /
- * Inspection Method / Actual Observations, and (RM Tray) the separate defects
+ * for the material: Attributes / Description / Inspection Method (when the
+ * report has one) / Actual Observations. The report's Tolerance and Defects
+ * Type columns are deliberately not shown (the values stay in the field
+ * definitions; the tolerance is already part of most labels, e.g. "Length mm (±2)"), and (RM Tray) the separate defects
  * list with its acceptable limit, classification and failed-product count.
  * A column only appears when the report has something in it. Wording comes
  * straight from the field definitions (migration 0084), never from here.
@@ -18,8 +20,6 @@ export default function ReportObservations({
 }) {
   const attrs = values.filter((v) => (v.section || "attribute") !== "defect");
   const defects = values.filter((v) => v.section === "defect");
-  const hasTol = attrs.some((v) => v.tolerance);
-  const hasType = attrs.some((v) => v.defect_type);
   const hasMethod = attrs.some((v) => v.inspection_method);
 
   function input(v: QcAttributeValue) {
@@ -56,8 +56,6 @@ export default function ReportObservations({
           <thead>
             <tr>
               <th>Attributes</th><th>Description</th>
-              {hasTol && <th style={{ width: 80 }}>Tolerance</th>}
-              {hasType && <th style={{ width: 90 }}>Defects Type</th>}
               {hasMethod && <th style={{ width: 120 }}>Inspection Method</th>}
               <th style={{ width: 160 }}>Actual Observations</th>
             </tr>
@@ -67,8 +65,6 @@ export default function ReportObservations({
               <tr key={v.attribute_definition_id}>
                 <td>{v.label}{v.is_required && <span style={{ color: "var(--red)" }}> *</span>}</td>
                 <td style={{ fontSize: 12.5 }}>{v.description || "—"}</td>
-                {hasTol && <td>{v.tolerance || "—"}</td>}
-                {hasType && <td>{v.defect_type || "—"}</td>}
                 {hasMethod && <td>{v.inspection_method || "—"}</td>}
                 <td>{input(v)}</td>
               </tr>
