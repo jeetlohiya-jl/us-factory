@@ -342,7 +342,7 @@ export default function Wizard({
                   </select>
                 </div>
               </div>
-              <CoaField qcId={qcId} filename={detail.coa_filename} url={detail.coa_url} disabled={readOnlyBasic} onChange={setDetail} />
+              <CoaField qcId={qcId} filename={detail.coa_filename} url={detail.coa_url} disabled={readOnlyBasic} onChange={setDetail} parsesValues={!india && !isTray} />
             </div>
           )}
 
@@ -350,7 +350,7 @@ export default function Wizard({
             <div>
               {grLinked && !isTray && (
                 <div style={{ marginBottom: 18 }}>
-                  <CoaField qcId={qcId} filename={detail.coa_filename} url={detail.coa_url} disabled={!canFillSection || isFinalized} onChange={setDetail} />
+                  <CoaField qcId={qcId} filename={detail.coa_filename} url={detail.coa_url} disabled={!canFillSection || isFinalized} onChange={setDetail} parsesValues={!india && !isTray} />
                   {!detail.coa_filename && <div className="hint-text" style={{ color: "var(--red)", marginTop: 4 }}>A COA is required before this can be approved.</div>}
                 </div>
               )}
@@ -407,7 +407,7 @@ export default function Wizard({
                     ? <ReportObservations values={detail.attribute_values} onChange={handleAttributeChange} disabled={!canFillSection || (detail.status === "accepted")} />
                     : <AttributeObservations values={detail.attribute_values} coaFilename={detail.coa_filename} onChange={handleAttributeChange} disabled={!canFillSection} />}
                   <div className="field" style={{ marginTop: 14 }}>
-                    <label>{conclusionLabel}</label>
+                    <label>{conclusionLabel}{india ? " (optional)" : ""}</label>
                     <textarea rows={2} disabled={!canFillSection || (grLinked && detail.status === "accepted")} defaultValue={conclusion} onBlur={(e) => handleConclusionChange(e.target.value)} />
                   </div>
                 </>
