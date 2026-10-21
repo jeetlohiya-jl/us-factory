@@ -839,6 +839,9 @@ export interface ProductionMachineEntry {
   // machine for this run's shift. Source of truth for "Pallets Produced";
   // distinct from and never overwritten by RQC's approved_pallets.
   pallets_produced: number;
+  // Migration 0093 -- Factory: trays produced on this machine; pallets_produced is
+  // worked out from it (full pallets). null = not entered (older records, Falcon).
+  trays_produced: number | null;
 }
 
 export interface ProductionListItem {
@@ -922,6 +925,8 @@ export interface ProductionSavePayload {
     rejection_foreign_material?: string; rejection_glue_strings?: string; rejection_pad_direction?: string;
     rejection_pad_placement?: string; rejection_stickiness?: string;
     pallets_produced?: string;
+    // Migration 0093 -- Factory only; the server works pallets_produced out from it.
+    trays_produced?: string;
     // Migration 0086 -- "" clears it back to "not entered".
     actual_shots?: string;
   }[];

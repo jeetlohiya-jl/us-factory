@@ -1244,6 +1244,9 @@ class MaterialConsumptionMachineEntry(Base):
     # what QC actually approved for release, and the two are intentionally
     # allowed to differ.
     pallets_produced = Column(Integer, nullable=False, default=0)
+    # Migration 0093 -- Factory enters trays produced; pallets_produced above is
+    # then worked out from it (full pallets). Null = not entered (older records, Falcon).
+    trays_produced = Column(Integer, nullable=True)
     # Migration 0086 -- Actual No. of Shots entered on the Production record
     # (nullable = not entered yet).
     actual_shots = Column(Integer, nullable=True)

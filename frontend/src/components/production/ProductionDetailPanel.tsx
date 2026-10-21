@@ -68,6 +68,8 @@ type AttrKey = "machine_no" | "auto_padding" | "container_order_no" | "weight" |
   // Factory-only Rejection Classification (migration 0065).
   | "rejection_foreign_material" | "rejection_glue_strings" | "rejection_pad_direction" | "rejection_pad_placement" | "rejection_stickiness"
   | "pallets_produced"
+  // Factory (migration 0093): trays produced -- pallets produced is worked out from it.
+  | "trays_produced"
   // Falcon (migration 0086): Actual No. of Shots, per machine entry.
   | "actual_shots";
 
@@ -84,11 +86,11 @@ type AttrKey = "machine_no" | "auto_padding" | "container_order_no" | "weight" |
 // it's mechanically derived from Trays/Sleeve x Sleeve/Combo on the SKU
 // Names admin screen now, so this row is display-only (no attrKey) to
 // avoid a per-machine-entry override drifting out of sync with that.
-const PROD_DETAIL_ROWS: { label: string; attrKey?: AttrKey; get: (e: ProductionDetail["machine_entries"][number]) => React.ReactNode }[] = [
+const PROD_DETAIL_ROWS: { label: string; isTotal?: boolean; attrKey?: AttrKey; get: (e: ProductionDetail["machine_entries"][number]) => React.ReactNode }[] = [
   { label: T.sku, get: (e) => e.sku_code },
   { label: "Trays/Sleeve", attrKey: "pcs_per_sleeve", get: (e) => e.production_details?.prod_pcs_per_sleeve },
   { label: "Sleeve/Combo", attrKey: "sleeve_per_case", get: (e) => e.production_details?.prod_sleeve_per_case },
-  { label: "Total No. of Pcs/Pallet", get: (e) => e.production_details?.prod_total_pcs_per_pallet },
+  { label: "Total No. of Pcs/Pallet", isTotal: true, get: (e) => e.production_details?.prod_total_pcs_per_pallet },
   { label: "Pad Type/Name/Code", attrKey: "pad_type", get: (e) => e.production_details?.prod_pad_type },
   { label: "Pad Color", attrKey: "pad_color", get: (e) => e.production_details?.prod_pad_color },
 ];
@@ -112,8 +114,17 @@ const PROD_DETAIL_ROWS: { label: string; attrKey?: AttrKey; get: (e: ProductionD
 // removed from Production on 2026-09-25 and is not read or written any more).
 // ---------------------------------------------------------------------------
 type PMachineEntry = ProductionDetail["machine_entries"][number];
+
+// Trays/Sleeve x Sleeve/Combo, or null unless both are positive numbers.
+function trayTotal(traysPerSleeve?: string, sleevesPerCombo?: string): number | null {
+  const a = Number((traysPerSleeve ?? "").trim());
+  const b = Number((sleevesPerCombo ?? "").trim());
+  if (!(a > 0) || !(b > 0) || !Number.isFinite(a) || !Number.isFinite(b)) return null;
+  return a * b;
+}
 type IndiaRow = {
   label: string;
+  isTotal?: boolean;             // Total No. of Pcs/Pallet: shown live while Trays/Sleeve or Sleeve/Combo is edited
   types: MachineType[];          // typed machines the row applies to
   legacy?: boolean;              // also shown for a machine with no type (the original six rows)
   attrKey?: AttrKey;             // editable override (same keys as the original rows)
@@ -127,7 +138,7 @@ const INDIA_DETAIL_ROWS: IndiaRow[] = [
   { label: "Design (Old / New)", types: ["lamination"], get: (e) => e.production_details?.prod_design },
   { label: "Trays/Sleeve", types: ALL_TYPES, legacy: true, attrKey: "pcs_per_sleeve", get: (e) => e.production_details?.prod_pcs_per_sleeve },
   { label: "Sleeve/Combo", types: ALL_TYPES, legacy: true, attrKey: "sleeve_per_case", get: (e) => e.production_details?.prod_sleeve_per_case },
-  { label: "Total No. of Pcs/Pallet", types: ALL_TYPES, legacy: true, get: (e) => e.production_details?.prod_total_pcs_per_pallet },
+  { label: "Total No. of Pcs/Pallet", isTotal: true, types: ALL_TYPES, legacy: true, get: (e) => e.production_details?.prod_total_pcs_per_pallet },
   { label: "Liner Thickness", types: ["lamination"], get: (e) => e.production_details?.prod_liner_thickness },
   { label: "Pad Type/Name/Code", types: ["padding"], legacy: true, attrKey: "pad_type", get: (e) => e.production_details?.prod_pad_type },
   { label: "Pad Color", types: ["padding"], legacy: true, attrKey: "pad_color", get: (e) => e.production_details?.prod_pad_color },
@@ -271,6 +282,7 @@ export default function ProductionDetailPanel({
           rejection_pad_placement: e.rejection_classification.pad_placement ? String(e.rejection_classification.pad_placement) : "",
           rejection_stickiness: e.rejection_classification.stickiness ? String(e.rejection_classification.stickiness) : "",
           pallets_produced: e.pallets_produced ? String(e.pallets_produced) : "",
+          trays_produced: e.trays_produced != null ? String(e.trays_produced) : "",
           // Falcon only (migration 0086) -- never part of a Factory save.
           ...(isIndia ? { actual_shots: e.actual_shots != null ? String(e.actual_shots) : "" } : {}),
         },
@@ -288,7 +300,50 @@ export default function ProductionDetailPanel({
   const [showConsumptionConfirm, setShowConsumptionConfirm] = useState(false);
 
   function setAttrEdit(entryId: string, key: AttrKey, value: string) {
-    setAttrEdits((prev) => ({ ...prev, [entryId]: { ...prev[entryId], [key]: value } }));
+    setAttrEdits((prev) => {
+      const next = { ...prev[entryId], [key]: value };
+      // Total No. of Pcs/Pallet = Trays/Sleeve x Sleeve/Combo, recalculated the
+      // moment either number changes (the server works it out again on save).
+      if (key === "pcs_per_sleeve" || key === "sleeve_per_case") {
+        const t = trayTotal(next.pcs_per_sleeve, next.sleeve_per_case);
+        next.total_pcs_per_pallet = t != null ? String(t) : "";
+      }
+      return { ...prev, [entryId]: next };
+    });
+  }
+
+  // What the Total No. of Pcs/Pallet cell shows while editing: the live
+  // Trays/Sleeve x Sleeve/Combo once either number has been changed from what
+  // the record has, otherwise the saved total.
+  function totalCell(e: PMachineEntry): React.ReactNode {
+    const stored = e.production_details?.prod_total_pcs_per_pallet;
+    if (!editable) return stored;
+    const edits = attrEdits[e.machine_consumption_id];
+    const changed = (edits?.pcs_per_sleeve ?? "") !== (e.production_details?.prod_pcs_per_sleeve || "")
+      || (edits?.sleeve_per_case ?? "") !== (e.production_details?.prod_sleeve_per_case || "");
+    if (!changed) return stored;
+    return trayTotal(edits?.pcs_per_sleeve, edits?.sleeve_per_case) ?? stored;
+  }
+
+  // Factory: trays in one pallet (Total No. of Pcs/Pallet, live while editing)
+  // and the pallets that the entered Trays Produced make -- full pallets only.
+  function traysPerPallet(e: PMachineEntry): number | null {
+    const v = Number(totalCell(e));
+    return Number.isFinite(v) && v > 0 ? v : null;
+  }
+  function traysInput(e: PMachineEntry): number | null {
+    const raw = (attrEdits[e.machine_consumption_id]?.trays_produced ?? "").trim();
+    if (raw === "") return null;
+    const n = Number(raw);
+    return Number.isInteger(n) && n >= 0 ? n : null;
+  }
+  // Pallets shown for a machine: from the trays typed (rounded down); a record
+  // with no trays figure (older record) keeps the pallets it already has.
+  function palletsFor(e: PMachineEntry): number {
+    const trays = traysInput(e);
+    const per = traysPerPallet(e);
+    if (trays == null || per == null) return e.pallets_produced || 0;
+    return Math.floor(trays / per);
   }
 
   // "Edit" is the focused fill-in form -- just Rejection Classification /
@@ -464,7 +519,7 @@ export default function ProductionDetailPanel({
                                   onChange={(ev) => setAttrEdit(e.machine_consumption_id, row.attrKey!, ev.target.value)}
                                 />
                               ) : (
-                                row.get(e, record.operator) ?? "—"
+                                (row.isTotal ? totalCell(e) : row.get(e, record.operator)) ?? "—"
                               )}
                             </td>
                           ))}
@@ -482,7 +537,7 @@ export default function ProductionDetailPanel({
                                 onChange={(ev) => setAttrEdit(e.machine_consumption_id, row.attrKey!, ev.target.value)}
                               />
                             ) : (
-                              row.get(e) ?? "—"
+                              (row.isTotal ? totalCell(e) : row.get(e)) ?? "—"
                             )}
                           </td>
                         ))}
@@ -725,8 +780,9 @@ export default function ProductionDetailPanel({
             <div className="detail-card">
               <h3>Pallets Produced</h3>
               <div className="hint-text" style={{ marginBottom: 10 }}>
-                Per machine, for this run&apos;s shift. RQC approves pallets out of this total --
-                it can never approve more than what&apos;s recorded here.
+                {isIndia
+                  ? "Per machine, for this run's shift. RQC approves pallets out of this total -- it can never approve more than what's recorded here."
+                  : "Enter the trays produced on each machine for this run's shift. Pallets produced is worked out from it (trays / Total No. of Pcs/Pallet, full pallets only). RQC approves pallets out of this total -- it can never approve more than what's recorded here."}
               </div>
               <div style={{ overflowX: "auto" }}>
                 <table className="qc-obs-table">
@@ -738,27 +794,79 @@ export default function ProductionDetailPanel({
                     </tr>
                   </thead>
                   <tbody>
-                    <tr>
-                      <td>Pallets Produced</td>
-                      {record.machine_entries.map((e) => (
-                        <td key={e.machine_consumption_id} style={{ width: 110 }}>
-                          {editable ? (
-                            <input
-                              type="number"
-                              min={0}
-                              value={attrEdits[e.machine_consumption_id]?.pallets_produced ?? ""}
-                              onChange={(ev) => setAttrEdit(e.machine_consumption_id, "pallets_produced", ev.target.value)}
-                            />
-                          ) : (
-                            e.pallets_produced || 0
-                          )}
-                        </td>
-                      ))}
-                      <td><strong>{totalPalletsProduced}</strong></td>
-                    </tr>
+                    {isIndia ? (
+                      <tr>
+                        <td>Pallets Produced</td>
+                        {record.machine_entries.map((e) => (
+                          <td key={e.machine_consumption_id} style={{ width: 110 }}>
+                            {editable ? (
+                              <input
+                                type="number"
+                                min={0}
+                                value={attrEdits[e.machine_consumption_id]?.pallets_produced ?? ""}
+                                onChange={(ev) => setAttrEdit(e.machine_consumption_id, "pallets_produced", ev.target.value)}
+                              />
+                            ) : (
+                              e.pallets_produced || 0
+                            )}
+                          </td>
+                        ))}
+                        <td><strong>{totalPalletsProduced}</strong></td>
+                      </tr>
+                    ) : (
+                      <>
+                        <tr>
+                          <td>Trays Produced</td>
+                          {record.machine_entries.map((e) => (
+                            <td key={e.machine_consumption_id} style={{ width: 110 }}>
+                              {editable ? (
+                                <input
+                                  type="number"
+                                  min={0}
+                                  step={1}
+                                  value={attrEdits[e.machine_consumption_id]?.trays_produced ?? ""}
+                                  onChange={(ev) => setAttrEdit(e.machine_consumption_id, "trays_produced", ev.target.value)}
+                                />
+                              ) : (
+                                e.trays_produced ?? "—"
+                              )}
+                            </td>
+                          ))}
+                          <td><strong>{record.machine_entries.reduce((sum, e) => sum + (editable ? (traysInput(e) ?? e.trays_produced ?? 0) : (e.trays_produced ?? 0)), 0)}</strong></td>
+                        </tr>
+                        <tr>
+                          <td>Trays per Pallet</td>
+                          {record.machine_entries.map((e) => (
+                            <td key={e.machine_consumption_id}>{traysPerPallet(e) ?? "—"}</td>
+                          ))}
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td>Pallets Produced <span className="hint-text" style={{ margin: 0 }}>(auto)</span></td>
+                          {record.machine_entries.map((e) => (
+                            <td key={e.machine_consumption_id}><strong>{editable ? palletsFor(e) : (e.pallets_produced || 0)}</strong></td>
+                          ))}
+                          <td><strong>{editable ? record.machine_entries.reduce((sum, e) => sum + palletsFor(e), 0) : totalPalletsProduced}</strong></td>
+                        </tr>
+                        <tr>
+                          <td>Loose Trays <span className="hint-text" style={{ margin: 0 }}>(not a full pallet)</span></td>
+                          {record.machine_entries.map((e) => {
+                            const trays = editable ? traysInput(e) : e.trays_produced;
+                            const per = traysPerPallet(e);
+                            return <td key={e.machine_consumption_id}>{trays != null && per != null ? trays % per : "—"}</td>;
+                          })}
+                          <td></td>
+                        </tr>
+                      </>
+                    )}
                   </tbody>
                 </table>
               </div>
+              {!isIndia && editable && record.machine_entries.some((e) => traysInput(e) != null && traysPerPallet(e) == null) && (
+                <div className="hint-text" style={{ color: "var(--red)", marginTop: 8 }}>
+                  Total No. of Pcs/Pallet is not set for a machine above -- enter Trays/Sleeve and Sleeve/Combo first so pallets can be worked out.
+                </div>
+              )}
             </div>
           )}
 
