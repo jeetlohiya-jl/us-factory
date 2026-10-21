@@ -996,6 +996,8 @@ type RawProdMachineEntry = {
   rejection_pad_direction: number | string; rejection_pad_placement: number | string; rejection_stickiness: number | string;
   // Pallets Produced, per machine entry (migration 0039, task section 1).
   pallets_produced: number | string;
+  // Migration 0093 -- Factory: trays produced (null = not entered).
+  trays_produced: number | null;
   // Migration 0086 -- Actual No. of Shots entered on the Production record.
   actual_shots: number | null;
 };
@@ -1013,7 +1015,7 @@ const PRODUCTION_MACHINE_ENTRY_SELECT =
   "machine_no,auto_padding,container_order_no," +
   "rejection_damage,rejection_misplaced_glue,rejection_misplaced_pad,rejection_glue_on_pad,rejection_pad_placement_direction,rejection_adhesion_issue," +
   "rejection_foreign_material,rejection_glue_strings,rejection_pad_direction,rejection_pad_placement,rejection_stickiness," +
-  "pallets_produced,actual_shots";
+  "pallets_produced,trays_produced,actual_shots";
 
 type RawProdMc = { id: string; status: string; machine_entries: RawProdMachineEntry[] };
 
@@ -1118,6 +1120,7 @@ function flattenProductionDetail(raw: RawProductionRunDetail): ProductionDetail 
           stickiness: Number(e.rejection_stickiness) || 0,
         },
         pallets_produced: Number(e.pallets_produced) || 0,
+        trays_produced: e.trays_produced != null ? Number(e.trays_produced) : null,
       });
     }
   }

@@ -9,7 +9,7 @@ Generation.
 """
 import uuid
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -28,7 +28,55 @@ from app.domain.material_consumption_service import MaterialConsumptionError
 
 router = APIRouter(prefix="/api/v1/production-runs", tags=["production-runs"])
 
+
+def _derive_total_pcs_per_pallet(trays_per_sleeve: str | None, sleeves_per_combo: str | None) -> str | None:
+    """Trays/Sleeve x Sleeve/Combo as text, or None (fall back to the SKU
+    Version's own total) when either is missing or not a positive number."""
+    try:
+        a = Decimal(str(trays_per_sleeve).strip())
+        b = Decimal(str(sleeves_per_combo).strip())
+    except (InvalidOperation, ValueError):
+        return None
+    if not (a.is_finite() and b.is_finite()) or a <= 0 or b <= 0:
+        return None
+    total = a * b
+    return str(int(total)) if total == total.to_integral_value() else str(total.normalize())
+
 MODULE = "production"
+
+def _apply_trays_produced(entry, ref, raw: str) -> None:
+    """Factory: store Trays Produced and derive pallets_produced = full pallets
+    = trays // Total No. of Pcs/Pallet (the entry's own override, else the SKU
+    Version's). A blank figure clears a trays figure that was entered, but
+    leaves a record that never had one (pallets typed in on an older record)
+    exactly as it is. Raises 422 for a bad number or an unknown pcs/pallet."""
+    raw_trays = (raw or "").strip()
+    if raw_trays == "":
+        if entry.trays_produced is not None:
+            entry.trays_produced = None
+            entry.pallets_produced = 0
+        return
+    try:
+        trays_dec = Decimal(raw_trays)
+    except InvalidOperation:
+        trays_dec = None
+    if trays_dec is None or not trays_dec.is_finite() or trays_dec < 0 or trays_dec != trays_dec.to_integral_value():
+        raise HTTPException(status_code=422, detail="Trays Produced must be a whole number of 0 or more.")
+    per_pallet = None
+    if entry.override_total_pcs_per_pallet:
+        try:
+            per_pallet = int(Decimal(entry.override_total_pcs_per_pallet))
+        except (InvalidOperation, ValueError):
+            per_pallet = None
+    if not per_pallet and ref is not None:
+        per_pallet = ref.prod_total_pcs_per_pallet
+    if not per_pallet or per_pallet <= 0:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Total No. of Pcs/Pallet is not set for {entry.sku_code_snapshot or 'this SKU'} -- enter Trays/Sleeve and Sleeve/Combo first, so pallets can be worked out from the trays.",
+        )
+    entry.trays_produced = int(trays_dec)
+    entry.pallets_produced = int(trays_dec) // int(per_pallet)
 
 
 def get_perms(current_user: AuthenticatedUser = Depends(get_current_user), db: Session = Depends(get_db)) -> models.ModulePermission:
@@ -296,7 +344,16 @@ def save_production_run(
             entry.override_pcs_per_sleeve = attrs.pcs_per_sleeve or None
         if attrs.sleeve_per_case is not None:
             entry.override_sleeve_per_case = attrs.sleeve_per_case or None
-        if attrs.total_pcs_per_pallet is not None:
+        ref = db.get(models.SkuVersion, entry.sku_version_id) if entry.sku_version_id else None
+        if attrs.pcs_per_sleeve is not None or attrs.sleeve_per_case is not None:
+            # Total No. of Pcs/Pallet is always Trays/Sleeve x Sleeve/Combo
+            # (the same rule the SKU Names screen uses) -- worked out here,
+            # from the values in force for this entry, never trusted from the
+            # client, so changing either number can't leave an old total behind.
+            trays = entry.override_pcs_per_sleeve or (ref.prod_pcs_per_sleeve if ref else None)
+            sleeves = entry.override_sleeve_per_case or (ref.prod_sleeve_per_case if ref else None)
+            entry.override_total_pcs_per_pallet = _derive_total_pcs_per_pallet(trays, sleeves)
+        elif attrs.total_pcs_per_pallet is not None:
             entry.override_total_pcs_per_pallet = attrs.total_pcs_per_pallet or None
         if attrs.pad_type is not None:
             entry.override_pad_type = attrs.pad_type or None
@@ -342,6 +399,14 @@ def save_production_run(
         # empty-means-0 convention as the rejection_* fields above.
         if attrs.pallets_produced is not None:
             entry.pallets_produced = int(Decimal(attrs.pallets_produced or "0"))
+        # Trays Produced (migration 0093, Factory only): pallets produced is the
+        # number of FULL pallets those trays make -- trays / Total No. of
+        # Pcs/Pallet, rounded down; leftover trays do not make a pallet. Worked
+        # out here so RQC / FG QR always read a pallet count the server derived.
+        # A blank trays figure leaves a record that never had one (an older
+        # record with pallets typed in) exactly as it is.
+        if attrs.trays_produced is not None and current_unit() != FALCON:
+            _apply_trays_produced(entry, ref, attrs.trays_produced)
         # Actual No. of Shots (migration 0086): blank clears it; otherwise a
         # whole number >= 0. Unlike Pallets Produced, blank is "not entered",
         # not 0 -- a machine that has not reported shots must not read as 0.
