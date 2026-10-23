@@ -85,6 +85,12 @@ def _is_gr_linked(qc: models.InwardQcRecord) -> bool:
     return qc.source_goods_receipt_entry_id is not None
 
 
+def _coa_required(qc: models.InwardQcRecord) -> bool:
+    """Trays (RM Tray, LNP Tray, ...) are inspected against a checklist and
+    never come with a COA, so only non-tray GR-linked QCs need one."""
+    return _is_gr_linked(qc) and qc.category not in svc.TRAY_FAMILY_CATEGORIES
+
+
 def _sku_spec(ver) -> dict | None:
     """Reference values already on the SKU Version, shown beside the form so
     the inspector compares against the spec (never copied into observations)."""
@@ -202,7 +208,7 @@ def _serialize_detail(db: Session, qc: models.InwardQcRecord) -> dict:
         vehicle_inspection=vehicle_inspection_dict,
         source_goods_receipt_entry_id=qc.source_goods_receipt_entry_id,
         goods_receipt=_goods_receipt_context(db, qc) if _is_gr_linked(qc) else None,
-        requires_coa=_is_gr_linked(qc),
+        requires_coa=_coa_required(qc),
         rm_qr_batch_id=rm_qr.id if rm_qr else None,
         rm_qr_status=rm_qr.status if rm_qr else None,
         form_key=fkey, uses_fgtray=svc.uses_fgtray(qc), evaluation=svc.evaluate(db, qc),
@@ -501,7 +507,7 @@ def submit_qc(
             detail = "Complete every required field (marked *) and the conclusion to finish this inspection. Still needed: " + "; ".join(ev["missing"]) + ". Until then it stays Pending."
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=detail)
 
-    if new_status == "accepted" and _is_gr_linked(qc) and not qc.coa_storage_path:
+    if new_status == "accepted" and _coa_required(qc) and not qc.coa_storage_path:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Upload the COA (PDF, Word doc, or image) before approving this Inward QC.",
