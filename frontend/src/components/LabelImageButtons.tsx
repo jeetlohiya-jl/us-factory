@@ -1,6 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
 import { downloadFiles, qrLabelImages, type QrLabel } from "@/lib/qrLabels";
+import LabelSheetPrint from "@/components/LabelSheetPrint";
+import { useProduct } from "@/lib/productContext";
 import { FACTORY_PRINT_MAX_LABELS, isAndroid, openFactoryPrint } from "@/lib/factoryPrint";
 
 /**
@@ -16,6 +18,7 @@ export default function LabelImageButtons({ labels, disabled, source = "" }: { l
   const [busy, setBusy] = useState<"download" | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [android, setAndroid] = useState(false);
+  const product = useProduct();
   useEffect(() => { setAndroid(isAndroid()); }, []);
 
   async function download() {
@@ -38,6 +41,8 @@ export default function LabelImageButtons({ labels, disabled, source = "" }: { l
           Print on D50 ({n})
         </button>
       )}
+      {/* Factory only: 20 labels per Letter sheet on the Epson. */}
+      {product === "factory" && <LabelSheetPrint labels={labels} disabled={disabled} />}
       <button className="btn btn-secondary" disabled={disabled || n === 0 || !!busy} onClick={download}>
         {busy === "download" ? "Preparing…" : `Download image${n === 1 ? "" : "s"}`}
       </button>
