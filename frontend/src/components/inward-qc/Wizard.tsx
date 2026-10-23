@@ -164,7 +164,7 @@ export default function Wizard({
     complete = requiredFilled && conclusion.trim() !== "";
   }
 
-  const coaOk = !grLinked || !!detail.coa_filename;
+  const coaOk = !grLinked || isTray || !!detail.coa_filename;
   const canSubmit = complete && coaOk;
   const plan = india
     ? (ev?.sampling ? { sampleSize: ev.sampling.sample_size, upperLimit: ev.sampling.upper_limit, note: ev.sampling.note } : null)
@@ -241,14 +241,14 @@ export default function Wizard({
         <div className="sp-head">
           <div>
             <h2>{CATEGORY_LABELS[detail.category]} Inward QC</h2>
-            <div className="sub">Shipment {detail.shipment_number || "(pending)"} · <span className={`badge ${detail.status}`}>{statusLabel(detail.status)}</span></div>
+            <div className="sub">Shipment {detail.shipment_number || "(pending)"}{detail.sku_code ? ` · ${detail.sku_code}` : ""}{detail.vendor_name ? ` · ${detail.vendor_name}` : ""} · <span className={`badge ${detail.status}`}>{statusLabel(detail.status)}</span></div>
           </div>
           <button className="sp-close" onClick={handleCancel}>×</button>
         </div>
         <div className="sp-body">
           {error && <div className="error-banner">{error}</div>}
 
-          {grLinked && detail.goods_receipt && (
+          {grLinked && isFinalized && detail.goods_receipt && (
             <div className="detail-card" style={{ marginBottom: 20 }}>
               <h3>Inward Details</h3>
               <div className="detail-grid">
@@ -348,7 +348,7 @@ export default function Wizard({
 
           {(step === 3 || isTray) && (
             <div>
-              {grLinked && (
+              {grLinked && !isTray && (
                 <div style={{ marginBottom: 18 }}>
                   <CoaField qcId={qcId} filename={detail.coa_filename} url={detail.coa_url} disabled={!canFillSection || isFinalized} onChange={setDetail} />
                   {!detail.coa_filename && <div className="hint-text" style={{ color: "var(--red)", marginTop: 4 }}>A COA is required before this can be approved.</div>}
