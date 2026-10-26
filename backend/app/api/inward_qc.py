@@ -135,7 +135,36 @@ def _goods_receipt_context(db: Session, qc: models.InwardQcRecord) -> dict | Non
     }
 
 
+def _fill_auto_values(db: Session, qc: models.InwardQcRecord) -> None:
+    """Keep the values the Goods Receipt entry already knows in step with it:
+    Total Pallet Received always follows the entry (the field is locked), and
+    Quantity/Pallet is filled from the entry's pallet size when blank. Only for
+    a QC still being filled in."""
+    e = qc.source_goods_receipt_entry
+    if e is None or qc.status in ("accepted", "onhold"):
+        return
+    wanted: dict = {}
+    for d in svc.get_attribute_definitions(db, svc.form_key(qc)):
+        if d.auto_source == "pallet_count" and e.pallet_count:
+            wanted[d.id] = (str(e.pallet_count), True)
+        elif d.lot_role == "qty_per_pallet" and e.qty_per_pallet:
+            wanted[d.id] = (format(e.qty_per_pallet.normalize(), "f"), False)
+    changed = False
+    for def_id, (val, always) in wanted.items():
+        existing = next((v for v in qc.attribute_values if v.attribute_definition_id == def_id), None)
+        if existing is None:
+            db.add(models.InwardQcAttributeValue(inward_qc_id=qc.id, attribute_definition_id=def_id, value=val))
+            changed = True
+        elif (always and existing.value != val) or (not always and existing.value in (None, "")):
+            existing.value = val
+            changed = True
+    if changed:
+        db.commit()
+        db.refresh(qc)
+
+
 def _serialize_detail(db: Session, qc: models.InwardQcRecord) -> dict:
+    _fill_auto_values(db, qc)
     # public_url isn't stored for COA (single file, not an image gallery row) —
     # local adapter serves everything under /media/<path>, mirroring images.
     # (Swap this for the storage adapter's own public URL once Supabase Storage is live.)
