@@ -71,24 +71,30 @@ export default function ReportObservations({
         <div style={{ overflowX: "auto" }}>
           <table className="qc-obs-table">
             <thead>
-              <tr><th>Defects List</th><th style={{ width: 120 }}>Acceptable Limit</th><th style={{ width: 150 }}>No. of failed products</th></tr>
+              <tr><th>Defects List</th><th style={{ width: 170 }}>No. of failed products</th></tr>
             </thead>
             <tbody>
-              {defects.map((v) => (
-                <tr key={v.attribute_definition_id}>
-                  <td>
-                    {v.label}{v.is_required && <span style={{ color: "var(--red)" }}> *</span>}
-                    {(v.defect_type || v.inspection_method) && (
-                      <div className="qc-defect-meta">
-                        {v.defect_type && <span className={`classification-badge ${v.defect_type.toLowerCase()}`}>{v.defect_type.toUpperCase()}</span>}
-                        {v.inspection_method && <span>{v.inspection_method}</span>}
-                      </div>
-                    )}
-                  </td>
-                  <td>{v.acceptable_limit || "—"}</td>
-                  <td>{input(v)}</td>
-                </tr>
-              ))}
+              {defects.map((v) => {
+                const limit = parseFloat(v.acceptable_limit || "");
+                const over = Number.isFinite(limit) && parseFloat(v.value || "") > limit;
+                return (
+                  <tr key={v.attribute_definition_id}>
+                    <td>
+                      {v.label}
+                      {(v.defect_type || v.inspection_method) && (
+                        <div className="qc-defect-meta">
+                          {v.defect_type && <span className={`classification-badge ${v.defect_type.toLowerCase()}`}>{v.defect_type.toUpperCase()}</span>}
+                          {v.inspection_method && <span>{v.inspection_method}</span>}
+                        </div>
+                      )}
+                    </td>
+                    <td className={over ? "qc-over-limit" : undefined}>
+                      {input(v)}
+                      {over && <div className="qc-over-note">Over the limit — goes On Hold</div>}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

@@ -513,6 +513,53 @@ def save_draft(
     return _serialize_detail(db, _get_or_404(db, qc_id))
 
 
+def _record_blank_defects_as_zero(db: Session, qc: models.InwardQcRecord) -> None:
+    """Report forms: a defect count nobody entered is recorded as 0."""
+    key = svc.form_key(qc)
+    if key not in svc.INDIA_FORM_KEYS:
+        return
+    for d in svc.get_attribute_definitions(db, key):
+        if d.section != "defect":
+            continue
+        existing = next((v for v in qc.attribute_values if v.attribute_definition_id == d.id), None)
+        if existing is None:
+            db.add(models.InwardQcAttributeValue(inward_qc_id=qc.id, attribute_definition_id=d.id, value="0"))
+        elif existing.value in (None, "") or not str(existing.value).strip():
+            existing.value = "0"
+    db.flush()
+    db.refresh(qc)
+
+
+def _open_hold_release(db: Session, qc: models.InwardQcRecord, ev: dict, current_user: AuthenticatedUser) -> None:
+    """A QC that goes On Hold gets its Hold & Release record right away,
+    pre-filled from the inspection (find-or-create; never overwrites what a
+    person already typed)."""
+    from datetime import date
+    rec = (
+        db.query(models.HoldReleaseRecord)
+        .filter(models.HoldReleaseRecord.module == "inward_qc", models.HoldReleaseRecord.record_id == qc.id)
+        .first()
+    )
+    if rec is None:
+        rec = models.HoldReleaseRecord(module="inward_qc", record_id=qc.id, status="draft")
+        db.add(rec)
+    qty = None
+    if qc.quantity is not None:
+        qty = f"{format(qc.quantity.normalize(), 'f')} {qc.quantity_unit or ''}".strip()
+    defaults = {
+        "date_of_hold": date.today().isoformat(),
+        "product_name": qc.sku_code_snapshot,
+        "batch_code": qc.shipment_number,
+        "point_of_detection": "Inward QC",
+        "qty_of_hold": qty,
+        "reason_for_hold": " ".join(ev.get("messages") or []) or "Inward QC failed the acceptance criteria.",
+        "record_filled_by": getattr(current_user, "full_name", None),
+    }
+    for field, value in defaults.items():
+        if value and not getattr(rec, field):
+            setattr(rec, field, value)
+
+
 @router.post("/{qc_id}/submit")
 def submit_qc(
     qc_id: uuid.UUID,
@@ -527,6 +574,7 @@ def submit_qc(
     qc = _get_or_404(db, qc_id)
     if qc.status == "accepted" and _is_gr_linked(qc):
         raise HTTPException(status_code=409, detail="This Inward QC is already approved.")
+    _record_blank_defects_as_zero(db, qc)
     ev = svc.evaluate(db, qc)
     new_status = ev["outcome"]
     if new_status == "pending":
@@ -558,6 +606,8 @@ def submit_qc(
         # duplicated (find-or-create backed by a DB unique constraint).
         from app.domain import qr_generation_service
         qr_generation_service.get_or_create_rm_qr_for_qc(db, qc)
+    elif new_status == "onhold":
+        _open_hold_release(db, qc, ev, current_user)
     db.commit()
     return _serialize_detail(db, _get_or_404(db, qc_id))
 

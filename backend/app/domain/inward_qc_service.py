@@ -279,7 +279,8 @@ def evaluate(db: Session, qc: models.InwardQcRecord) -> dict:
         val = values.get(d.id)
         blank = val in (None, "") or not str(val).strip()
         if blank:
-            if d.is_required:
+            # A defect count left empty means none found (0): never "missing".
+            if d.is_required and not (india and d.section == "defect"):
                 missing.append(d.label)
             continue
         if not india:
