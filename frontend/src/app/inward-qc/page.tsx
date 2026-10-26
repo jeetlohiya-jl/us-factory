@@ -302,6 +302,8 @@ function InwardQcPageContent() {
           onClose={() => { setWizardState(null); refreshAfterMutation(); }}
           onSaved={refreshAfterMutation}
           onSubmitted={(d) => {
+            // Failed the criteria -> straight to its Hold & Release record.
+            if (d.status === "onhold") openDetail(d.id);
             // Approved -> straight on to "how many QR codes?" (Falcon).
             if (d.status === "accepted" && d.rm_qr_batch_id && me?.permissions.rm_qr_generation?.can_edit) {
               openQr(d.rm_qr_batch_id, d.shipment_number);

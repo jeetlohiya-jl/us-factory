@@ -284,3 +284,5 @@ table.data.compact thead th, table.data.compact tbody td{padding:11px 12px;}
 }
 .qc-defect-meta{display:flex;align-items:center;gap:8px;margin-top:4px;font-size:13px;color:var(--ink-50);}
 .qc-obs-table .classification-badge{padding:2px 8px;font-size:10px;}
+.qc-over-limit input{border-color:var(--red);}
+.qc-over-note{font-size:11px;font-weight:600;color:var(--red);margin-top:3px;}
