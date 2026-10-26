@@ -1662,6 +1662,8 @@ class GoodsReceiptEntry(Base):
     pallet_count = Column(Integer, nullable=True)
     # 2026-09-30 (migration 0080) -- see GoodsReceiptEntry in frontend/src/lib/types.ts.
     qr_quantity = Column(Integer, nullable=True)
+    # Migration 0095: pieces per pallet from the Zoho PO (trays); pre-fills the RM Tray Inward QC.
+    qty_per_pallet = Column(Numeric, nullable=True)
     coa_storage_path = Column(Text, nullable=True)
     coa_filename = Column(Text, nullable=True)
     status = Column(Text, nullable=False, default="pending")
