@@ -164,7 +164,9 @@ export default function Wizard({
     complete = requiredFilled && conclusion.trim() !== "";
   }
 
-  const coaOk = !grLinked || isTray || !!detail.coa_filename;
+  // The server decides (trays -- incl. the RM Tray report form -- never have a COA).
+  const coaRequired = detail.requires_coa ?? (grLinked && !isTray);
+  const coaOk = !coaRequired || !!detail.coa_filename;
   const canSubmit = complete && coaOk;
   const plan = india
     ? (ev?.sampling ? { sampleSize: ev.sampling.sample_size, upperLimit: ev.sampling.upper_limit, note: ev.sampling.note } : null)
@@ -348,7 +350,7 @@ export default function Wizard({
 
           {(step === 3 || isTray) && (
             <div>
-              {grLinked && !isTray && (
+              {coaRequired && (
                 <div style={{ marginBottom: 18 }}>
                   <CoaField qcId={qcId} filename={detail.coa_filename} url={detail.coa_url} disabled={!canFillSection || isFinalized} onChange={setDetail} parsesValues={!india && !isTray} />
                   {!detail.coa_filename && <div className="hint-text" style={{ color: "var(--red)", marginTop: 4 }}>A COA is required before this can be approved.</div>}
