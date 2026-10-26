@@ -3,8 +3,10 @@ import { useRef, useState } from "react";
 import { api } from "@/lib/api";
 import type { QcDetail } from "@/lib/types";
 
-export default function CoaField({ qcId, filename, url, disabled, onChange }: {
+export default function CoaField({ qcId, filename, url, disabled, onChange, parsesValues = true }: {
   qcId: string; filename: string | null; url: string | null; disabled?: boolean; onChange: (detail: QcDetail) => void;
+  /** False on the Falcon report forms and checklists: values are never read from the COA, so no "couldn't read" message. */
+  parsesValues?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -35,7 +37,7 @@ export default function CoaField({ qcId, filename, url, disabled, onChange }: {
         );
       } else if (suggestions.length > 0) {
         setParseSummary("Couldn't confidently match any Observation fields on this COA — enter values manually below.");
-      } else {
+      } else if (parsesValues) {
         // An empty array (rather than one "not_found" entry per attribute)
         // means parsing itself never completed -- an unreadable file, or a
         // missing OCR dependency on this machine (see backend console for

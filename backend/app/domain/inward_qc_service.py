@@ -292,7 +292,9 @@ def evaluate(db: Session, qc: models.InwardQcRecord) -> dict:
                 missing.append(f"{d.label} (enter a whole number)")
         elif d.field_type == "dropdown" and d.options_json and val not in d.options_json:
             missing.append(f"{d.label} (choose one of the options)")
-    if not (qc.conclusion_or_suggestions or "").strip():
+    # The Falcon report forms' Suggestions / Conclusion box is optional; the
+    # original (Gainesville) forms still need it.
+    if not india and not (qc.conclusion_or_suggestions or "").strip():
         missing.append(CONCLUSION_LABEL.get(key, "Conclusion"))
 
     lot = lot_quantity(db, qc)
