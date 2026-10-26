@@ -282,3 +282,5 @@ table.data.compact thead th, table.data.compact tbody td{padding:11px 12px;}
 @media (max-width: 640px){
   .detail-grid{grid-template-columns:1fr;}
 }
+.qc-defect-meta{display:flex;align-items:center;gap:8px;margin-top:4px;font-size:13px;color:var(--ink-50);}
+.qc-obs-table .classification-badge{padding:2px 8px;font-size:10px;}

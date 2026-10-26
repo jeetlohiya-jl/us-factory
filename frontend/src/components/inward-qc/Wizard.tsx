@@ -60,6 +60,8 @@ export default function Wizard({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [touched, setTouched] = useState(false);
+  // Falcon report forms with a Defects List: attributes on page 1, defects on page 2.
+  const [obsPage, setObsPage] = useState<1 | 2>(1);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const canFillSection = permissions.can_fill_section || permissions.can_create || permissions.can_edit;
@@ -147,6 +149,8 @@ export default function Wizard({
   const formKey = detail.form_key || detail.category;
   const india = INDIA_FORM_KEYS.includes(formKey);
   const ev = detail.evaluation;
+  const twoPage = india && detail.attribute_values.some((v) => v.section === "defect");
+  const onDefectsPage = twoPage && obsPage === 2;
   // Completion / status preview mirroring the backend's exact rules, purely
   // to drive the Submit button and hint text — the backend re-validates.
   let complete = false;
@@ -356,7 +360,7 @@ export default function Wizard({
                   {!detail.coa_filename && <div className="hint-text" style={{ color: "var(--red)", marginTop: 4 }}>A COA is required before this can be approved.</div>}
                 </div>
               )}
-              {plan && (
+              {plan && !onDefectsPage && (
                 <div className="plan-callout">
                   {isTray ? (
                     <>
@@ -372,46 +376,38 @@ export default function Wizard({
                   )}
                 </div>
               )}
-              {india && !plan && (
-                <div className="hint-text" style={{ marginBottom: 12 }}>
-                  {ev?.lot_quantity
-                    ? `The report's sampling plan has no entry for a lot of ${ev.lot_quantity}. Confirm the sample size with QA.`
-                    : "Enter the quantity received (or Quantity/Pallet for the RM Tray) to see the sampling plan."}
-                </div>
-              )}
-              {india && (
-                <div className="hint-text" style={{ fontWeight: 700, marginBottom: 14, color: !complete ? "var(--ink-50)" : ev?.outcome === "onhold" ? "var(--red)" : "var(--green-deep)" }}>
+              {india && (!complete || ev?.outcome === "onhold") && (
+                <div className="hint-text" style={{ fontWeight: 600, marginBottom: 12, color: complete ? "var(--red)" : "var(--ink-50)" }}>
                   {!complete
-                    ? `Still needed before this can be approved: ${(ev?.missing || []).join("; ") || "—"}. Until then it stays Pending.`
-                    : !coaOk
-                    ? "Upload the COA to approve this record. Until then it stays Pending."
-                    : ev?.outcome === "onhold"
-                    ? "Complete — this record will be set to On Hold."
-                    : "Complete — this record will be set to Accepted."}
-                  {(ev?.messages || []).map((m, i) => <div key={i} style={{ fontWeight: 600 }}>{m}</div>)}
+                    ? `${(ev?.missing || []).length || "Some"} required field${(ev?.missing || []).length === 1 ? "" : "s"} left`
+                    : "Complete — this record will be set to On Hold."}
+                  {(ev?.messages || []).map((m, i) => <div key={i}>{m}</div>)}
                 </div>
               )}
-              <div hidden={india} className="hint-text" style={{ fontWeight: 700, marginBottom: 14, color: complete ? (hasNotOk ? "var(--red)" : "var(--green-deep)") : "var(--ink-50)" }}>
-                {complete && !coaOk
-                  ? "Upload the COA to approve this record. Until then it stays Pending."
-                  : complete
-                  ? (isTray ? (hasNotOk ? "One or more criteria are NOT OK — this record will be set to On Hold." : "All criteria OK — this record will be set to Accepted.") : "All required fields and conclusion complete — this record will be set to Accepted.")
-                  : (isTray ? "Mark OK / NOT OK for every criterion to complete this inspection. Until then it stays Pending." : "Fill in every required field (marked *) and the conclusion to complete this inspection. Until then it stays Pending.")}
-              </div>
+              {!india && (
+                <div className="hint-text" style={{ fontWeight: 700, marginBottom: 14, color: complete ? (hasNotOk ? "var(--red)" : "var(--green-deep)") : "var(--ink-50)" }}>
+                  {complete && !coaOk
+                    ? "Upload the COA to approve this record. Until then it stays Pending."
+                    : complete
+                    ? (isTray ? (hasNotOk ? "One or more criteria are NOT OK — this record will be set to On Hold." : "All criteria OK — this record will be set to Accepted.") : "All required fields and conclusion complete — this record will be set to Accepted.")
+                    : (isTray ? "Mark OK / NOT OK for every criterion to complete this inspection. Until then it stays Pending." : "Fill in every required field (marked *) and the conclusion to complete this inspection. Until then it stays Pending.")}
+                </div>
+              )}
 
               {isTray ? (
                 <FgtrayObservations answers={detail.fgtray_answers} onChange={handleFgtrayAnswer} disabled={!canFillSection} />
               ) : (
                 <>
-                  {countLabel && <div className="hint-text" style={{ marginBottom: 10 }}>{countLabel}: {plan ? `${plan.sampleSize} samples (auto, from Sampling Plan)` : ""}</div>}
-                  {india && ev?.failed_count != null && <div className="hint-text" style={{ marginBottom: 10 }}>Failed products so far: {ev.failed_count}{ev.upper_limit != null ? ` of an upper limit of ${ev.upper_limit}` : ""}</div>}
+                  {!india && countLabel && plan && <div className="hint-text" style={{ marginBottom: 10 }}>{countLabel}: {plan.sampleSize} samples</div>}
                   {india
-                    ? <ReportObservations values={detail.attribute_values} onChange={handleAttributeChange} disabled={!canFillSection || (detail.status === "accepted")} />
+                    ? <ReportObservations part={!twoPage ? "all" : onDefectsPage ? "defects" : "attributes"} values={detail.attribute_values} onChange={handleAttributeChange} disabled={!canFillSection || (detail.status === "accepted")} />
                     : <AttributeObservations values={detail.attribute_values} coaFilename={detail.coa_filename} onChange={handleAttributeChange} disabled={!canFillSection} />}
-                  <div className="field" style={{ marginTop: 14 }}>
-                    <label>{conclusionLabel}{india ? " (optional)" : ""}</label>
-                    <textarea rows={2} disabled={!canFillSection || (grLinked && detail.status === "accepted")} defaultValue={conclusion} onBlur={(e) => handleConclusionChange(e.target.value)} />
-                  </div>
+                  {(!twoPage || onDefectsPage) && (
+                    <div className="field" style={{ marginTop: 14 }}>
+                      <label>{conclusionLabel}{india ? " (optional)" : ""}</label>
+                      <textarea rows={2} disabled={!canFillSection || (grLinked && detail.status === "accepted")} defaultValue={conclusion} onBlur={(e) => handleConclusionChange(e.target.value)} />
+                    </div>
+                  )}
                 </>
               )}
             </div>
@@ -421,11 +417,15 @@ export default function Wizard({
           <button className="btn btn-ghost" onClick={handleCancel}>Cancel</button>
           <div className="sp-foot-right">
             {!isTray && !grLinked && step === 3 && <button className="btn btn-secondary" onClick={() => setStep(2)}>← Back</button>}
+            {onDefectsPage && <button className="btn btn-secondary" onClick={() => setObsPage(1)}>← Back</button>}
             {!isTray && <button className="btn btn-secondary" disabled={saving} onClick={handleSaveDraft}>Save Draft</button>}
             {!isTray && !grLinked && step === 2 && (
               <button className="btn btn-primary" disabled={saving || !skuCodeId || !skuVersionId || !quantity} onClick={handleNext}>Next →</button>
             )}
-            {(isTray || step === 3) && (
+            {twoPage && step === 3 && obsPage === 1 && (
+              <button className="btn btn-primary" onClick={() => setObsPage(2)}>Next →</button>
+            )}
+            {(isTray || (step === 3 && (!twoPage || obsPage === 2))) && (
               <button className="btn btn-primary" disabled={saving || !canSubmit} onClick={handleSubmit}>Submit</button>
             )}
           </div>
