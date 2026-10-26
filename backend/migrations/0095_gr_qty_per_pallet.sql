@@ -21,29 +21,39 @@ do $$
 declare
   _def text;
   _new text;
-  _sig text;
+  _pos int;
 begin
-  -- 1. Zoho sync: remember the pallet size on the entry
+  -- 1. Zoho sync: remember the pallet size on the entry. Whitespace-tolerant
+  -- (the stored function text may use Windows line endings).
   select pg_get_functiondef(p.oid) into _def from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname = 'zoho_upsert_purchase_order';
   if _def is null then raise exception 'zoho_upsert_purchase_order not found'; end if;
   if _def like '%qty_per_pallet%' then
     raise notice 'zoho_upsert_purchase_order already patched';
   else
-    _new := replace(_def,
-      E'zoho_quantity = _entry_qty, zoho_unit = _li->>''unit'', sort_order = _i\n        where id = _row.id;',
-      E'zoho_quantity = _entry_qty, zoho_unit = _li->>''unit'', sort_order = _i,\n          qty_per_pallet = case when sku_family(_sku.category) = ''tray'' then _per_box end\n        where id = _row.id;');
-    if _new = _def then raise exception 'update patch did not match in zoho_upsert_purchase_order'; end if;
+    _new := regexp_replace(_def,
+      'zoho_unit\s*=\s*_li->>''unit''\s*,\s*sort_order\s*=\s*_i(\s+)where\s+id\s*=\s*_row\.id\s*;',
+      'zoho_unit = _li->>''unit'', sort_order = _i, qty_per_pallet = case when sku_family(_sku.category) = ''tray'' then _per_box end\1where id = _row.id;');
+    if _new = _def then
+      _pos := position('sort_order' in _def);
+      raise exception 'update patch did not match in zoho_upsert_purchase_order. Live text near it: %', replace(replace(substr(_def, greatest(_pos - 250, 1), 600), E'\r', '<CR>'), E'\n', '<LF>');
+    end if;
     _def := _new;
-    _new := replace(_def,
-      E'po_quantity, unit, sort_order, status, zoho_line_item_id, zoho_quantity, zoho_unit\n          ) values (',
-      E'po_quantity, unit, sort_order, status, zoho_line_item_id, zoho_quantity, zoho_unit, qty_per_pallet\n          ) values (');
-    if _new = _def then raise exception 'insert-columns patch did not match in zoho_upsert_purchase_order'; end if;
+    _new := regexp_replace(_def,
+      'zoho_quantity\s*,\s*zoho_unit(\s*)\)(\s*)values(\s*)\(',
+      'zoho_quantity, zoho_unit, qty_per_pallet\1)\2values\3(');
+    if _new = _def then
+      _pos := position('zoho_quantity, zoho_unit' in _def);
+      raise exception 'insert-columns patch did not match in zoho_upsert_purchase_order. Live text near it: %', replace(replace(substr(_def, greatest(_pos - 250, 1), 600), E'\r', '<CR>'), E'\n', '<LF>');
+    end if;
     _def := _new;
-    _new := replace(_def,
-      E'_entry_po_qty, _unit, _i, ''pending'', _lkey, _entry_qty, _li->>''unit''\n          );',
-      E'_entry_po_qty, _unit, _i, ''pending'', _lkey, _entry_qty, _li->>''unit'',\n            case when sku_family(_sku.category) = ''tray'' then _per_box end\n          );');
-    if _new = _def then raise exception 'insert-values patch did not match in zoho_upsert_purchase_order'; end if;
+    _new := regexp_replace(_def,
+      '(_entry_qty\s*,\s*_li->>''unit'')(\s*)\)\s*;',
+      '\1, case when sku_family(_sku.category) = ''tray'' then _per_box end\2);');
+    if _new = _def then
+      _pos := position('_entry_qty, _li' in _def);
+      raise exception 'insert-values patch did not match in zoho_upsert_purchase_order. Live text near it: %', replace(replace(substr(_def, greatest(_pos - 250, 1), 600), E'\r', '<CR>'), E'\n', '<LF>');
+    end if;
     execute _new;
   end if;
 
@@ -54,10 +64,13 @@ begin
   if _def like '%qty_per_pallet%' then
     raise notice 'gr_ensure_qc already patched';
   else
-    _new := replace(_def,
-      E'when ''pallet_count'' then _e.pallet_count::text',
-      E'when ''pallet_count'' then _e.pallet_count::text\n      when ''qty_per_pallet'' then trim_scale(_e.qty_per_pallet)::text');
-    if _new = _def then raise exception 'patch did not match in gr_ensure_qc'; end if;
+    _new := regexp_replace(_def,
+      '(when\s+''pallet_count''\s+then\s+_e\.pallet_count::text)',
+      '\1 when ''qty_per_pallet'' then trim_scale(_e.qty_per_pallet)::text');
+    if _new = _def then
+      _pos := position('pallet_count' in _def);
+      raise exception 'patch did not match in gr_ensure_qc. Live text near it: %', replace(replace(substr(_def, greatest(_pos - 150, 1), 400), E'\r', '<CR>'), E'\n', '<LF>');
+    end if;
     execute _new;
   end if;
 end $$;
