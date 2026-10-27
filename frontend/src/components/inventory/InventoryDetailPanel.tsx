@@ -121,6 +121,9 @@ export default function InventoryDetailPanel({
               <div className="detail-grid">
                 <Kv label="Quantity" value={item.quantity.toLocaleString()} />
                 {item.trays != null && <Kv label="Trays" value={item.trays.toLocaleString()} />}
+                {item.boxes_in != null && <Kv label="Boxes in" value={item.boxes_in.toLocaleString()} />}
+                {item.boxes_consumed != null && <Kv label="Consumed boxes" value={item.boxes_consumed.toLocaleString()} />}
+                {item.boxes_on_floor != null && <Kv label="Boxes on floor" value={item.boxes_on_floor.toLocaleString()} />}
                 <Kv label="UOM" value={item.uom} />
                 <Kv
                   label="Compatible Tray SKU(s)"
@@ -191,11 +194,11 @@ export default function InventoryDetailPanel({
             )}
             <table className="qc-obs-table">
               <thead>
-                <tr><th>Supplier</th><th>Country</th><th>Quantity</th><th>Trays / Pallet</th><th>Trays</th><th>PO / Shipment</th><th>Added</th></tr>
+                <tr><th>Supplier</th><th>Country</th><th>Quantity</th><th>Trays / Pallet</th><th>Trays</th><th>Pallets in</th><th>Boxes / Pallet</th><th>Boxes in</th><th>Kg / Box</th><th>PO / Shipment</th><th>Added</th></tr>
               </thead>
               <tbody>
                 {item.sources.length === 0 ? (
-                  <tr className="empty-row"><td colSpan={7}>No sources recorded yet.</td></tr>
+                  <tr className="empty-row"><td colSpan={11}>No sources recorded yet.</td></tr>
                 ) : (
                   item.sources.map((s) => (
                     <tr key={s.id}>
@@ -204,6 +207,10 @@ export default function InventoryDetailPanel({
                       <td>{s.quantity.toLocaleString()} {s.unit}</td>
                       <td>{s.trays_per_pallet != null ? s.trays_per_pallet.toLocaleString() : "—"}</td>
                       <td>{s.trays != null ? s.trays.toLocaleString() : "—"}</td>
+                      <td>{s.pallets_in != null ? s.pallets_in.toLocaleString() : "—"}</td>
+                      <td>{s.boxes_per_pallet != null ? s.boxes_per_pallet.toLocaleString() : "—"}</td>
+                      <td>{s.boxes_in != null ? s.boxes_in.toLocaleString() : "—"}</td>
+                      <td>{s.kg_per_box != null ? s.kg_per_box.toLocaleString() : "—"}</td>
                       <td className="mono">{s.po_number ? `${s.po_number} / ${s.shipment_number || "—"}` : s.is_manual ? "Manual" : "—"}</td>
                       <td>{new Date(s.created_at).toLocaleDateString()}</td>
                     </tr>

@@ -1260,6 +1260,9 @@ class InventoryListItemOut(BaseModel):
     quantity: float
     # Migration 0098 -- tray SKUs: total trays on hand (null for other materials).
     trays: Optional[float] = None
+    # Migration 0102 -- glue: boxes received / still on the floor (null for other materials).
+    boxes_in: Optional[float] = None
+    boxes_on_floor: Optional[float] = None
 
 
 class InventoryListOut(BaseModel):
@@ -1275,6 +1278,10 @@ class InventorySourceOut(BaseModel):
     unit: str
     trays_per_pallet: Optional[float] = None
     trays: Optional[float] = None
+    pallets_in: Optional[int] = None
+    boxes_per_pallet: Optional[int] = None
+    boxes_in: Optional[int] = None
+    kg_per_box: Optional[float] = None
     is_manual: bool
     note: Optional[str] = None
     po_number: Optional[str] = None
@@ -1297,6 +1304,10 @@ class InventoryDetailOut(BaseModel):
     uom: str
     quantity: float
     trays: Optional[float] = None
+    # Migration 0102 -- glue: boxes received, consumed and still on the floor.
+    boxes_in: Optional[float] = None
+    boxes_consumed: Optional[float] = None
+    boxes_on_floor: Optional[float] = None
     # Migration 0061 -- a material can pair with more than one tray SKU
     # (the reference sheet lists e.g. "3P & 3D" for one Polybag SKU).
     compatible_trays: list[CompatibleTrayOut] = []
