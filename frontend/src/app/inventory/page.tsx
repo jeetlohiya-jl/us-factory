@@ -92,10 +92,10 @@ export default function InventoryPage() {
 
       <div className="card card-flush">
         <table className="data">
-          <thead><tr><th>SKU</th><th>SKU Code</th><th>UOM</th><th>Quantity</th></tr></thead>
+          <thead><tr><th>SKU</th><th>SKU Code</th><th>UOM</th><th>Quantity</th><th>Trays</th></tr></thead>
           <tbody>
             {items.length === 0 ? (
-              <tr className="empty-row"><td colSpan={4}>{loading ? "Loading…" : "No inventory items yet."}</td></tr>
+              <tr className="empty-row"><td colSpan={5}>{loading ? "Loading…" : "No inventory items yet."}</td></tr>
             ) : (
               items.map((it) => (
                 <tr key={it.id} style={{ cursor: "pointer" }} onClick={() => openInventoryItem(it.id)}>
@@ -103,6 +103,7 @@ export default function InventoryPage() {
                   <td className="mono">{it.sku_code || "—"}</td>
                   <td>{it.uom}</td>
                   <td>{it.quantity.toLocaleString()}</td>
+                  <td>{it.trays != null ? it.trays.toLocaleString() : "—"}</td>
                 </tr>
               ))
             )}

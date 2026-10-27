@@ -1754,6 +1754,10 @@ class InventorySource(Base):
     country_code = Column(Text, nullable=True)
     quantity = Column(Numeric, nullable=False, default=0)
     unit = Column(Text, nullable=False, default="Kgs")
+    # Migration 0098 -- tray SKUs only: trays per pallet at receipt and the resulting tray count
+    # (pallets x trays per pallet). Null for every other material.
+    trays_per_pallet = Column(Numeric, nullable=True)
+    trays = Column(Numeric, nullable=True)
     is_manual = Column(Boolean, nullable=False, default=False)
     note = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)

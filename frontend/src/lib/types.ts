@@ -614,6 +614,8 @@ export interface InventoryListItem {
   sku_code: string | null;
   uom: string;
   quantity: number;
+  // Migration 0098 -- tray SKUs: total trays on hand.
+  trays: number | null;
 }
 
 export interface InventoryListResponse {
@@ -627,6 +629,8 @@ export interface InventorySource {
   supplier_country: string | null;
   quantity: number;
   unit: string;
+  trays_per_pallet: number | null;
+  trays: number | null;
   is_manual: boolean;
   note: string | null;
   po_number: string | null;
@@ -648,6 +652,7 @@ export interface InventoryDetail {
   category: string;
   uom: string;
   quantity: number;
+  trays: number | null;
   // Migration 0061 -- a material can pair with more than one tray SKU.
   compatible_trays: CompatibleTray[];
   sources: InventorySource[];

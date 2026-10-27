@@ -46,6 +46,7 @@ def _country_from_vendor(db: Session, vendor_id) -> str | None:
 def list_inventory(db: Session, search: str = "", page: int = 1, page_size: int = 50):
     unit = current_unit()
     qty = func.coalesce(func.sum(models.InventorySource.quantity), 0)
+    trays_total = func.sum(models.InventorySource.trays)
 
     base = (
         db.query(models.InventoryItem.id)
@@ -68,6 +69,7 @@ def list_inventory(db: Session, search: str = "", page: int = 1, page_size: int 
             models.SkuCode.sku_code,
             models.InventoryItem.uom,
             qty.label("quantity"),
+            trays_total.label("trays"),
         )
         .join(models.SkuCode, models.SkuCode.id == models.InventoryItem.sku_code_id)
         .outerjoin(models.InventorySource, models.InventorySource.inventory_item_id == models.InventoryItem.id)
@@ -83,7 +85,8 @@ def list_inventory(db: Session, search: str = "", page: int = 1, page_size: int 
     rows = q.order_by(models.SkuCode.code).offset((page - 1) * page_size).limit(page_size).all()
 
     items = [
-        {"id": r.id, "sku_code_id": r.sku_code_id, "sku": r.code, "sku_code": r.sku_code, "uom": r.uom, "quantity": float(r.quantity)}
+        {"id": r.id, "sku_code_id": r.sku_code_id, "sku": r.code, "sku_code": r.sku_code, "uom": r.uom, "quantity": float(r.quantity),
+         "trays": float(r.trays) if r.trays is not None else None}
         for r in rows
     ]
     return items, matched_count
@@ -114,6 +117,8 @@ def get_inventory_detail(db: Session, item_id: uuid.UUID):
         .all()
     )
     quantity = sum(float(s.quantity or 0) for s in sources)
+    tray_values = [float(s.trays) for s in sources if s.trays is not None]
+    trays = sum(tray_values) if tray_values else None
 
     source_rows = []
     for s in sources:
@@ -125,6 +130,8 @@ def get_inventory_detail(db: Session, item_id: uuid.UUID):
             "supplier_country": s.country_code,
             "quantity": float(s.quantity or 0),
             "unit": s.unit,
+            "trays_per_pallet": float(s.trays_per_pallet) if s.trays_per_pallet is not None else None,
+            "trays": float(s.trays) if s.trays is not None else None,
             "is_manual": s.is_manual,
             "note": s.note,
             "po_number": gr.po_number if gr else None,
@@ -141,6 +148,7 @@ def get_inventory_detail(db: Session, item_id: uuid.UUID):
         "category": item.sku_code.category if item.sku_code else "",
         "uom": item.uom,
         "quantity": quantity,
+        "trays": trays,
         "compatible_trays": [
             {"id": ct.tray_sku_code_id, "code": ct.tray_sku_code.code}
             for ct in item.compatible_trays if ct.tray_sku_code

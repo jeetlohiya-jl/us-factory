@@ -120,6 +120,7 @@ export default function InventoryDetailPanel({
             {!editing ? (
               <div className="detail-grid">
                 <Kv label="Quantity" value={item.quantity.toLocaleString()} />
+                {item.trays != null && <Kv label="Trays" value={item.trays.toLocaleString()} />}
                 <Kv label="UOM" value={item.uom} />
                 <Kv
                   label="Compatible Tray SKU(s)"
@@ -190,17 +191,19 @@ export default function InventoryDetailPanel({
             )}
             <table className="qc-obs-table">
               <thead>
-                <tr><th>Supplier</th><th>Country</th><th>Quantity</th><th>PO / Shipment</th><th>Added</th></tr>
+                <tr><th>Supplier</th><th>Country</th><th>Quantity</th><th>Trays / Pallet</th><th>Trays</th><th>PO / Shipment</th><th>Added</th></tr>
               </thead>
               <tbody>
                 {item.sources.length === 0 ? (
-                  <tr className="empty-row"><td colSpan={5}>No sources recorded yet.</td></tr>
+                  <tr className="empty-row"><td colSpan={7}>No sources recorded yet.</td></tr>
                 ) : (
                   item.sources.map((s) => (
                     <tr key={s.id}>
                       <td>{s.vendor_name || "—"}</td>
                       <td className="mono">{s.supplier_country || "—"}</td>
                       <td>{s.quantity.toLocaleString()} {s.unit}</td>
+                      <td>{s.trays_per_pallet != null ? s.trays_per_pallet.toLocaleString() : "—"}</td>
+                      <td>{s.trays != null ? s.trays.toLocaleString() : "—"}</td>
                       <td className="mono">{s.po_number ? `${s.po_number} / ${s.shipment_number || "—"}` : s.is_manual ? "Manual" : "—"}</td>
                       <td>{new Date(s.created_at).toLocaleDateString()}</td>
                     </tr>
