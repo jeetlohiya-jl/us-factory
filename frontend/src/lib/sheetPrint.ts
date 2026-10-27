@@ -15,11 +15,15 @@ export type SheetSettings = {
   outlines: boolean;  // alignment test: print only the label outlines
 };
 
-export const SHEET = { cols: 4, rows: 5, label: 2, left: 0.25, top: 0.5, gapX: 0, gapY: 0, pageW: 8.5, pageH: 11 };
+// Measured from Premium Label Supply's own PLS289 2x2 PDF template: labels start
+// 0.25in from the left and top edges, sit edge to edge across (2.00in pitch),
+// and have a 0.125in gap between rows (2.125in pitch). Do not change these
+// without re-measuring the sheet.
+export const SHEET = { cols: 4, rows: 5, label: 2, left: 0.25, top: 0.25, gapX: 0, gapY: 0.125, pageW: 8.5, pageH: 11 };
 export const SHEET_PER_PAGE = SHEET.cols * SHEET.rows;
 export const DEFAULT_SHEET_SETTINGS: SheetSettings = { start: 1, offsetX: 0, offsetY: 0, outlines: false };
 
-const KEY = "factory.labelSheet.settings";
+const KEY = "factory.labelSheet.settings.v2";   // v2: earlier nudges were compensating for the wrong layout, so start from zero
 export function loadSheetSettings(): SheetSettings {
   try {
     const raw = localStorage.getItem(KEY);
