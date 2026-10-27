@@ -205,6 +205,9 @@ export interface InspectionDetail {
   invoice_number: string | null;
   transporter_name: string | null;
   seal_number: string | null;
+  // Migration 0097 -- Factory Inward: from the Zoho PO (Trays/40HQ, and Trays/40HQ / Combo boxes/40HQ), editable.
+  trays_per_pallet: string | number | null;
+  trays_per_container: string | number | null;
   total_quantity: string | number | null;
   inspection_passed_quantity: string | null;
   remarks: string | null;
