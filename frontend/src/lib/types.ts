@@ -1940,6 +1940,9 @@ export interface GoodsReceiptEntry {
   // generation falls back to pallet_count in that case. See
   // goods_receipt_generate_pallets (migration 0080) and GrQuickInwardForm.tsx.
   qr_quantity: number | null;
+  // Migration 0099 -- Soaker Pad packing, compulsory at Inward (Factory). Null until filled in.
+  pcs_per_box?: number | null;
+  boxes_per_pallet?: number | null;
   // 2026-09-30 (migration 0080) -- Certificate of Analysis upload, required
   // before QR generation for Polybag/Soaker Pad/CFB entries specifically
   // (see GrCoaField.tsx / needsCoa()). Uploaded via FastAPI (not

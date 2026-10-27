@@ -77,6 +77,10 @@ export default function GrInwardWizard({
   // Only meaningful for tray entries (RM / LNP tray); other materials don't show them.
   const [traysPerPallet, setTraysPerPallet] = useState(numToStr(initialDetail.trays_per_pallet));
   const [traysPerContainer, setTraysPerContainer] = useState(numToStr(initialDetail.trays_per_container));
+  // Soaker Pad (Factory): No. of Pcs/Box and No. of Boxes/Pallet are compulsory at inward, typed by the operator.
+  const asksPadPacking = useProduct() !== "falcon" && entry.category === "pad";
+  const [pcsPerBox, setPcsPerBox] = useState(entry.pcs_per_box ? String(entry.pcs_per_box) : "");
+  const [boxesPerPallet, setBoxesPerPallet] = useState(entry.boxes_per_pallet ? String(entry.boxes_per_pallet) : "");
   // 2026-09-30 -- Polybag/Soaker Pad/CFB entries need a COA even when they
   // do have a real shipment number (and so still go through this wizard,
   // unlike the common auto-shipment case handled by GrQuickInwardForm --
@@ -186,6 +190,26 @@ export default function GrInwardWizard({
     return (v: T) => { setTouched(true); dirty.current = true; setter(v); };
   }
 
+  function validatePadPacking(): string | null {
+    if (!asksPadPacking) return null;
+    const pb = Number(pcsPerBox), bp = Number(boxesPerPallet);
+    if (!(pb >= 1) || !Number.isInteger(pb)) return "No. of Pcs/Box must be a whole number of at least 1.";
+    if (!(bp >= 1) || !Number.isInteger(bp)) return "No. of Boxes/Pallet must be a whole number of at least 1.";
+    return null;
+  }
+
+  // Saves the pad packing on the Goods Receipt entry (the database refuses to inward a pad without it).
+  async function savePadPacking(): Promise<boolean> {
+    if (!asksPadPacking) return true;
+    try {
+      await api.setGoodsReceiptPadPacking(entry.id, Number(pcsPerBox), Number(boxesPerPallet));
+      return true;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to save pad packing");
+      return false;
+    }
+  }
+
   function validateTrays(): string | null {
     for (const [label, v] of [["Trays per Pallet", traysPerPallet], ["Trays per Container", traysPerContainer]] as const) {
       if (v.trim() !== "" && !(Number(v) >= 0)) return `${label} must be a number (0 or more).`;
@@ -212,9 +236,10 @@ export default function GrInwardWizard({
   }
 
   async function handleNext() {
-    const invalid = validatePallets() || validateTrays();
+    const invalid = validatePallets() || validateTrays() || validatePadPacking();
     if (invalid) { setError(invalid); return; }
     setSaving(true);
+    if (!(await savePadPacking())) { setSaving(false); return; }
     const ok = await persistBasicIfDirty();
     setSaving(false);
     if (ok) { setError(null); setStep(2); }
@@ -259,9 +284,12 @@ export default function GrInwardWizard({
     && (!requiresCoa || !!coaFilename);
 
   async function handleSubmit() {
+    const padInvalid = validatePadPacking();
+    if (padInvalid) { setError(padInvalid); return; }
     setSaving(true);
     setError(null);
     try {
+      if (!(await savePadPacking())) { setSaving(false); return; }
       await persistBasicIfDirty();
       const updated = await api.submit(inspectionId);
       setDetail(updated);
@@ -364,6 +392,20 @@ export default function GrInwardWizard({
                   <input type="number" min={1} step={1} disabled={readOnlyStep1} value={pallets} placeholder="e.g. 20"
                     onChange={(e) => markTouched(setPallets)(e.target.value)} />
                 </div>
+                {asksPadPacking && (
+                  <>
+                    <div className="field">
+                      <label>No. of Pcs/Box <span style={{ color: "var(--red)" }}>*</span></label>
+                      <input type="number" min={1} step={1} disabled={readOnlyStep1} value={pcsPerBox} placeholder="e.g. 500"
+                        onChange={(e) => { setPcsPerBox(e.target.value); }} />
+                    </div>
+                    <div className="field">
+                      <label>No. of Boxes/Pallet <span style={{ color: "var(--red)" }}>*</span></label>
+                      <input type="number" min={1} step={1} disabled={readOnlyStep1} value={boxesPerPallet} placeholder="e.g. 24"
+                        onChange={(e) => { setBoxesPerPallet(e.target.value); }} />
+                    </div>
+                  </>
+                )}
                 {isTray(entry) && (
                   <>
                     <div className="field">
