@@ -253,6 +253,9 @@ class InwardVehicleInspection(ProductScoped, Base):
     invoice_number = Column(Text, nullable=True)
     transporter_name = Column(Text, nullable=True)
     seal_number = Column(Text, nullable=True)
+    # Migration 0097 -- Factory Inward: trays per pallet / per container (40HQ), prefilled from the Zoho PO, editable.
+    trays_per_pallet = Column(Numeric, nullable=True)
+    trays_per_container = Column(Numeric, nullable=True)
     total_quantity = Column(Numeric, nullable=True)
     inspection_passed_quantity = Column(Text, nullable=True)
     remarks = Column(Text, nullable=True)
@@ -1664,6 +1667,8 @@ class GoodsReceiptEntry(Base):
     qr_quantity = Column(Integer, nullable=True)
     # Migration 0095: pieces per pallet from the Zoho PO (trays); pre-fills the RM Tray Inward QC.
     qty_per_pallet = Column(Numeric, nullable=True)
+    # Migration 0097: Trays/40HQ from the Zoho PO (trays per container).
+    trays_per_container = Column(Numeric, nullable=True)
     coa_storage_path = Column(Text, nullable=True)
     coa_filename = Column(Text, nullable=True)
     status = Column(Text, nullable=False, default="pending")

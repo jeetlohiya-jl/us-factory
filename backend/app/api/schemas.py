@@ -162,6 +162,8 @@ class InspectionBasicUpdate(BaseModel):
     seal_number: Optional[str] = None
     remarks: Optional[str] = None
     inspection_passed_quantity: Optional[str] = None
+    trays_per_pallet: Optional[Decimal] = None
+    trays_per_container: Optional[Decimal] = None
     line_items: Optional[list[LineItemIn]] = None
 
 
@@ -180,6 +182,8 @@ class InspectionDetailOut(BaseModel):
     invoice_number: Optional[str]
     transporter_name: Optional[str]
     seal_number: Optional[str]
+    trays_per_pallet: Optional[Decimal] = None
+    trays_per_container: Optional[Decimal] = None
     total_quantity: Optional[Decimal]
     inspection_passed_quantity: Optional[str]
     remarks: Optional[str]

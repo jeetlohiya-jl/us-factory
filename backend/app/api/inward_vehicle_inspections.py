@@ -57,6 +57,17 @@ def _serialize_detail(db: Session, inspection: models.InwardVehicleInspection) -
             sku_version=li.sku_version.version if li.sku_version else None,
         ))
     linked_qc = svc.find_dependent_qc(db, inspection.id)
+    # Migration 0097: Trays per Pallet / Container are prefilled from the Zoho PO
+    # (stored on the Goods Receipt entry) while the inspection is still a draft
+    # and nothing has been entered; after that the inspection's own values rule.
+    trays_per_pallet = inspection.trays_per_pallet
+    trays_per_container = inspection.trays_per_container
+    if inspection.source_goods_receipt_entry_id and inspection.status == "draft" \
+            and trays_per_pallet is None and trays_per_container is None:
+        src = db.get(models.GoodsReceiptEntry, inspection.source_goods_receipt_entry_id)
+        if src is not None:
+            trays_per_pallet = src.qty_per_pallet
+            trays_per_container = src.trays_per_container
     return schemas.InspectionDetailOut(
         id=inspection.id,
         shipment_number=inspection.shipment_number,
@@ -68,6 +79,8 @@ def _serialize_detail(db: Session, inspection: models.InwardVehicleInspection) -
         invoice_number=inspection.invoice_number,
         transporter_name=inspection.transporter_name,
         seal_number=inspection.seal_number,
+        trays_per_pallet=trays_per_pallet,
+        trays_per_container=trays_per_container,
         total_quantity=inspection.total_quantity,
         inspection_passed_quantity=inspection.inspection_passed_quantity,
         remarks=inspection.remarks,
@@ -208,6 +221,8 @@ def create_draft(
             vendor_name=entry.goods_receipt.vendor_name,
             vendor_id=entry.goods_receipt.vendor_id,
             source_goods_receipt_entry_id=entry.id,
+            trays_per_pallet=entry.qty_per_pallet,
+            trays_per_container=entry.trays_per_container,
             status="draft",
             created_by=current_user.user_id,
             updated_by=current_user.user_id,
@@ -279,6 +294,23 @@ def update_inspection(
 
     if "vendor_name" in data:
         inspection.vendor_id = resolve_vendor_id(db, inspection.category, inspection.vendor_name)
+
+    # Migration 0097: editable Trays per Pallet / Container. Also written back to the
+    # Goods Receipt entry so later steps (e.g. the RM Tray Inward QC's Quantity/Pallet
+    # pre-fill) use what the operator confirmed at Inward.
+    for field in ("trays_per_pallet", "trays_per_container"):
+        if field in data:
+            value = data[field]
+            if value is not None and value < 0:
+                raise HTTPException(status_code=422, detail="Trays per Pallet / Container cannot be negative.")
+            setattr(inspection, field, value)
+    if inspection.source_goods_receipt_entry_id and ("trays_per_pallet" in data or "trays_per_container" in data):
+        src = db.get(models.GoodsReceiptEntry, inspection.source_goods_receipt_entry_id)
+        if src is not None:
+            if "trays_per_pallet" in data:
+                src.qty_per_pallet = data["trays_per_pallet"]
+            if "trays_per_container" in data:
+                src.trays_per_container = data["trays_per_container"]
 
     if line_items is not None:
         inspection.line_items.clear()

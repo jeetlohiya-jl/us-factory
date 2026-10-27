@@ -2464,7 +2464,7 @@ export const api = {
           .from("inward_vehicle_inspections")
           .select(
             "id,shipment_number,is_auto_shipment_number,category,truck_number,container_number,vendor_name," +
-              "invoice_number,transporter_name,seal_number,total_quantity,inspection_passed_quantity,remarks," +
+              "invoice_number,transporter_name,seal_number,trays_per_pallet,trays_per_container,total_quantity,inspection_passed_quantity,remarks," +
               "status,created_at,updated_at,source_goods_receipt_entry_id," +
               "line_items:inward_vehicle_inspection_line_items(id,sku_code_id,sku_version_id,quantity,unit,sku_code:sku_codes(code),sku_version:sku_versions(version))," +
               "images:inward_vehicle_inspection_images(id,image_type,public_url,ocr_extracted_value,ocr_confidence,ocr_status,sort_order)," +
@@ -2496,8 +2496,22 @@ export const api = {
         affects_status: (ci as unknown as { affects_status: boolean }).affects_status,
       }));
       const linked = (linkedQc || [])[0] as { id: string; shipment_number: string } | undefined;
+      // Trays per Pallet / Container come from the Zoho PO (stored on the Goods
+      // Receipt entry). A draft inspection created before migration 0097 has none
+      // of its own yet, so pre-fill it from the entry; the operator can edit it.
+      let traysPerPallet = (rawInspection.trays_per_pallet ?? null) as string | number | null;
+      let traysPerContainer = (rawInspection.trays_per_container ?? null) as string | number | null;
+      const srcEntryId = rawInspection.source_goods_receipt_entry_id as string | null;
+      if (srcEntryId && rawInspection.status === "draft" && traysPerPallet == null && traysPerContainer == null) {
+        const { data: src } = await supabase.from("goods_receipt_entries").select("qty_per_pallet,trays_per_container").eq("id", srcEntryId).maybeSingle();
+        const s = src as { qty_per_pallet: string | number | null; trays_per_container: string | number | null } | null;
+        traysPerPallet = s?.qty_per_pallet ?? null;
+        traysPerContainer = s?.trays_per_container ?? null;
+      }
       const result: InspectionDetail = {
         ...(rawInspection as unknown as InspectionDetail),
+        trays_per_pallet: traysPerPallet,
+        trays_per_container: traysPerContainer,
         line_items,
         checklist_answers,
         linked_qc_id: linked?.id ?? null,

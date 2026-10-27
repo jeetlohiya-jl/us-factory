@@ -32,6 +32,18 @@ import { isTray, needsCoa, needsStage } from "./GoodsReceiptDetailPanel";
  *     caller's onApproved does that (and then opens RM QR Generation), so
  *     an entry is never marked inwarded without a completed inspection.
  */
+// Numeric DB value (string | number | null) -> input text, trimming trailing zeros ("12090.00" -> "12090").
+function numToStr(v: string | number | null | undefined): string {
+  if (v == null || v === "") return "";
+  const n = Number(v);
+  return Number.isFinite(n) ? String(n) : "";
+}
+function toNumOrNull(v: string): number | null {
+  if (v.trim() === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
 export default function GrInwardWizard({
   entry, poNumber, vendorName, inspectionId, initialDetail, permissions, onClose, onApproved, onSaved, isNew = false,
 }: {
@@ -61,6 +73,10 @@ export default function GrInwardWizard({
   const [transporter, setTransporter] = useState(initialDetail.transporter_name || "");
   const [seal, setSeal] = useState(initialDetail.seal_number || "");
   const [remarks, setRemarks] = useState(initialDetail.remarks || "");
+  // Trays per Pallet / per Container (40HQ): prefilled from the Zoho PO, editable.
+  // Only meaningful for tray entries (RM / LNP tray); other materials don't show them.
+  const [traysPerPallet, setTraysPerPallet] = useState(numToStr(initialDetail.trays_per_pallet));
+  const [traysPerContainer, setTraysPerContainer] = useState(numToStr(initialDetail.trays_per_container));
   // 2026-09-30 -- Polybag/Soaker Pad/CFB entries need a COA even when they
   // do have a real shipment number (and so still go through this wizard,
   // unlike the common auto-shipment case handled by GrQuickInwardForm --
@@ -122,6 +138,10 @@ export default function GrInwardWizard({
       transporter_name: transporter,
       seal_number: seal,
       remarks,
+      ...(isTray(entry) ? {
+        trays_per_pallet: toNumOrNull(traysPerPallet),
+        trays_per_container: toNumOrNull(traysPerContainer),
+      } : {}),
       line_items: [{
         sku_code_id: entry.sku_code_id,
         sku_version_id: entry.sku_version_id || null,
@@ -160,10 +180,17 @@ export default function GrInwardWizard({
     saveTimer.current = setTimeout(() => { persistBasic(); }, 900);
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stage, pallets, truck, container, transporter, seal, remarks, touched]);
+  }, [stage, pallets, truck, container, transporter, seal, remarks, traysPerPallet, traysPerContainer, touched]);
 
   function markTouched<T>(setter: (v: T) => void) {
     return (v: T) => { setTouched(true); dirty.current = true; setter(v); };
+  }
+
+  function validateTrays(): string | null {
+    for (const [label, v] of [["Trays per Pallet", traysPerPallet], ["Trays per Container", traysPerContainer]] as const) {
+      if (v.trim() !== "" && !(Number(v) >= 0)) return `${label} must be a number (0 or more).`;
+    }
+    return null;
   }
 
   function validatePallets(): string | null {
@@ -185,7 +212,7 @@ export default function GrInwardWizard({
   }
 
   async function handleNext() {
-    const invalid = validatePallets();
+    const invalid = validatePallets() || validateTrays();
     if (invalid) { setError(invalid); return; }
     setSaving(true);
     const ok = await persistBasicIfDirty();
@@ -337,6 +364,20 @@ export default function GrInwardWizard({
                   <input type="number" min={1} step={1} disabled={readOnlyStep1} value={pallets} placeholder="e.g. 20"
                     onChange={(e) => markTouched(setPallets)(e.target.value)} />
                 </div>
+                {isTray(entry) && (
+                  <>
+                    <div className="field">
+                      <label>Trays per Pallet</label>
+                      <input type="number" min={0} step="any" disabled={readOnlyStep1} value={traysPerPallet} placeholder="From PO (Trays/40HQ ÷ Combo boxes/40HQ)"
+                        onChange={(e) => markTouched(setTraysPerPallet)(e.target.value)} />
+                    </div>
+                    <div className="field">
+                      <label>Trays per Container (40HQ)</label>
+                      <input type="number" min={0} step="any" disabled={readOnlyStep1} value={traysPerContainer} placeholder="From PO (Trays/40HQ)"
+                        onChange={(e) => markTouched(setTraysPerContainer)(e.target.value)} />
+                    </div>
+                  </>
+                )}
               </div>
 
               <div className="form-grid">
