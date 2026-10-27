@@ -203,6 +203,11 @@ export default function GoodsReceiptDetailPanel({
         return;
       }
       let next: GoodsReceiptDetail;
+      // Soaker Pad: its No. of Pcs/Box and Boxes/Pallet are saved first (compulsory -- the database also
+      // refuses to inward a Factory pad without them).
+      if (submission.kind === "pallets") {
+        await api.setGoodsReceiptPadPacking(e.id, submission.pcsPerBox, submission.boxesPerPallet);
+      }
       if (e.status === "inwarded") {
         next = await api.inwardRemainingGoodsReceiptEntry(e.id, submission.kind === "pallets"
           ? { received_quantity: leftToReceive(e), pallet_count: submission.pallets, qr_quantity: submission.qrQuantity }

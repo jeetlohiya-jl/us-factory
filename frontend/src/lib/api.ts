@@ -2163,7 +2163,7 @@ const GR_DETAIL_SELECT =
   "zoho_purchaseorder_id,zoho_cancelled,zoho_synced_at,zoho_sync_notes," +
   "entries:goods_receipt_entries(id,shipment_number,category,sku_code_id,sku_version_id," +
   "sku_code:sku_code_snapshot,sku_version:sku_version_snapshot,sku_name:sku_codes(code),po_quantity,received_quantity,unit,pallet_count," +
-  "qr_quantity,coa_storage_path,coa_filename," +
+  "qr_quantity,pcs_per_box,boxes_per_pallet,coa_storage_path,coa_filename," +
   "status,inwarded_at,sort_order," +
   "qc:inward_qc_records!inward_qc_records_source_goods_receipt_entry_id_fkey(id,status)," +
   "batch_numbers:goods_receipt_pallet_batches(count)," +
@@ -3416,6 +3416,12 @@ export const api = {
     const res = await goodsReceiptRpc("goods_receipt_inward_remaining", { _entry_id: entryId, _payload: payload });
     invalidateListCache("goods-receipt");
     return res;
+  },
+  // Migration 0099 -- saves a Soaker Pad's No. of Pcs/Box and No. of Boxes/Pallet; called right before its inward.
+  setGoodsReceiptPadPacking: async (entryId: string, pcsPerBox: number, boxesPerPallet: number) => {
+    await sbRequest<null>(() =>
+      supabase.rpc("goods_receipt_set_pad_packing", { _entry_id: entryId, _pcs_per_box: pcsPerBox, _boxes_per_pallet: boxesPerPallet }) as unknown as Promise<{ data: null; error: { message: string; code?: string } | null }>
+    );
   },
   inwardGoodsReceiptEntry: async (_id: string, entryId: string, payload: GoodsReceiptInwardPayload) => {
     const res = await goodsReceiptRpc("goods_receipt_inward", { _entry_id: entryId, _payload: payload });

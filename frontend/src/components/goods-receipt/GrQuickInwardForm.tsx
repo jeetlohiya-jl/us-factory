@@ -6,7 +6,7 @@ import GrCoaField from "./GrCoaField";
 import { needsCoa } from "./GoodsReceiptDetailPanel";
 
 export type QuickInwardSubmission =
-  | { kind: "pallets"; pallets: number; qrQuantity: number }
+  | { kind: "pallets"; pallets: number; qrQuantity: number; pcsPerBox: number; boxesPerPallet: number }
   | { kind: "quantity"; receivedQuantity: number; unit: QuantityUnit; qrQuantity: number }
   // Falcon: quantity + unit only (no pallets; trays use another flow). No QR count and no
   // COA here -- QR codes come after QC approval, and the COA is uploaded in QC.
@@ -64,6 +64,9 @@ export default function GrQuickInwardForm({
   const [receivedQuantity, setReceivedQuantity] = useState(usMode ? String(entry.po_quantity) : "");
   const [unit, setUnit] = useState<QuantityUnit>(entry.unit);
   const [qrQuantity, setQrQuantity] = useState("");
+  // Soaker Pad packing (Factory): compulsory, typed by the operator (prefilled if already saved).
+  const [pcsPerBox, setPcsPerBox] = useState(entry.pcs_per_box ? String(entry.pcs_per_box) : "");
+  const [boxesPerPallet, setBoxesPerPallet] = useState(entry.boxes_per_pallet ? String(entry.boxes_per_pallet) : "");
   const [coaFilename, setCoaFilename] = useState(entry.coa_filename);
   const [validationError, setValidationError] = useState<string | null>(null);
 
@@ -86,6 +89,11 @@ export default function GrQuickInwardForm({
       const q = Number(receivedQuantity);
       if (!(q > 0)) return "Quantity Received must be greater than 0.";
     }
+    if (usesPallets) {
+      const pb = Number(pcsPerBox), bp = Number(boxesPerPallet);
+      if (!(pb >= 1) || !Number.isInteger(pb)) return "No. of Pcs/Box must be a whole number of at least 1.";
+      if (!(bp >= 1) || !Number.isInteger(bp)) return "No. of Boxes/Pallet must be a whole number of at least 1.";
+    }
     const q = Number(qrQuantity);
     if (!(q >= 1) || !Number.isInteger(q)) return "Number of QR codes to generate must be a whole number of at least 1.";
     if (requiresCoa && !coaFilename) return "Upload the COA before submitting.";
@@ -102,7 +110,7 @@ export default function GrQuickInwardForm({
     }
     onSubmit(
       usesPallets
-        ? { kind: "pallets", pallets: Number(pallets), qrQuantity: Number(qrQuantity) }
+        ? { kind: "pallets", pallets: Number(pallets), qrQuantity: Number(qrQuantity), pcsPerBox: Number(pcsPerBox), boxesPerPallet: Number(boxesPerPallet) }
         : { kind: "quantity", receivedQuantity: Number(receivedQuantity), unit, qrQuantity: Number(qrQuantity) }
     );
   }
@@ -200,6 +208,20 @@ export default function GrQuickInwardForm({
                   <select disabled={!canEdit || busy} value={unit} onChange={(e) => setUnit(e.target.value as QuantityUnit)}>
                     {QUANTITY_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
                   </select>
+                </div>
+              </>
+            )}
+            {!usMode && usesPallets && (
+              <>
+                <div className="field">
+                  <label>No. of Pcs/Box <span style={{ color: "var(--red)" }}>*</span></label>
+                  <input type="number" min={1} step={1} disabled={!canEdit || busy} value={pcsPerBox} placeholder="e.g. 500"
+                    onChange={(e) => setPcsPerBox(e.target.value)} />
+                </div>
+                <div className="field">
+                  <label>No. of Boxes/Pallet <span style={{ color: "var(--red)" }}>*</span></label>
+                  <input type="number" min={1} step={1} disabled={!canEdit || busy} value={boxesPerPallet} placeholder="e.g. 24"
+                    onChange={(e) => setBoxesPerPallet(e.target.value)} />
                 </div>
               </>
             )}
