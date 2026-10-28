@@ -759,8 +759,8 @@ async function getMaterialConsumptionSb(id: string): Promise<MaterialConsumption
 // -- Shift Record (migration 0103) -----------------------------------------
 type RawShiftRecord = {
   id: string; display_id: string; record_date: string; shift: string; shipment_number: string | null;
-  fg_sku_code_snapshot: string | null; trays_produced: number; total_pcs_per_pallet: number | null; fg_pallets: number;
-  scrap_trays: number; notes: string | null; client_time: string | null; recorded_at: string; qr_generation_id: string | null;
+  fg_sku_code_snapshot: string | null; trays_produced: number; total_pcs_per_pallet: number | null; fg_pallets: number; loose_trays: number;
+  scrap_trays: number; scrap_reason: string | null; notes: string | null; client_time: string | null; recorded_at: string; qr_generation_id: string | null;
   machine: { code: string } | null;
   recorded_by_user: { full_name: string } | null;
   materials: {
@@ -769,7 +769,7 @@ type RawShiftRecord = {
   }[];
 };
 const SR_SELECT =
-  "id, display_id, record_date, shift, shipment_number, fg_sku_code_snapshot, trays_produced, total_pcs_per_pallet, fg_pallets, scrap_trays, notes, client_time, recorded_at, qr_generation_id, " +
+  "id, display_id, record_date, shift, shipment_number, fg_sku_code_snapshot, trays_produced, total_pcs_per_pallet, fg_pallets, loose_trays, scrap_trays, scrap_reason, notes, client_time, recorded_at, qr_generation_id, " +
   "machine:machines(code), recorded_by_user:app_users!recorded_by(full_name), " +
   "materials:shift_record_materials(id, sort_order, sku_code_snapshot, category, pallet_display_id, quantity, unit, fully_consumed, inventory_quantity)";
 
@@ -777,7 +777,7 @@ function flattenShiftRecord(r: RawShiftRecord): ShiftRecordListItem {
   const mats = [...(r.materials || [])].sort((a, b) => a.sort_order - b.sort_order);
   return {
     id: r.id, display_id: r.display_id, record_date: r.record_date, shift: r.shift, machine: r.machine?.code ?? null,
-    fg_sku_code: r.fg_sku_code_snapshot, trays_produced: r.trays_produced, fg_pallets: r.fg_pallets, scrap_trays: r.scrap_trays,
+    fg_sku_code: r.fg_sku_code_snapshot, trays_produced: r.trays_produced, fg_pallets: r.fg_pallets, loose_trays: r.loose_trays ?? 0, scrap_trays: r.scrap_trays,
     materials: mats.map((m) => `${m.sku_code_snapshot ?? "—"} ${m.quantity} ${m.unit}`).join(", "),
     recorded_by: r.recorded_by_user?.full_name ?? null, recorded_at: r.recorded_at,
   };
@@ -825,7 +825,7 @@ async function getShiftRecordSb(id: string): Promise<ShiftRecordDetail> {
   const mats = [...(r.materials || [])].sort((a, b) => a.sort_order - b.sort_order);
   return {
     ...flattenShiftRecord(r),
-    shipment_number: r.shipment_number, total_pcs_per_pallet: r.total_pcs_per_pallet, notes: r.notes, client_time: r.client_time,
+    shipment_number: r.shipment_number, total_pcs_per_pallet: r.total_pcs_per_pallet, notes: r.notes, scrap_reason: r.scrap_reason, client_time: r.client_time,
     qr_batch: qrBatch, pallets,
     material_lines: mats.map((m) => ({
       id: m.id, sort_order: m.sort_order, sku_code: m.sku_code_snapshot, category: m.category, pallet_display_id: m.pallet_display_id,
@@ -3572,6 +3572,13 @@ export const api = {
       supabase.from("sku_versions").select("prod_total_pcs_per_pallet").eq("id", skuVersionId).maybeSingle() as unknown as Promise<{ data: { prod_total_pcs_per_pallet: number | null } | null; error: { message: string; code?: string } | null }>
     );
     return row?.prod_total_pcs_per_pallet ?? null;
+  },
+  // Same, from just a chosen tray SKU (before any pallet is scanned): the first version that has it set.
+  getSkuPcsPerPallet: async (skuCodeId: string): Promise<number | null> => {
+    const rows = await sbRequest<{ prod_total_pcs_per_pallet: number | null }[]>(() =>
+      supabase.from("sku_versions").select("prod_total_pcs_per_pallet").eq("sku_code_id", skuCodeId).not("prod_total_pcs_per_pallet", "is", null).limit(1) as unknown as Promise<{ data: { prod_total_pcs_per_pallet: number | null }[] | null; error: { message: string; code?: string } | null }>
+    );
+    return rows?.[0]?.prod_total_pcs_per_pallet ?? null;
   },
   saveShiftRecord: async (payload: ShiftRecordSavePayload) => {
     const res = await sbRequest<{ id: string; display_id: string; fg_pallets: { id: string; display_id: string; trays: number }[]; qr_generation_id: string | null }>(() =>

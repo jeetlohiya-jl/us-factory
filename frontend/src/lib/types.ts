@@ -2183,7 +2183,7 @@ export interface PinholeTestSavePayload {
 // ---------------------------------------------------------------------------
 // Shift Record (migration 0103) -- Factory only
 // ---------------------------------------------------------------------------
-export type ShiftRecordUnit = "Pallets" | "Boxes" | "Pcs" | "Kgs" | "Units";
+export type ShiftRecordUnit = "Pallets" | "Trays" | "Boxes" | "Pcs" | "Kgs" | "Units";
 
 export interface ShiftRecordMaterial {
   id: string;
@@ -2214,6 +2214,7 @@ export interface ShiftRecordListItem {
   fg_sku_code: string | null;
   trays_produced: number;
   fg_pallets: number;
+  loose_trays: number;
   scrap_trays: number;
   materials: string;
   recorded_by: string | null;
@@ -2224,6 +2225,7 @@ export interface ShiftRecordDetail extends ShiftRecordListItem {
   shipment_number: string | null;
   total_pcs_per_pallet: number | null;
   notes: string | null;
+  scrap_reason: string | null;
   client_time: string | null;
   qr_batch: string | null;
   material_lines: ShiftRecordMaterial[];
@@ -2239,6 +2241,11 @@ export interface ShiftRecordScanPreview {
   sku_version_id: string | null;
   sku_version: string | null;
   shipment_number: string | null;
+  // what one whole pallet holds, when Goods Receipt recorded it
+  trays_per_pallet: number | null;
+  pcs_per_pallet: number | null;
+  boxes_per_pallet: number | null;
+  kg_per_box: number | null;
 }
 
 export interface ShiftRecordSavePayload {
@@ -2249,6 +2256,7 @@ export interface ShiftRecordSavePayload {
   notes?: string;
   trays_produced: number;
   scrap_trays: number;
+  scrap_reason?: string;
   total_pcs_per_pallet?: number | null;
   materials: { sku_code_id: string | null; scan: string; quantity: number; unit: ShiftRecordUnit; fully_consumed: boolean }[];
 }
