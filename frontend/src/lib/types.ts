@@ -2217,6 +2217,8 @@ export interface ShiftRecordListItem {
   trays_produced: number;
   fg_pallets: number;
   loose_trays: number;
+  loose_carried_in: number;
+  fg_generated_at: string | null;
   scrap_trays: number;
   materials: string;
   recorded_by: string | null;
@@ -2230,6 +2232,7 @@ export interface ShiftRecordDetail extends ShiftRecordListItem {
   scrap_reason: string | null;
   client_time: string | null;
   qr_batch: string | null;
+  fg_sku_code_id: string | null;
   material_lines: ShiftRecordMaterial[];
   pallets: ShiftRecordFgPallet[];
 }

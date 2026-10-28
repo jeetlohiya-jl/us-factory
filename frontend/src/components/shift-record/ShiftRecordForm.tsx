@@ -64,6 +64,7 @@ export default function ShiftRecordForm({ onClose, onSaved }: { onClose: () => v
   const [perOverride, setPerOverride] = useState("");
   const [defaultPer, setDefaultPer] = useState<number | null>(null);
   const [scrapReason, setScrapReason] = useState("");
+  const [carryIn, setCarryIn] = useState(0);
   const [scrap, setScrap] = useState("");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
@@ -88,6 +89,10 @@ export default function ShiftRecordForm({ onClose, onSaved }: { onClose: () => v
     if (fgVersionId) api.getShiftRecordPcsPerPallet(fgVersionId).then(setDefaultPer).catch(() => {});
     else if (traySkuId) api.getSkuPcsPerPallet(traySkuId).then(setDefaultPer).catch(() => {});
   }, [fgVersionId, traySkuId]);
+  useEffect(() => {
+    setCarryIn(0);
+    if (traySkuId) api.getShiftRecordCarryIn(traySkuId).then(setCarryIn).catch(() => {});
+  }, [traySkuId]);
 
   const traysN = Number(trays) || 0;
   const per = Number(perOverride) > 0 ? Math.trunc(Number(perOverride)) : defaultPer;
@@ -104,8 +109,9 @@ export default function ShiftRecordForm({ onClose, onSaved }: { onClose: () => v
   const balanced = traysUsed > 0 && traysN + scrapN === traysUsed;
 
   // As Production: full pallets only (trays / Total Pcs per Pallet); the rest are loose trays.
-  const fgPallets = traysN > 0 && per && per > 0 ? Math.floor(traysN / per) : 0;
-  const looseTrays = traysN > 0 && per && per > 0 ? traysN - fgPallets * per : 0;
+  const pool = traysN + (traysN > 0 ? carryIn : 0);
+  const fgPallets = traysN > 0 && per && per > 0 ? Math.floor(pool / per) : 0;
+  const looseTrays = traysN > 0 && per && per > 0 ? pool - fgPallets * per : 0;
 
   function patch(key: number, p: Partial<Line>) {
     setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...p } : l)));
@@ -286,6 +292,7 @@ export default function ShiftRecordForm({ onClose, onSaved }: { onClose: () => v
             <h3>Pallets Produced</h3>
             <div className="hint-text" style={{ marginBottom: 10 }}>
               Enter the trays produced. Pallets produced is worked out from it (trays / Trays per Pallet, full pallets only); the rest are loose trays.
+              {" The FG pallets and QRs are made at the end, from the record, by Generate FG QRs; loose trays left over from earlier shifts of the same SKU are added in then."}
               {traysN > 0 && !trayLine && " Pick the tray SKU in Materials Used above — the FG tray SKU comes from it."}
             </div>
             <div className="form-grid">
@@ -306,6 +313,11 @@ export default function ShiftRecordForm({ onClose, onSaved }: { onClose: () => v
                 <div className="readonly-val mono">{traysN > 0 && per ? looseTrays : "—"}</div>
               </div>
             </div>
+            {carryIn > 0 && traysN > 0 && (
+              <div className="hint-text" style={{ marginTop: 8 }}>
+                Includes {carryIn.toLocaleString()} loose trays carried from earlier shifts: {traysN.toLocaleString()} + {carryIn.toLocaleString()} = {pool.toLocaleString()} trays to make pallets from.
+              </div>
+            )}
           </div>
 
           <div className="detail-card">
