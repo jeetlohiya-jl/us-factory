@@ -26,7 +26,7 @@ get_inventory_detail(), once an item is actually opened.
 """
 import uuid
 
-from sqlalchemy import func
+from sqlalchemy import case, func
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.product import current_unit
@@ -47,6 +47,11 @@ def list_inventory(db: Session, search: str = "", page: int = 1, page_size: int 
     unit = current_unit()
     qty = func.coalesce(func.sum(models.InventorySource.quantity), 0)
     trays_total = func.sum(models.InventorySource.trays)
+    # Glue (migration 0102): boxes received, and boxes on the floor = kg / kg per box.
+    boxes_in_total = func.sum(models.InventorySource.boxes_in)
+    boxes_floor_total = func.sum(
+        case((models.InventorySource.kg_per_box > 0, models.InventorySource.quantity / models.InventorySource.kg_per_box), else_=None)
+    )
 
     base = (
         db.query(models.InventoryItem.id)
@@ -70,6 +75,8 @@ def list_inventory(db: Session, search: str = "", page: int = 1, page_size: int 
             models.InventoryItem.uom,
             qty.label("quantity"),
             trays_total.label("trays"),
+            boxes_in_total.label("boxes_in"),
+            boxes_floor_total.label("boxes_on_floor"),
         )
         .join(models.SkuCode, models.SkuCode.id == models.InventoryItem.sku_code_id)
         .outerjoin(models.InventorySource, models.InventorySource.inventory_item_id == models.InventoryItem.id)
@@ -86,7 +93,9 @@ def list_inventory(db: Session, search: str = "", page: int = 1, page_size: int 
 
     items = [
         {"id": r.id, "sku_code_id": r.sku_code_id, "sku": r.code, "sku_code": r.sku_code, "uom": r.uom, "quantity": float(r.quantity),
-         "trays": float(r.trays) if r.trays is not None else None}
+         "trays": float(r.trays) if r.trays is not None else None,
+         "boxes_in": float(r.boxes_in) if r.boxes_in is not None else None,
+         "boxes_on_floor": round(float(r.boxes_on_floor), 2) if r.boxes_on_floor is not None else None}
         for r in rows
     ]
     return items, matched_count
@@ -119,6 +128,12 @@ def get_inventory_detail(db: Session, item_id: uuid.UUID):
     quantity = sum(float(s.quantity or 0) for s in sources)
     tray_values = [float(s.trays) for s in sources if s.trays is not None]
     trays = sum(tray_values) if tray_values else None
+    boxes_in = sum(float(s.boxes_in) for s in sources if s.boxes_in is not None) if any(s.boxes_in is not None for s in sources) else None
+    boxes_on_floor = None
+    boxes_consumed = None
+    if boxes_in is not None:
+        boxes_on_floor = round(sum(float(s.quantity or 0) / float(s.kg_per_box) for s in sources if s.kg_per_box), 2)
+        boxes_consumed = round(boxes_in - boxes_on_floor, 2)
 
     source_rows = []
     for s in sources:
@@ -132,6 +147,10 @@ def get_inventory_detail(db: Session, item_id: uuid.UUID):
             "unit": s.unit,
             "trays_per_pallet": float(s.trays_per_pallet) if s.trays_per_pallet is not None else None,
             "trays": float(s.trays) if s.trays is not None else None,
+            "pallets_in": s.pallets_in,
+            "boxes_per_pallet": s.boxes_per_pallet,
+            "boxes_in": s.boxes_in,
+            "kg_per_box": float(s.kg_per_box) if s.kg_per_box is not None else None,
             "is_manual": s.is_manual,
             "note": s.note,
             "po_number": gr.po_number if gr else None,
@@ -149,6 +168,9 @@ def get_inventory_detail(db: Session, item_id: uuid.UUID):
         "uom": item.uom,
         "quantity": quantity,
         "trays": trays,
+        "boxes_in": boxes_in,
+        "boxes_consumed": boxes_consumed,
+        "boxes_on_floor": boxes_on_floor,
         "compatible_trays": [
             {"id": ct.tray_sku_code_id, "code": ct.tray_sku_code.code}
             for ct in item.compatible_trays if ct.tray_sku_code

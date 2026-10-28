@@ -1758,6 +1758,12 @@ class InventorySource(Base):
     # (pallets x trays per pallet). Null for every other material.
     trays_per_pallet = Column(Numeric, nullable=True)
     trays = Column(Numeric, nullable=True)
+    # Migration 0102 -- glue only: pallets received, boxes per pallet, boxes received and kg per box.
+    # Boxes on the floor = quantity (kg) / kg_per_box.
+    pallets_in = Column(Integer, nullable=True)
+    boxes_per_pallet = Column(Integer, nullable=True)
+    boxes_in = Column(Integer, nullable=True)
+    kg_per_box = Column(Numeric, nullable=True)
     is_manual = Column(Boolean, nullable=False, default=False)
     note = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)

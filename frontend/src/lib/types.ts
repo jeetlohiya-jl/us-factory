@@ -617,6 +617,9 @@ export interface InventoryListItem {
   quantity: number;
   // Migration 0098 -- tray SKUs: total trays on hand.
   trays: number | null;
+  // Migration 0102 -- glue: boxes received / still on the floor.
+  boxes_in?: number | null;
+  boxes_on_floor?: number | null;
 }
 
 export interface InventoryListResponse {
@@ -632,6 +635,10 @@ export interface InventorySource {
   unit: string;
   trays_per_pallet: number | null;
   trays: number | null;
+  pallets_in?: number | null;
+  boxes_per_pallet?: number | null;
+  boxes_in?: number | null;
+  kg_per_box?: number | null;
   is_manual: boolean;
   note: string | null;
   po_number: string | null;
@@ -654,6 +661,10 @@ export interface InventoryDetail {
   uom: string;
   quantity: number;
   trays: number | null;
+  // Migration 0102 -- glue: boxes received, consumed and still on the floor.
+  boxes_in?: number | null;
+  boxes_consumed?: number | null;
+  boxes_on_floor?: number | null;
   // Migration 0061 -- a material can pair with more than one tray SKU.
   compatible_trays: CompatibleTray[];
   sources: InventorySource[];
