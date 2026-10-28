@@ -261,24 +261,25 @@ export default function ShiftRecordForm({ onClose, onSaved }: { onClose: () => v
                     </div>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 6, gap: 10 }}>
-                    <div className="hint-text">
-                      {cap
-                        ? (q >= cap ? `Whole pallet (${cap} ${l.unit.toLowerCase()}) — it is used up.` : `Part of a pallet (${cap} ${l.unit.toLowerCase()} in a full one) — the rest stays in stock.`)
-                        : l.unit === "Pallets" ? "" : (
-                          <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                            <input type="checkbox" checked={l.fully} onChange={(e) => patch(l.key, { fully: e.target.checked })} />
-                            Pallet fully used
-                          </label>
-                        )}
-                    </div>
+                    <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 13 }}>
+                      <input
+                        type="checkbox"
+                        checked={cap ? q >= cap : l.fully}
+                        disabled={l.unit === "Pallets" && !!cap}
+                        onChange={(e) => {
+                          if (cap) patch(l.key, { fully: e.target.checked, quantity: e.target.checked ? String(cap) : "" });
+                          else patch(l.key, { fully: e.target.checked });
+                        }}
+                      />
+                      Pallet fully used
+                    </label>
                     {lines.length > 1 && <button className="btn-tertiary" onClick={() => setLines((ls) => ls.filter((o) => o.key !== l.key))}>Remove</button>}
                   </div>
-                  {!cap && l.unit !== "Pallets" && (
-                    <div className="hint-text" style={{ marginTop: 4 }}>
-                      <b>Pallet fully used</b> — tick it when nothing is left on this pallet: it is marked consumed and cannot be used again.
-                      Untick it when some is left: the pallet stays in stock (it only leaves its shelf) and only the quantity entered comes off Inventory.
-                    </div>
-                  )}
+                  <div className="hint-text" style={{ marginTop: 4 }}>
+                    <b>Pallet fully used</b> — tick it when nothing is left on this pallet: it is marked consumed and cannot be used again.
+                    Untick it when some is left: the pallet stays in stock (it only leaves its shelf) and only the quantity you enter comes off Inventory.
+                    {cap ? ` A full pallet holds ${cap.toLocaleString()} ${l.unit.toLowerCase()}; entering that much ticks it for you.` : ""}
+                  </div>
                   {l.checking && <div className="hint-text">Checking…</div>}
                   {l.checked && <div className="hint-text">{l.checked.display_id} · {l.checked.sku_code || "—"}{l.checked.shipment_number ? ` · ${l.checked.shipment_number}` : ""}</div>}
                   {l.lineError && <div className="error-banner" style={{ marginTop: 6 }}>{l.lineError}</div>}
