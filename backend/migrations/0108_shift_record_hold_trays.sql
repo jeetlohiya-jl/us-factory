@@ -1,4 +1,4 @@
--- 0108 -- Shift Record: a Hold category after Scrap. Trays used = trays produced (finished) + scrap trays + hold trays.
+-- 0108 -- Shift Record: a Hold category after Scrap. Trays used = trays produced (finished) + scrap trays - hold trays (so finished + scrap = used + hold).
 -- Run after 0106. Re-runnable. Hold trays are only recorded (they do not become FG pallets and are not loose trays).
 alter table shift_records add column if not exists hold_trays integer not null default 0;
 
@@ -155,9 +155,9 @@ begin
               _qty, _unit, _full, _adj, _delta, _loc);
   end loop;
 
-  -- every tray used is either produced (FG pallets + loose), scrap or on hold
-  if _fg_sku_id is not null and not _used_unknown and _used_trays > 0 and (_trays + _scrap + _hold) <> _used_trays then
-    raise exception 'Trays produced (%) + scrap trays (%) + hold trays (%) = %, but % trays were used. They must be equal.', _trays, _scrap, _hold, _trays + _scrap + _hold, _used_trays;
+  -- trays used = finished + scrap - hold
+  if _fg_sku_id is not null and not _used_unknown and _used_trays > 0 and (_trays + _scrap - _hold) <> _used_trays then
+    raise exception 'Trays produced (%) + scrap trays (%) - hold trays (%) = %, but % trays were used. They must be equal.', _trays, _scrap, _hold, _trays + _scrap - _hold, _used_trays;
   end if;
 
   -- FG trays produced: checked and recorded here; the FG pallets / QRs are made later by shift_record_generate_fg()

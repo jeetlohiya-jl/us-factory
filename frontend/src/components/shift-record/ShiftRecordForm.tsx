@@ -93,7 +93,7 @@ export default function ShiftRecordForm({ onClose, onSaved }: { onClose: () => v
 
   const traysN = Number(trays) || 0;
   const per = Number(perOverride) > 0 ? Math.trunc(Number(perOverride)) : defaultPer;
-  // Trays used on this record (all tray pallets, possibly several of the same SKU): produced + scrap + hold must equal it.
+  // Trays used on this record (all tray pallets, possibly several of the same SKU): produced + scrap - hold must equal it.
   const traysUsed = lines.reduce((sum, l) => {
     if (!l.checked || !TRAY_CATEGORIES.includes(l.checked.category || "")) return sum;
     const q = Number(l.quantity) || 0;
@@ -103,7 +103,7 @@ export default function ShiftRecordForm({ onClose, onSaved }: { onClose: () => v
   }, 0);
   const scrapN = Number(scrap) || 0;
   const holdN = Number(hold) || 0;
-  const accounted = traysN + scrapN + holdN;
+  const accounted = traysN + scrapN - holdN;
   const balanced = traysUsed > 0 && accounted === traysUsed;
 
   // As Production: full pallets only (trays / Total Pcs per Pallet); the rest are loose trays.
@@ -144,7 +144,7 @@ export default function ShiftRecordForm({ onClose, onSaved }: { onClose: () => v
       if (!l.checked) return setError(`Material ${i + 1}: scan the RM pallet QR (it is compulsory).`);
       if (!(Number(l.quantity) > 0)) return setError(`Material ${i + 1}: enter the quantity used.`);
     }
-    if (traysUsed > 0 && accounted !== traysUsed) return setError(`Trays produced (${traysN}) + scrap (${scrapN}) + hold (${holdN}) = ${accounted}, but ${traysUsed} trays were used. They must be equal.`);
+    if (traysUsed > 0 && accounted !== traysUsed) return setError(`Trays produced (${traysN}) + scrap (${scrapN}) - hold (${holdN}) = ${accounted}, but ${traysUsed} trays were used. They must be equal.`);
     if (traysN > 0 && !(per && per > 0)) return setError("Trays per Pallet is not set for this tray SKU — enter it so the pallets can be worked out.");
     setSaving(true);
     try {
@@ -310,7 +310,7 @@ export default function ShiftRecordForm({ onClose, onSaved }: { onClose: () => v
             <h3>Scrap</h3>
             {traysUsed > 0 && (
               <div className="hint-text" style={{ marginBottom: 10, color: balanced ? "var(--green, #15803d)" : "var(--red, #b91c1c)" }}>
-                Trays used {traysUsed.toLocaleString()} = produced {traysN.toLocaleString()} + scrap {scrapN.toLocaleString()} + hold {holdN.toLocaleString()} ({accounted.toLocaleString()})
+                Trays used {traysUsed.toLocaleString()} = produced {traysN.toLocaleString()} + scrap {scrapN.toLocaleString()} − hold {holdN.toLocaleString()} ({accounted.toLocaleString()})
                 {balanced ? " ✓" : ` — ${accounted > traysUsed ? "over" : "short"} by ${Math.abs(traysUsed - accounted).toLocaleString()}`}
               </div>
             )}
@@ -329,7 +329,7 @@ export default function ShiftRecordForm({ onClose, onSaved }: { onClose: () => v
           <div className="detail-card">
             <h3>Hold</h3>
             <div className="hint-text" style={{ marginBottom: 10 }}>
-              Trays set aside on hold. They are part of the trays used above, so trays used = finished + scrap + hold. They do not become FG pallets.
+              Trays set aside on hold. Trays used = finished + scrap − hold. Hold trays do not become FG pallets.
             </div>
             <div className="form-grid">
               <div className="field">
