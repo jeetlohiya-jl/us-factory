@@ -760,7 +760,7 @@ async function getMaterialConsumptionSb(id: string): Promise<MaterialConsumption
 type RawShiftRecord = {
   id: string; display_id: string; record_date: string; shift: string; shipment_number: string | null;
   fg_sku_code_snapshot: string | null; trays_produced: number; total_pcs_per_pallet: number | null; fg_pallets: number; loose_trays: number; loose_carried_in: number; fg_generated_at: string | null; fg_sku_code_id: string | null;
-  scrap_trays: number; scrap_reason: string | null; notes: string | null; client_time: string | null; recorded_at: string; qr_generation_id: string | null;
+  scrap_trays: number; hold_trays: number | null; scrap_reason: string | null; notes: string | null; client_time: string | null; recorded_at: string; qr_generation_id: string | null;
   machine: { code: string } | null;
   recorded_by_user: { full_name: string } | null;
   materials: {
@@ -769,7 +769,7 @@ type RawShiftRecord = {
   }[];
 };
 const SR_SELECT =
-  "id, display_id, record_date, shift, shipment_number, fg_sku_code_snapshot, trays_produced, total_pcs_per_pallet, fg_pallets, loose_trays, loose_carried_in, fg_generated_at, fg_sku_code_id, scrap_trays, scrap_reason, notes, client_time, recorded_at, qr_generation_id, " +
+  "id, display_id, record_date, shift, shipment_number, fg_sku_code_snapshot, trays_produced, total_pcs_per_pallet, fg_pallets, loose_trays, loose_carried_in, fg_generated_at, fg_sku_code_id, scrap_trays, hold_trays, scrap_reason, notes, client_time, recorded_at, qr_generation_id, " +
   "machine:machines(code), recorded_by_user:app_users!recorded_by(full_name), " +
   "materials:shift_record_materials(id, sort_order, sku_code_snapshot, category, pallet_display_id, quantity, unit, fully_consumed, inventory_quantity)";
 
@@ -777,7 +777,7 @@ function flattenShiftRecord(r: RawShiftRecord): ShiftRecordListItem {
   const mats = [...(r.materials || [])].sort((a, b) => a.sort_order - b.sort_order);
   return {
     id: r.id, display_id: r.display_id, record_date: r.record_date, shift: r.shift, machine: r.machine?.code ?? null,
-    fg_sku_code: r.fg_sku_code_snapshot, trays_produced: r.trays_produced, fg_pallets: r.fg_pallets, loose_trays: r.loose_trays ?? 0, loose_carried_in: r.loose_carried_in ?? 0, fg_generated_at: r.fg_generated_at, scrap_trays: r.scrap_trays,
+    fg_sku_code: r.fg_sku_code_snapshot, trays_produced: r.trays_produced, fg_pallets: r.fg_pallets, loose_trays: r.loose_trays ?? 0, loose_carried_in: r.loose_carried_in ?? 0, fg_generated_at: r.fg_generated_at, scrap_trays: r.scrap_trays, hold_trays: r.hold_trays ?? 0,
     materials: mats.map((m) => `${m.sku_code_snapshot ?? "—"} ${m.quantity} ${m.unit}`).join(", "),
     recorded_by: r.recorded_by_user?.full_name ?? null, recorded_at: r.recorded_at,
   };
