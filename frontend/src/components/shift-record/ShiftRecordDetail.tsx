@@ -54,17 +54,18 @@ export default function ShiftRecordDetailPanel({ record, canDelete, canGenerate,
             </table>
           </div>
           <div className="detail-card">
-            <h3>Produced &amp; Scrap</h3>
+            <h3>Produced, Scrap &amp; Hold</h3>
             <div className="form-grid">
               <div className="field"><label>FG SKU</label><div className="readonly-val">{record.fg_sku_code || "—"}</div></div>
-              <div className="field"><label>Trays Produced</label><div className="readonly-val">{fmt(record.trays_produced)}</div></div>
+              <div className="field"><label>Trays Produced (Finished)</label><div className="readonly-val">{fmt(record.trays_produced)}</div></div>
               <div className="field"><label>Trays per Pallet</label><div className="readonly-val">{record.total_pcs_per_pallet ?? "—"}</div></div>
-              <div className="field"><label>Pallets Produced</label><div className="readonly-val">{generated ? record.fg_pallets : "Not generated yet"}</div></div>
+              <div className="field"><label>FG Pallets</label><div className="readonly-val">{generated ? record.fg_pallets : "Not generated yet"}</div></div>
               <div className="field"><label>Loose Trays</label><div className="readonly-val">{generated ? fmt(record.loose_trays) : "—"}</div></div>
               {generated && record.loose_carried_in > 0 && (
                 <div className="field"><label>Loose Trays Carried In</label><div className="readonly-val">{fmt(record.loose_carried_in)}</div></div>
               )}
               <div className="field"><label>Scrap Trays</label><div className="readonly-val">{fmt(record.scrap_trays)}{record.scrap_reason ? ` — ${record.scrap_reason}` : ""}</div></div>
+              <div className="field"><label>Hold Trays</label><div className="readonly-val">{fmt(record.hold_trays)}</div></div>
             </div>
             {record.pallets.length > 0 && (
               <table className="data compact" style={{ marginTop: 10 }}>

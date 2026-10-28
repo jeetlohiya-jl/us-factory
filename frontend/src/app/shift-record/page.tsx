@@ -105,11 +105,11 @@ export default function ShiftRecordPage() {
       <div className="card card-flush">
         <table className="data compact">
           <thead>
-            <tr><th>Record</th><th>Date</th><th>Shift</th><th>Machine</th><th>Materials Used</th><th>FG SKU</th><th>FG Trays</th><th>FG Pallets</th><th>Loose</th><th>FG QRs</th><th>Scrap</th><th>By</th></tr>
+            <tr><th>Record</th><th>Date</th><th>Shift</th><th>Machine</th><th>Materials Used</th><th>FG SKU</th><th>Trays Produced (Finished)</th><th>FG Pallets</th><th>Loose</th><th>FG QRs</th><th>Scrap</th><th>Hold</th><th>By</th></tr>
           </thead>
           <tbody>
             {items.length === 0 ? (
-              <tr className="empty-row"><td colSpan={12}>{loading ? "Loading…" : "No Shift Records yet."}</td></tr>
+              <tr className="empty-row"><td colSpan={13}>{loading ? "Loading…" : "No Shift Records yet."}</td></tr>
             ) : items.map((r) => (
               <tr key={r.id} style={{ cursor: "pointer" }} onClick={() => openRecord(r.id)}>
                 <td className="mono">{r.display_id}</td>
@@ -123,6 +123,7 @@ export default function ShiftRecordPage() {
                 <td>{r.fg_generated_at ? r.loose_trays : "—"}</td>
                 <td>{r.fg_generated_at ? <span className="badge approved">Generated</span> : r.trays_produced > 0 ? <span className="badge draft">Pending</span> : "—"}</td>
                 <td>{r.scrap_trays}</td>
+                <td>{r.hold_trays}</td>
                 <td>{r.recorded_by || "—"}<div className="hint-text">{new Date(r.recorded_at).toLocaleString()}</div></td>
               </tr>
             ))}

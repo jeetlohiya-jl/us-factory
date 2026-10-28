@@ -2220,6 +2220,7 @@ export interface ShiftRecordListItem {
   loose_carried_in: number;
   fg_generated_at: string | null;
   scrap_trays: number;
+  hold_trays: number;
   materials: string;
   recorded_by: string | null;
   recorded_at: string;
@@ -2261,6 +2262,7 @@ export interface ShiftRecordSavePayload {
   notes?: string;
   trays_produced: number;
   scrap_trays: number;
+  hold_trays: number;
   scrap_reason?: string;
   total_pcs_per_pallet?: number | null;
   materials: { sku_code_id: string | null; scan: string; quantity: number; unit: ShiftRecordUnit; fully_consumed: boolean }[];
