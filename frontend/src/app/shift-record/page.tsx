@@ -90,11 +90,11 @@ export default function ShiftRecordPage() {
       <div className="card card-flush">
         <table className="data compact">
           <thead>
-            <tr><th>Record</th><th>Date</th><th>Shift</th><th>Machine</th><th>Materials Used</th><th>FG SKU</th><th>FG Trays</th><th>FG Pallets</th><th>Scrap</th><th>By</th></tr>
+            <tr><th>Record</th><th>Date</th><th>Shift</th><th>Machine</th><th>Materials Used</th><th>FG SKU</th><th>FG Trays</th><th>FG Pallets</th><th>Loose</th><th>Scrap</th><th>By</th></tr>
           </thead>
           <tbody>
             {items.length === 0 ? (
-              <tr className="empty-row"><td colSpan={10}>{loading ? "Loading…" : "No Shift Records yet."}</td></tr>
+              <tr className="empty-row"><td colSpan={11}>{loading ? "Loading…" : "No Shift Records yet."}</td></tr>
             ) : items.map((r) => (
               <tr key={r.id} style={{ cursor: "pointer" }} onClick={() => openRecord(r.id)}>
                 <td className="mono">{r.display_id}</td>
@@ -105,6 +105,7 @@ export default function ShiftRecordPage() {
                 <td className="mono">{r.fg_sku_code || "—"}</td>
                 <td>{r.trays_produced}</td>
                 <td>{r.fg_pallets}</td>
+                <td>{r.loose_trays}</td>
                 <td>{r.scrap_trays}</td>
                 <td>{r.recorded_by || "—"}<div className="hint-text">{new Date(r.recorded_at).toLocaleString()}</div></td>
               </tr>

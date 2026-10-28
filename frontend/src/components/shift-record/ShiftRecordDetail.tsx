@@ -45,9 +45,11 @@ export default function ShiftRecordDetailPanel({ record, canDelete, onClose, onD
             <h3>Produced &amp; Scrap</h3>
             <div className="form-grid">
               <div className="field"><label>FG SKU</label><div className="readonly-val">{record.fg_sku_code || "—"}</div></div>
-              <div className="field"><label>FG Trays Produced</label><div className="readonly-val">{fmt(record.trays_produced)}</div></div>
-              <div className="field"><label>Total Pcs per Pallet</label><div className="readonly-val">{record.total_pcs_per_pallet ?? "—"}</div></div>
-              <div className="field"><label>Scrap Trays</label><div className="readonly-val">{fmt(record.scrap_trays)}</div></div>
+              <div className="field"><label>Trays Produced</label><div className="readonly-val">{fmt(record.trays_produced)}</div></div>
+              <div className="field"><label>Trays per Pallet</label><div className="readonly-val">{record.total_pcs_per_pallet ?? "—"}</div></div>
+              <div className="field"><label>Pallets Produced</label><div className="readonly-val">{record.fg_pallets}</div></div>
+              <div className="field"><label>Loose Trays</label><div className="readonly-val">{fmt(record.loose_trays)}</div></div>
+              <div className="field"><label>Scrap Trays</label><div className="readonly-val">{fmt(record.scrap_trays)}{record.scrap_reason ? ` — ${record.scrap_reason}` : ""}</div></div>
             </div>
             {record.pallets.length > 0 && (
               <table className="data compact" style={{ marginTop: 10 }}>
