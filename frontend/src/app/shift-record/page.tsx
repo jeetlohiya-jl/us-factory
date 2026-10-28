@@ -80,7 +80,7 @@ export default function ShiftRecordPage() {
             <svg viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="1.8" /><path d="M21 21l-4.3-4.3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>
             <input type="text" placeholder="Search record, shift, SKU…" value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
-          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={{ marginLeft: 8 }} />
+          <div className="field" style={{ margin: "0 0 0 8px", width: 170 }}><input type="date" aria-label="Filter by date" value={date} onChange={(e) => setDate(e.target.value)} /></div>
         </div>
         <div className="showing-count">{loading ? "Loading…" : `Showing ${items.length} of ${matchedCount} records`}</div>
       </div>
