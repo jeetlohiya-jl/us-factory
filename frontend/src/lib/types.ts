@@ -1526,6 +1526,8 @@ export interface CustomerShipmentLineItemDraft {
   // Section 13.
   pcs: string | number;
   pcs_per_sleeve: string;
+  // Goods Outward only (screen helper, not saved): Trays per Pallet, so Total Trays = Pallets x this.
+  pcs_per_pallet?: string;
   // 2026-09-28 -- Production Run(s) this line item's Trays are derived
   // from; empty means Trays stays a manual, hand-typed value.
   production_run_ids: string[];

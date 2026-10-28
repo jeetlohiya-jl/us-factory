@@ -144,6 +144,16 @@ export default function CsLineItemsEditor({
       if (version?.prod_pcs_per_sleeve && !next[idx].pcs_per_sleeve) {
         next[idx].pcs_per_sleeve = version.prod_pcs_per_sleeve;
       }
+      // Goods Outward: Trays per Pallet pre-fills from the version's Production details too.
+      if (isFactory && version?.prod_total_pcs_per_pallet && !next[idx].pcs_per_pallet) {
+        next[idx].pcs_per_pallet = String(version.prod_total_pcs_per_pallet);
+      }
+    }
+    // Goods Outward: Total Trays = Pallets x Trays per Pallet (kept in the line's trays value, which is what is saved).
+    if (isFactory) {
+      const tpp = num(next[idx].pcs_per_pallet ?? "");
+      const pal = num(String(next[idx].pallets_required ?? ""));
+      if (tpp !== null && pal !== null) next[idx].pcs = String(pal * tpp);
     }
     onChange(next);
   }
@@ -227,7 +237,7 @@ export default function CsLineItemsEditor({
                 </div>
               )}
               <div className="field">
-                <label>Quantity</label>
+                <label>{isFactory ? "Pallets" : "Quantity"}</label>
                 {/* Quantity is always counted in Pallets -- shown as a
                     fixed suffix inside the same input box rather than a
                     separate "Unit" column, since it's never anything else
@@ -277,9 +287,25 @@ export default function CsLineItemsEditor({
                   )}
                 </div>
               )}
+              {isFactory && (
+                <div className="field">
+                  <label>Trays per Pallet</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={item.pcs_per_pallet ?? (() => {
+                      const pal = num(String(item.pallets_required ?? "")); const t = num(String(item.pcs ?? ""));
+                      return pal && t !== null && t % pal === 0 ? String(t / pal) : "";
+                    })()}
+                    onChange={(e) => update(i, { pcs_per_pallet: e.target.value })}
+                  />
+                </div>
+              )}
               <div className="field">
-                <label>Trays</label>
-                {item.production_run_ids.length > 0 ? (
+                <label>{isFactory ? "Total Trays" : "Trays"}</label>
+                {isFactory ? (
+                  <div className="readonly-val">{num(String(item.pcs ?? "")) !== null ? Number(item.pcs).toLocaleString() : "— (Pallets x Trays per Pallet)"}</div>
+                ) : item.production_run_ids.length > 0 ? (
                   <div className="readonly-val">{preview !== null ? preview.toLocaleString() : "— (fill in Trays per Sleeve)"}</div>
                 ) : (
                   <input
