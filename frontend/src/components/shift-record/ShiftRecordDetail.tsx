@@ -1,12 +1,24 @@
 "use client";
 import type { ShiftRecordDetail } from "@/lib/types";
+import { useEffect, useState } from "react";
+import { api } from "@/lib/api";
 import LabelImageButtons from "@/components/LabelImageButtons";
 
 const fmt = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 3 });
 
-export default function ShiftRecordDetailPanel({ record, canDelete, onClose, onDelete }: {
-  record: ShiftRecordDetail; canDelete: boolean; onClose: () => void; onDelete: () => void;
+export default function ShiftRecordDetailPanel({ record, canDelete, canGenerate, onClose, onDelete, onGenerate, generating, generateError }: {
+  record: ShiftRecordDetail; canDelete: boolean; canGenerate: boolean; onClose: () => void; onDelete: () => void;
+  onGenerate: () => void; generating: boolean; generateError: string | null;
 }) {
+  const generated = !!record.fg_generated_at;
+  const [carry, setCarry] = useState(0);
+  useEffect(() => {
+    setCarry(0);
+    if (!generated && record.fg_sku_code_id) api.getShiftRecordCarryIn(record.fg_sku_code_id, record.id).then(setCarry).catch(() => {});
+  }, [generated, record.fg_sku_code_id, record.id]);
+  const per = record.total_pcs_per_pallet || 0;
+  const pool = record.trays_produced + carry;
+  const willMake = per > 0 ? Math.floor(pool / per) : 0;
   const labels = () => record.pallets.map((p) => ({ payload: p.qr_payload || JSON.stringify({ t: "fg_pallet", id: p.display_id }), text: p.display_id }));
   return (
     <>
@@ -47,8 +59,11 @@ export default function ShiftRecordDetailPanel({ record, canDelete, onClose, onD
               <div className="field"><label>FG SKU</label><div className="readonly-val">{record.fg_sku_code || "—"}</div></div>
               <div className="field"><label>Trays Produced</label><div className="readonly-val">{fmt(record.trays_produced)}</div></div>
               <div className="field"><label>Trays per Pallet</label><div className="readonly-val">{record.total_pcs_per_pallet ?? "—"}</div></div>
-              <div className="field"><label>Pallets Produced</label><div className="readonly-val">{record.fg_pallets}</div></div>
-              <div className="field"><label>Loose Trays</label><div className="readonly-val">{fmt(record.loose_trays)}</div></div>
+              <div className="field"><label>Pallets Produced</label><div className="readonly-val">{generated ? record.fg_pallets : "Not generated yet"}</div></div>
+              <div className="field"><label>Loose Trays</label><div className="readonly-val">{generated ? fmt(record.loose_trays) : "—"}</div></div>
+              {generated && record.loose_carried_in > 0 && (
+                <div className="field"><label>Loose Trays Carried In</label><div className="readonly-val">{fmt(record.loose_carried_in)}</div></div>
+              )}
               <div className="field"><label>Scrap Trays</label><div className="readonly-val">{fmt(record.scrap_trays)}{record.scrap_reason ? ` — ${record.scrap_reason}` : ""}</div></div>
             </div>
             {record.pallets.length > 0 && (
@@ -61,12 +76,22 @@ export default function ShiftRecordDetailPanel({ record, canDelete, onClose, onD
                 </tbody>
               </table>
             )}
+            {!generated && record.fg_sku_code_id && (
+              <div className="hint-text" style={{ marginTop: 10 }}>
+                FG QRs are made at the end of the record. {carry > 0 ? `${fmt(carry)} loose trays from earlier shifts will be added: ${fmt(record.trays_produced)} + ${fmt(carry)} = ${fmt(pool)} trays → ` : ""}
+                {per > 0 ? `${willMake} full pallet${willMake === 1 ? "" : "s"} of ${per} trays, ${fmt(pool - willMake * per)} loose trays left over for the next shift.` : "Trays per Pallet is not set."}
+              </div>
+            )}
+            {generateError && <div className="error-banner" style={{ marginTop: 8 }}>{generateError}</div>}
             {record.qr_batch && <div className="hint-text" style={{ marginTop: 6 }}>QR batch {record.qr_batch} — print the labels, then put the pallets away in FG Storage.</div>}
           </div>
         </div>
         <div className="sp-foot">
           <button className="btn btn-ghost" onClick={onClose}>Close</button>
           <div className="sp-foot-right">
+            {!generated && record.fg_sku_code_id && canGenerate && (
+              <button className="btn btn-primary" disabled={generating} onClick={onGenerate}>{generating ? "Generating…" : "Generate FG QRs"}</button>
+            )}
             {canDelete && <button className="btn btn-ghost" style={{ color: "var(--red)" }} onClick={onDelete}>Delete</button>}
             {record.pallets.length > 0 && <LabelImageButtons labels={labels} source={record.qr_batch || record.display_id} />}
           </div>

@@ -28,6 +28,8 @@ export default function ShiftRecordPage() {
   const [open, setOpen] = useState<ShiftRecordDetail | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const [generateError, setGenerateError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -48,8 +50,21 @@ export default function ShiftRecordPage() {
   useEffect(() => setPage(1), [search, date]);
 
   async function openRecord(id: string) {
+    setGenerateError(null);
     try { setOpen(await api.getShiftRecord(id)); }
     catch (e) { setError(e instanceof Error ? e.message : "Failed to load the Shift Record"); }
+  }
+
+  async function doGenerate() {
+    if (!open) return;
+    setGenerating(true); setGenerateError(null);
+    try {
+      await api.generateShiftRecordFg(open.id);
+      invalidateListCache(MODULE); refresh();
+      await openRecord(open.id);
+    } catch (e) {
+      setGenerateError(e instanceof Error ? e.message : "Failed to generate the FG QRs");
+    } finally { setGenerating(false); }
   }
 
   async function doDelete() {
@@ -90,11 +105,11 @@ export default function ShiftRecordPage() {
       <div className="card card-flush">
         <table className="data compact">
           <thead>
-            <tr><th>Record</th><th>Date</th><th>Shift</th><th>Machine</th><th>Materials Used</th><th>FG SKU</th><th>FG Trays</th><th>FG Pallets</th><th>Loose</th><th>Scrap</th><th>By</th></tr>
+            <tr><th>Record</th><th>Date</th><th>Shift</th><th>Machine</th><th>Materials Used</th><th>FG SKU</th><th>FG Trays</th><th>FG Pallets</th><th>Loose</th><th>FG QRs</th><th>Scrap</th><th>By</th></tr>
           </thead>
           <tbody>
             {items.length === 0 ? (
-              <tr className="empty-row"><td colSpan={11}>{loading ? "Loading…" : "No Shift Records yet."}</td></tr>
+              <tr className="empty-row"><td colSpan={12}>{loading ? "Loading…" : "No Shift Records yet."}</td></tr>
             ) : items.map((r) => (
               <tr key={r.id} style={{ cursor: "pointer" }} onClick={() => openRecord(r.id)}>
                 <td className="mono">{r.display_id}</td>
@@ -104,8 +119,9 @@ export default function ShiftRecordPage() {
                 <td>{r.materials || "—"}</td>
                 <td className="mono">{r.fg_sku_code || "—"}</td>
                 <td>{r.trays_produced}</td>
-                <td>{r.fg_pallets}</td>
-                <td>{r.loose_trays}</td>
+                <td>{r.fg_generated_at ? r.fg_pallets : "—"}</td>
+                <td>{r.fg_generated_at ? r.loose_trays : "—"}</td>
+                <td>{r.fg_generated_at ? <span className="badge approved">Generated</span> : r.trays_produced > 0 ? <span className="badge draft">Pending</span> : "—"}</td>
                 <td>{r.scrap_trays}</td>
                 <td>{r.recorded_by || "—"}<div className="hint-text">{new Date(r.recorded_at).toLocaleString()}</div></td>
               </tr>
@@ -122,7 +138,7 @@ export default function ShiftRecordPage() {
         />
       )}
       {open && (
-        <ShiftRecordDetailPanel record={open} canDelete={!!perms?.can_delete} onClose={() => setOpen(null)} onDelete={() => setConfirmDelete(true)} />
+        <ShiftRecordDetailPanel record={open} canDelete={!!perms?.can_delete} canGenerate={!!perms?.can_create} generating={generating} generateError={generateError} onGenerate={doGenerate} onClose={() => setOpen(null)} onDelete={() => setConfirmDelete(true)} />
       )}
       {confirmDelete && (
         <ConfirmDialog

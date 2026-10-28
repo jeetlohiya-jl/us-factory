@@ -289,6 +289,13 @@ const FACTORY_NAV_ITEMS = [
 // Routes that exist only inside the Factory product.
 const FACTORY_ONLY_HREFS = ["/inventory", "/shift-record"];
 
+// Right now only these Factory screens are shown to everyone except the people listed in
+// FULL_ACCESS_EMAILS, who still see every screen. This only hides the menu entries and sends the
+// others to Goods Receipt if they open a hidden address; it is not a permission. To show a screen again,
+// add its address here; to end the restriction, empty RESTRICTED_FACTORY_VISIBLE_HREFS.
+const RESTRICTED_FACTORY_VISIBLE_HREFS = ["/goods-receipt", "/shift-record", "/goods-outward", "/inventory"];
+const FULL_ACCESS_EMAILS = ["jeet.lohiya@gocirkla.com"];
+
 const SETUP_NAV_ITEMS = [
   {
     href: "/vendors",
@@ -384,11 +391,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   // rather than showing a US-Factory screen inside the Factory sidebar.
   useEffect(() => {
     if (chosenProduct !== "factory") return;
-    const allowedHrefs = [...FACTORY_NAV_ITEMS, ...SETUP_NAV_ITEMS, USERS_NAV_ITEM, PORTFOLIO_ACCESS_NAV_ITEM].map((i) => i.href);
+    const restricted = RESTRICTED_FACTORY_VISIBLE_HREFS.length > 0 && !FULL_ACCESS_EMAILS.includes((session?.user?.email || "").toLowerCase());
+    const allowedHrefs = [...(restricted ? FACTORY_NAV_ITEMS.filter((i) => RESTRICTED_FACTORY_VISIBLE_HREFS.includes(i.href)) : FACTORY_NAV_ITEMS), ...SETUP_NAV_ITEMS, USERS_NAV_ITEM, PORTFOLIO_ACCESS_NAV_ITEM].map((i) => i.href);
     if (pathname && !allowedHrefs.some((href) => pathname.startsWith(href))) {
       router.replace("/goods-receipt");
     }
-  }, [chosenProduct, pathname, router]);
+  }, [chosenProduct, pathname, router, session]);
 
   // Mirror of the guard above: Factory-only pages (Goods Receipt, Factory
   // Module 1) are not part of Falcon -- bounce a Falcon session that
@@ -601,7 +609,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const falconNavItems: NavItem[] = NAV_ITEMS.filter((i) => !INDIA_HIDDEN_NAV_HREFS.includes(i.href))
     .filter((i) => i.href === "/customer-shipment" || !FALCON_GOODS_OUTWARD_REPLACED_HREFS.includes(i.href))
     .map((i) => (i.href === "/customer-shipment" && goodsOutwardNavItem ? goodsOutwardNavItem : i));
-  const activeNavItems: NavItem[] = isFactory ? FACTORY_NAV_ITEMS : falconNavItems;
+  const restrictedUser = isFactory && RESTRICTED_FACTORY_VISIBLE_HREFS.length > 0 && !FULL_ACCESS_EMAILS.includes((session?.user?.email || "").toLowerCase());
+  const activeNavItems: NavItem[] = isFactory
+    ? (restrictedUser ? FACTORY_NAV_ITEMS.filter((i) => RESTRICTED_FACTORY_VISIBLE_HREFS.includes(i.href)) : FACTORY_NAV_ITEMS)
+    : falconNavItems;
 
 
   return (

@@ -1526,6 +1526,8 @@ export interface CustomerShipmentLineItemDraft {
   // Section 13.
   pcs: string | number;
   pcs_per_sleeve: string;
+  // Goods Outward only (screen helper, not saved): Trays per Pallet, so Total Trays = Pallets x this.
+  pcs_per_pallet?: string;
   // 2026-09-28 -- Production Run(s) this line item's Trays are derived
   // from; empty means Trays stays a manual, hand-typed value.
   production_run_ids: string[];
@@ -2215,6 +2217,8 @@ export interface ShiftRecordListItem {
   trays_produced: number;
   fg_pallets: number;
   loose_trays: number;
+  loose_carried_in: number;
+  fg_generated_at: string | null;
   scrap_trays: number;
   materials: string;
   recorded_by: string | null;
@@ -2228,6 +2232,7 @@ export interface ShiftRecordDetail extends ShiftRecordListItem {
   scrap_reason: string | null;
   client_time: string | null;
   qr_batch: string | null;
+  fg_sku_code_id: string | null;
   material_lines: ShiftRecordMaterial[];
   pallets: ShiftRecordFgPallet[];
 }

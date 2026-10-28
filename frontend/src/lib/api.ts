@@ -759,7 +759,7 @@ async function getMaterialConsumptionSb(id: string): Promise<MaterialConsumption
 // -- Shift Record (migration 0103) -----------------------------------------
 type RawShiftRecord = {
   id: string; display_id: string; record_date: string; shift: string; shipment_number: string | null;
-  fg_sku_code_snapshot: string | null; trays_produced: number; total_pcs_per_pallet: number | null; fg_pallets: number; loose_trays: number;
+  fg_sku_code_snapshot: string | null; trays_produced: number; total_pcs_per_pallet: number | null; fg_pallets: number; loose_trays: number; loose_carried_in: number; fg_generated_at: string | null; fg_sku_code_id: string | null;
   scrap_trays: number; scrap_reason: string | null; notes: string | null; client_time: string | null; recorded_at: string; qr_generation_id: string | null;
   machine: { code: string } | null;
   recorded_by_user: { full_name: string } | null;
@@ -769,7 +769,7 @@ type RawShiftRecord = {
   }[];
 };
 const SR_SELECT =
-  "id, display_id, record_date, shift, shipment_number, fg_sku_code_snapshot, trays_produced, total_pcs_per_pallet, fg_pallets, loose_trays, scrap_trays, scrap_reason, notes, client_time, recorded_at, qr_generation_id, " +
+  "id, display_id, record_date, shift, shipment_number, fg_sku_code_snapshot, trays_produced, total_pcs_per_pallet, fg_pallets, loose_trays, loose_carried_in, fg_generated_at, fg_sku_code_id, scrap_trays, scrap_reason, notes, client_time, recorded_at, qr_generation_id, " +
   "machine:machines(code), recorded_by_user:app_users!recorded_by(full_name), " +
   "materials:shift_record_materials(id, sort_order, sku_code_snapshot, category, pallet_display_id, quantity, unit, fully_consumed, inventory_quantity)";
 
@@ -777,7 +777,7 @@ function flattenShiftRecord(r: RawShiftRecord): ShiftRecordListItem {
   const mats = [...(r.materials || [])].sort((a, b) => a.sort_order - b.sort_order);
   return {
     id: r.id, display_id: r.display_id, record_date: r.record_date, shift: r.shift, machine: r.machine?.code ?? null,
-    fg_sku_code: r.fg_sku_code_snapshot, trays_produced: r.trays_produced, fg_pallets: r.fg_pallets, loose_trays: r.loose_trays ?? 0, scrap_trays: r.scrap_trays,
+    fg_sku_code: r.fg_sku_code_snapshot, trays_produced: r.trays_produced, fg_pallets: r.fg_pallets, loose_trays: r.loose_trays ?? 0, loose_carried_in: r.loose_carried_in ?? 0, fg_generated_at: r.fg_generated_at, scrap_trays: r.scrap_trays,
     materials: mats.map((m) => `${m.sku_code_snapshot ?? "—"} ${m.quantity} ${m.unit}`).join(", "),
     recorded_by: r.recorded_by_user?.full_name ?? null, recorded_at: r.recorded_at,
   };
@@ -826,7 +826,7 @@ async function getShiftRecordSb(id: string): Promise<ShiftRecordDetail> {
   return {
     ...flattenShiftRecord(r),
     shipment_number: r.shipment_number, total_pcs_per_pallet: r.total_pcs_per_pallet, notes: r.notes, scrap_reason: r.scrap_reason, client_time: r.client_time,
-    qr_batch: qrBatch, pallets,
+    qr_batch: qrBatch, fg_sku_code_id: r.fg_sku_code_id, pallets,
     material_lines: mats.map((m) => ({
       id: m.id, sort_order: m.sort_order, sku_code: m.sku_code_snapshot, category: m.category, pallet_display_id: m.pallet_display_id,
       quantity: m.quantity, unit: m.unit, fully_consumed: m.fully_consumed, inventory_quantity: m.inventory_quantity,
@@ -3588,6 +3588,25 @@ export const api = {
     invalidateListCache("shift-record");
     invalidateListCache("inventory");
     invalidateListCache("rm-storage");
+    invalidateListCache("fg-storage");
+    return res;
+  },
+  // Loose trays of an FG SKU left by earlier generated records that no later record has taken yet.
+  getShiftRecordCarryIn: async (fgSkuCodeId: string, excludeId?: string): Promise<number> => {
+    let q = supabase.from("shift_records").select("id, loose_trays").eq("fg_sku_code_id", fgSkuCodeId).not("fg_generated_at", "is", null).gt("loose_trays", 0).is("loose_carried_to", null);
+    if (excludeId) q = q.neq("id", excludeId);
+    const rows = await sbRequest<{ id: string; loose_trays: number }[]>(() =>
+      q as unknown as Promise<{ data: { id: string; loose_trays: number }[] | null; error: { message: string; code?: string } | null }>
+    );
+    return (rows || []).reduce((n, r) => n + r.loose_trays, 0);
+  },
+  // The end of a record: makes the FG pallets / QRs (loose trays from earlier shifts are added in).
+  generateShiftRecordFg: async (id: string) => {
+    const res = await sbRequest<{ id: string; fg_pallets: { id: string; display_id: string; trays: number }[]; carried_in: number; loose_trays: number }>(() =>
+      supabase.rpc("shift_record_generate_fg", { _id: id }) as unknown as Promise<{ data: { id: string; fg_pallets: { id: string; display_id: string; trays: number }[]; carried_in: number; loose_trays: number } | null; error: { message: string; code?: string } | null }>,
+      { denied: "You do not have permission to generate FG QRs." }
+    );
+    invalidateListCache("shift-record");
     invalidateListCache("fg-storage");
     return res;
   },

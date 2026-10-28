@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError } from "@/lib/api";
+import CameraQrScanner from "@/components/storage/CameraQrScanner";
 import type { Machine, ShiftRecordScanPreview, ShiftRecordUnit, SkuCode } from "@/lib/types";
 
 const SHIFTS = ["Shift A", "Shift B", "Shift C"];
@@ -63,11 +64,13 @@ export default function ShiftRecordForm({ onClose, onSaved }: { onClose: () => v
   const [perOverride, setPerOverride] = useState("");
   const [defaultPer, setDefaultPer] = useState<number | null>(null);
   const [scrapReason, setScrapReason] = useState("");
+  const [carryIn, setCarryIn] = useState(0);
   const [scrap, setScrap] = useState("");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const scanRefs = useRef<Record<number, HTMLInputElement | null>>({});
+  const [cameraFor, setCameraFor] = useState<number | null>(null);
 
   useEffect(() => {
     api.machines().then(setMachines).catch(() => {});
@@ -86,12 +89,29 @@ export default function ShiftRecordForm({ onClose, onSaved }: { onClose: () => v
     if (fgVersionId) api.getShiftRecordPcsPerPallet(fgVersionId).then(setDefaultPer).catch(() => {});
     else if (traySkuId) api.getSkuPcsPerPallet(traySkuId).then(setDefaultPer).catch(() => {});
   }, [fgVersionId, traySkuId]);
+  useEffect(() => {
+    setCarryIn(0);
+    if (traySkuId) api.getShiftRecordCarryIn(traySkuId).then(setCarryIn).catch(() => {});
+  }, [traySkuId]);
 
   const traysN = Number(trays) || 0;
   const per = Number(perOverride) > 0 ? Math.trunc(Number(perOverride)) : defaultPer;
+  // Trays used on this record (all tray pallets, possibly several of the same SKU): produced + scrap must equal it.
+  const traysUsed = lines.reduce((sum, l) => {
+    const isTray = l.checked ? TRAY_CATEGORIES.includes(l.checked.category || "") : isTraySku(l.skuId);
+    if (!isTray) return sum;
+    const q = Number(l.quantity) || 0;
+    if (l.unit === "Trays") return sum + q;
+    if (l.unit === "Pallets") return sum + q * (l.checked?.trays_per_pallet || 0);
+    return sum;
+  }, 0);
+  const scrapN = Number(scrap) || 0;
+  const balanced = traysUsed > 0 && traysN + scrapN === traysUsed;
+
   // As Production: full pallets only (trays / Total Pcs per Pallet); the rest are loose trays.
-  const fgPallets = traysN > 0 && per && per > 0 ? Math.floor(traysN / per) : 0;
-  const looseTrays = traysN > 0 && per && per > 0 ? traysN - fgPallets * per : 0;
+  const pool = traysN + (traysN > 0 ? carryIn : 0);
+  const fgPallets = traysN > 0 && per && per > 0 ? Math.floor(pool / per) : 0;
+  const looseTrays = traysN > 0 && per && per > 0 ? pool - fgPallets * per : 0;
 
   function patch(key: number, p: Partial<Line>) {
     setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...p } : l)));
@@ -101,19 +121,21 @@ export default function ShiftRecordForm({ onClose, onSaved }: { onClose: () => v
     patch(l.key, { skuId, checked: null, lineError: null, scan: "", unit: unitsFor(skuById.get(skuId)?.category)[0], quantity: "", fully: true });
   }
 
-  async function check(l: Line) {
-    const scan = l.scan.trim();
+  async function check(l: Line, scanText?: string) {
+    const scan = (scanText ?? l.scan).trim();
     if (!scan) return;
     patch(l.key, { checking: true, lineError: null });
     try {
       const pv = await api.previewShiftRecordScan(scan, l.skuId || null);
+      setCameraFor(null);
       const dup = lines.find((o) => o.key !== l.key && o.checked?.pallet_id === pv.pallet_id);
       if (dup) throw new Error(`Pallet ${pv.display_id} is already on this record.`);
       // Picking the pallet first? Fill the SKU in from what was scanned.
       // Start from the whole pallet (e.g. 2112 trays, 5000 pcs); the person lowers it if only some was used.
       patch(l.key, { checking: false, checked: pv, skuId: l.skuId || pv.sku_code_id || "", scan: pv.display_id, fully: true, ...wholePallet(pv, pv.category) });
     } catch (e) {
-      patch(l.key, { checking: false, checked: null, lineError: e instanceof Error ? e.message : "Could not check this pallet." });
+      setCameraFor(null);
+      patch(l.key, { checking: false, checked: null, scan, lineError: e instanceof Error ? e.message : "Could not check this pallet." });
     }
   }
 
@@ -128,6 +150,7 @@ export default function ShiftRecordForm({ onClose, onSaved }: { onClose: () => v
       if (!l.scan.trim()) return setError(`Material ${i + 1}: scan or type the RM pallet QR value.`);
       if (!(Number(l.quantity) > 0)) return setError(`Material ${i + 1}: enter the quantity used.`);
     }
+    if (traysUsed > 0 && traysN + scrapN !== traysUsed) return setError(`Trays produced (${traysN}) + scrap (${scrapN}) = ${traysN + scrapN}, but ${traysUsed} trays were used. They must be equal.`);
     if (traysN > 0 && !(per && per > 0)) return setError("Trays per Pallet is not set for this tray SKU — enter it so the pallets can be worked out.");
     setSaving(true);
     try {
@@ -203,13 +226,20 @@ export default function ShiftRecordForm({ onClose, onSaved }: { onClose: () => v
                     </div>
                     <div className="field">
                       <label>RM Pallet QR {l.checked && <span style={{ color: "var(--green, #15803d)" }}>✓</span>}</label>
-                      <input
-                        ref={(el) => { scanRefs.current[l.key] = el; }}
-                        className="mono" placeholder="Scan or type, then Enter" value={l.scan}
-                        onChange={(e) => patch(l.key, { scan: e.target.value, checked: null, lineError: null })}
-                        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); check(l); } }}
-                        onBlur={() => { if (l.scan.trim() && !l.checked && !l.checking && !l.lineError) check(l); }}
-                      />
+                      {cameraFor === l.key ? (
+                        <CameraQrScanner onDetected={(text) => check(l, text)} onCancel={() => setCameraFor(null)} />
+                      ) : (
+                        <div style={{ display: "flex", gap: 6 }}>
+                          <input
+                            ref={(el) => { scanRefs.current[l.key] = el; }}
+                            className="mono" placeholder="Scan or type, then Enter" value={l.scan} style={{ flex: 1 }}
+                            onChange={(e) => patch(l.key, { scan: e.target.value, checked: null, lineError: null })}
+                            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); check(l); } }}
+                            onBlur={() => { if (l.scan.trim() && !l.checked && !l.checking && !l.lineError) check(l); }}
+                          />
+                          <button type="button" className="btn btn-secondary" onClick={() => setCameraFor(l.key)}>📷 Scan</button>
+                        </div>
+                      )}
                     </div>
                     <div className="field">
                       <label>Pallets</label>
@@ -231,17 +261,24 @@ export default function ShiftRecordForm({ onClose, onSaved }: { onClose: () => v
                     </div>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 6, gap: 10 }}>
-                    <div className="hint-text">
-                      {cap
-                        ? (q >= cap ? `Whole pallet (${cap} ${l.unit.toLowerCase()}) — it is used up.` : `Part of a pallet (${cap} ${l.unit.toLowerCase()} in a full one) — the rest stays in stock.`)
-                        : l.unit === "Pallets" ? "" : (
-                          <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                            <input type="checkbox" checked={l.fully} onChange={(e) => patch(l.key, { fully: e.target.checked })} />
-                            Pallet fully used
-                          </label>
-                        )}
-                    </div>
+                    <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 13 }}>
+                      <input
+                        type="checkbox"
+                        checked={cap ? q >= cap : l.fully}
+                        disabled={l.unit === "Pallets" && !!cap}
+                        onChange={(e) => {
+                          if (cap) patch(l.key, { fully: e.target.checked, quantity: e.target.checked ? String(cap) : "" });
+                          else patch(l.key, { fully: e.target.checked });
+                        }}
+                      />
+                      Pallet fully used
+                    </label>
                     {lines.length > 1 && <button className="btn-tertiary" onClick={() => setLines((ls) => ls.filter((o) => o.key !== l.key))}>Remove</button>}
+                  </div>
+                  <div className="hint-text" style={{ marginTop: 4 }}>
+                    <b>Pallet fully used</b> — tick it when nothing is left on this pallet: it is marked consumed and cannot be used again.
+                    Untick it when some is left: the pallet stays in stock (it only leaves its shelf) and only the quantity you enter comes off Inventory.
+                    {cap ? ` A full pallet holds ${cap.toLocaleString()} ${l.unit.toLowerCase()}; entering that much ticks it for you.` : ""}
                   </div>
                   {l.checking && <div className="hint-text">Checking…</div>}
                   {l.checked && <div className="hint-text">{l.checked.display_id} · {l.checked.sku_code || "—"}{l.checked.shipment_number ? ` · ${l.checked.shipment_number}` : ""}</div>}
@@ -256,6 +293,7 @@ export default function ShiftRecordForm({ onClose, onSaved }: { onClose: () => v
             <h3>Pallets Produced</h3>
             <div className="hint-text" style={{ marginBottom: 10 }}>
               Enter the trays produced. Pallets produced is worked out from it (trays / Trays per Pallet, full pallets only); the rest are loose trays.
+              {" The FG pallets and QRs are made at the end, from the record, by Generate FG QRs; loose trays left over from earlier shifts of the same SKU are added in then."}
               {traysN > 0 && !trayLine && " Pick the tray SKU in Materials Used above — the FG tray SKU comes from it."}
             </div>
             <div className="form-grid">
@@ -276,10 +314,21 @@ export default function ShiftRecordForm({ onClose, onSaved }: { onClose: () => v
                 <div className="readonly-val mono">{traysN > 0 && per ? looseTrays : "—"}</div>
               </div>
             </div>
+            {carryIn > 0 && traysN > 0 && (
+              <div className="hint-text" style={{ marginTop: 8 }}>
+                Includes {carryIn.toLocaleString()} loose trays carried from earlier shifts: {traysN.toLocaleString()} + {carryIn.toLocaleString()} = {pool.toLocaleString()} trays to make pallets from.
+              </div>
+            )}
           </div>
 
           <div className="detail-card">
             <h3>Scrap</h3>
+            {traysUsed > 0 && (
+              <div className="hint-text" style={{ marginBottom: 10, color: balanced ? "var(--green, #15803d)" : "var(--red, #b91c1c)" }}>
+                Trays used {traysUsed.toLocaleString()} = produced {traysN.toLocaleString()} + scrap {scrapN.toLocaleString()} ({(traysN + scrapN).toLocaleString()})
+                {balanced ? " ✓" : ` — ${traysN + scrapN > traysUsed ? "over" : "short"} by ${Math.abs(traysUsed - traysN - scrapN).toLocaleString()}`}
+              </div>
+            )}
             <div className="form-grid">
               <div className="field">
                 <label>Scrap Trays</label>
