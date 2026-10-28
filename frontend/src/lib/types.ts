@@ -257,6 +257,7 @@ export interface ModulePermissionsMap {
   factory_fg_storage: Permissions;
   factory_goods_outward: Permissions;
   inventory: Permissions;
+  shift_record: Permissions;
 }
 
 export interface MeResponse {
@@ -280,7 +281,7 @@ export const USER_MODULES: ModuleKey[] = [
   "goods_receipt",
   "factory_rm_storage", "factory_material_consumption", "factory_production",
   "factory_rqc_fg_qr", "factory_fg_storage", "factory_goods_outward",
-  "inventory",
+  "inventory", "shift_record",
 ];
 
 // Setup -> Users groups the permission matrix by product.
@@ -294,7 +295,7 @@ export const FALCON_MODULES: ModuleKey[] = [
 // FACTORY_PERMISSION_MAP, which only remaps modules shared with Falcon).
 export const FACTORY_MODULES: ModuleKey[] = [
   "goods_receipt", "factory_rm_storage", "factory_material_consumption", "factory_production",
-  "factory_rqc_fg_qr", "factory_fg_storage", "factory_goods_outward", "inventory",
+  "factory_rqc_fg_qr", "factory_fg_storage", "factory_goods_outward", "inventory", "shift_record",
 ];
 
 export interface AppUser {
@@ -2166,4 +2167,77 @@ export interface PinholeTestSavePayload {
   container_number: string | null;
   remarks: string | null;
   readings: { shot_number: string; avg_weight_g: string; trays_failed: string; remarks: string }[];
+}
+
+// ---------------------------------------------------------------------------
+// Shift Record (migration 0103) -- Factory only
+// ---------------------------------------------------------------------------
+export type ShiftRecordUnit = "Pallets" | "Boxes" | "Pcs" | "Kgs" | "Units";
+
+export interface ShiftRecordMaterial {
+  id: string;
+  sort_order: number;
+  sku_code: string | null;
+  category: string | null;
+  pallet_display_id: string | null;
+  quantity: number;
+  unit: string;
+  fully_consumed: boolean;
+  inventory_quantity: number | null;
+}
+
+export interface ShiftRecordFgPallet {
+  id: string;
+  display_id: string;
+  qr_payload: string | null;
+  lifecycle_status: string;
+  trays: number | null;
+}
+
+export interface ShiftRecordListItem {
+  id: string;
+  display_id: string;
+  record_date: string;
+  shift: string;
+  machine: string | null;
+  fg_sku_code: string | null;
+  trays_produced: number;
+  fg_pallets: number;
+  scrap_trays: number;
+  materials: string;
+  recorded_by: string | null;
+  recorded_at: string;
+}
+
+export interface ShiftRecordDetail extends ShiftRecordListItem {
+  shipment_number: string | null;
+  total_pcs_per_pallet: number | null;
+  notes: string | null;
+  client_time: string | null;
+  qr_batch: string | null;
+  material_lines: ShiftRecordMaterial[];
+  pallets: ShiftRecordFgPallet[];
+}
+
+export interface ShiftRecordScanPreview {
+  pallet_id: string;
+  display_id: string;
+  category: string | null;
+  sku_code_id: string | null;
+  sku_code: string | null;
+  sku_version_id: string | null;
+  sku_version: string | null;
+  shipment_number: string | null;
+}
+
+export interface ShiftRecordSavePayload {
+  record_date: string;
+  shift: string;
+  machine_id: string;
+  client_time?: string;
+  notes?: string;
+  trays_produced: number;
+  scrap_trays: number;
+  total_pcs_per_pallet?: number | null;
+  materials: { sku_code_id: string | null; scan: string; quantity: number; unit: ShiftRecordUnit; fully_consumed: boolean }[];
 }

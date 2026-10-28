@@ -175,6 +175,15 @@ const FACTORY_NAV_ITEMS = [
       <path d="M4 20V9l8-5 8 5v11M4 20h16M9 20v-6h6v6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
     ),
   },
+  // Shift Record (migration 0103) -- one entry per shift + machine: what was
+  // consumed, the FG trays produced and the scrap. Factory-only page.
+  {
+    href: "/shift-record",
+    label: MODULE_NAMES.shift_record,
+    icon: (
+      <path d="M12 7v5l3 2M21 12a9 9 0 11-18 0 9 9 0 0118 0z" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    ),
+  },
   {
     href: "/material-consumption",
     label: MODULE_NAMES.material_consumption,
@@ -278,7 +287,7 @@ const FACTORY_NAV_ITEMS = [
 ];
 
 // Routes that exist only inside the Factory product.
-const FACTORY_ONLY_HREFS = ["/inventory"];
+const FACTORY_ONLY_HREFS = ["/inventory", "/shift-record"];
 
 const SETUP_NAV_ITEMS = [
   {

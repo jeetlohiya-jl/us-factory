@@ -30,6 +30,7 @@ const MODULE_LABELS: Record<ModuleKey, string> = {
   factory_fg_storage: MODULE_NAMES.fg_storage,
   factory_goods_outward: MODULE_NAMES.goods_outward,
   inventory: MODULE_NAMES.inventory,
+  shift_record: MODULE_NAMES.shift_record,
 };
 
 const PRODUCT_GROUPS: { title: string; modules: ModuleKey[] }[] = [
