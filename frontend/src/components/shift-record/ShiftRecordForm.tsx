@@ -58,6 +58,7 @@ export default function ShiftRecordForm({ onClose, onSaved }: { onClose: () => v
   const [date, setDate] = useState(today());
   const [shift, setShift] = useState("");
   const [machineId, setMachineId] = useState("");
+  const [skus, setSkus] = useState<SkuCode[]>([]);
   const [lines, setLines] = useState<Line[]>([newLine()]);
   const [trays, setTrays] = useState("");
   const [perOverride, setPerOverride] = useState("");
@@ -74,13 +75,17 @@ export default function ShiftRecordForm({ onClose, onSaved }: { onClose: () => v
 
   useEffect(() => {
     api.machines().then(setMachines).catch(() => {});
+    api.skus().then((all) => setSkus(all.filter((s) => s.category !== ("fgtray" as string)))).catch(() => {});
   }, []);
 
 
+  const skuById = useMemo(() => new Map(skus.map((s) => [s.id, s])), [skus]);
+  const isTraySku = (id: string) => TRAY_CATEGORIES.includes(skuById.get(id)?.category || "");
+
   // The FG SKU is whichever tray was scanned; its Total Pcs per Pallet is Production's own number.
-  const trayLine = lines.find((l) => l.checked && TRAY_CATEGORIES.includes(l.checked.category || ""));
+  const trayLine = lines.find((l) => (l.checked ? TRAY_CATEGORIES.includes(l.checked.category || "") : isTraySku(l.skuId)));
   const fgVersionId = trayLine?.checked?.sku_version_id || null;
-  const traySkuId = trayLine?.checked?.sku_code_id || "";
+  const traySkuId = trayLine ? (trayLine.checked?.sku_code_id || trayLine.skuId) : "";
   useEffect(() => {
     setDefaultPer(null);
     if (fgVersionId) api.getShiftRecordPcsPerPallet(fgVersionId).then(setDefaultPer).catch(() => {});
@@ -95,7 +100,8 @@ export default function ShiftRecordForm({ onClose, onSaved }: { onClose: () => v
   const per = Number(perOverride) > 0 ? Math.trunc(Number(perOverride)) : defaultPer;
   // Trays used on this record (all tray pallets, possibly several of the same SKU): produced + scrap - hold must equal it.
   const traysUsed = lines.reduce((sum, l) => {
-    if (!l.checked || !TRAY_CATEGORIES.includes(l.checked.category || "")) return sum;
+    const isTray = l.checked ? TRAY_CATEGORIES.includes(l.checked.category || "") : isTraySku(l.skuId);
+    if (!isTray) return sum;
     const q = Number(l.quantity) || 0;
     if (l.unit === "Trays") return sum + q;
     if (l.unit === "Pallets") return sum + q * (l.checked?.trays_per_pallet || 0);
@@ -115,18 +121,22 @@ export default function ShiftRecordForm({ onClose, onSaved }: { onClose: () => v
     setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...p } : l)));
   }
 
+  function onSkuChange(l: Line, skuId: string) {
+    patch(l.key, { skuId, checked: null, lineError: null, scan: "", unit: unitsFor(skuById.get(skuId)?.category)[0], quantity: "", fully: true });
+  }
+
   async function check(l: Line, scanText?: string) {
     const scan = (scanText ?? l.scan).trim();
     if (!scan) return;
     patch(l.key, { checking: true, lineError: null });
     try {
-      const pv = await api.previewShiftRecordScan(scan, null);
+      const pv = await api.previewShiftRecordScan(scan, l.skuId || null);
       setCameraFor(null);
       const dup = lines.find((o) => o.key !== l.key && o.checked?.pallet_id === pv.pallet_id);
       if (dup) throw new Error(`Pallet ${pv.display_id} is already on this record.`);
       // Picking the pallet first? Fill the SKU in from what was scanned.
       // Start from the whole pallet (e.g. 2112 trays, 5000 pcs); the person lowers it if only some was used.
-      patch(l.key, { checking: false, checked: pv, skuId: pv.sku_code_id || "", scan: pv.display_id, fully: true, ...wholePallet(pv, pv.category) });
+      patch(l.key, { checking: false, checked: pv, skuId: l.skuId || pv.sku_code_id || "", scan: pv.display_id, fully: true, ...wholePallet(pv, pv.category) });
     } catch (e) {
       setCameraFor(null);
       patch(l.key, { checking: false, checked: null, scan, lineError: e instanceof Error ? e.message : "Could not check this pallet." });
@@ -138,10 +148,11 @@ export default function ShiftRecordForm({ onClose, onSaved }: { onClose: () => v
     if (!date) return setError("Select the Date.");
     if (!shift) return setError("Select a Shift.");
     if (!machineId) return setError("Select a Machine.");
-    const used = lines.filter((l) => l.scan.trim() || l.checked);
+    const used = lines.filter((l) => l.scan.trim() || l.skuId || l.checked);
     if (used.length === 0) return setError("Add at least one material used.");
     for (const [i, l] of used.entries()) {
-      if (!l.checked) return setError(`Material ${i + 1}: scan the RM pallet QR (it is compulsory).`);
+      if (!l.skuId && !l.checked) return setError(`Material ${i + 1}: select the SKU.`);
+      if (l.scan.trim() && !l.checked) return setError(`Material ${i + 1}: check the pallet QR (press Enter) or clear it.`);
       if (!(Number(l.quantity) > 0)) return setError(`Material ${i + 1}: enter the quantity used.`);
     }
     if (traysUsed > 0 && accounted !== traysUsed) return setError(`Trays produced (${traysN}) + scrap (${scrapN}) - hold (${holdN}) = ${accounted}, but ${traysUsed} trays were used. They must be equal.`);
@@ -152,7 +163,7 @@ export default function ShiftRecordForm({ onClose, onSaved }: { onClose: () => v
         record_date: date, shift, machine_id: machineId, client_time: new Date().toLocaleString(), notes: notes.trim() || undefined,
         trays_produced: traysN, scrap_trays: Number(scrap) || 0, hold_trays: holdN, scrap_reason: scrapReason.trim() || undefined, total_pcs_per_pallet: Number(perOverride) > 0 ? Math.trunc(Number(perOverride)) : null,
         materials: used.map((l) => ({
-          sku_code_id: l.checked?.sku_code_id || null, scan: l.scan.trim(), quantity: Number(l.quantity), unit: l.unit, fully_consumed: l.fully,
+          sku_code_id: l.skuId || l.checked?.sku_code_id || null, scan: l.scan.trim(), quantity: Number(l.quantity), unit: l.unit, fully_consumed: l.fully,
         })),
       });
       onSaved(res.id);
@@ -162,6 +173,8 @@ export default function ShiftRecordForm({ onClose, onSaved }: { onClose: () => v
       setSaving(false);
     }
   }
+
+  const skuLabel = (s: SkuCode) => (s.sku_code && s.sku_code !== s.code ? `${s.code} (${s.sku_code})` : s.code);
 
   return (
     <>
@@ -199,18 +212,25 @@ export default function ShiftRecordForm({ onClose, onSaved }: { onClose: () => v
           <div className="detail-card">
             <h3>Materials Used</h3>
             <div className="hint-text" style={{ marginBottom: 10 }}>
-              Trays, pads, glue, polybags… scan the RM pallet QR (compulsory; the SKU comes from it), then enter how much was used. Add a line for each material.
+              Trays, pads, glue, polybags… pick the SKU, optionally scan its RM pallet QR, then enter how much was used. Add a line for each material.
             </div>
             {lines.map((l, i) => {
-              const category = l.checked?.category || null;
+              const category = l.checked?.category || skuById.get(l.skuId)?.category || null;
               const units = unitsFor(category);
               const cap = capacity(l.checked, l.unit);
               const q = Number(l.quantity) || 0;
               return (
                 <div key={l.key} style={{ border: "1px solid var(--border, #e5e7eb)", borderRadius: 8, padding: 10, marginBottom: 10 }}>
                   <div className="form-grid">
-                    <div className="field" style={{ gridColumn: "1 / -1" }}>
-                      <label>RM Pallet QR {i + 1} <span style={{ color: "var(--red)" }}>*</span> {l.checked && <span style={{ color: "var(--green, #15803d)" }}>✓</span>}</label>
+                    <div className="field">
+                      <label>SKU {i + 1} <span style={{ color: "var(--red)" }}>*</span></label>
+                      <select value={l.skuId} onChange={(e) => onSkuChange(l, e.target.value)}>
+                        <option value="">Select</option>
+                        {skus.map((s) => <option key={s.id} value={s.id}>{skuLabel(s)}</option>)}
+                      </select>
+                    </div>
+                    <div className="field">
+                      <label>RM Pallet QR <span className="hint-text">(optional)</span> {l.checked && <span style={{ color: "var(--green, #15803d)" }}>✓</span>}</label>
                       {cameraFor === l.key ? (
                         <CameraQrScanner onDetected={(text) => check(l, text)} onCancel={() => setCameraFor(null)} />
                       ) : (
@@ -246,6 +266,7 @@ export default function ShiftRecordForm({ onClose, onSaved }: { onClose: () => v
                     </div>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 6, gap: 10 }}>
+                    {l.checked ? (
                     <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 13 }}>
                       <input
                         type="checkbox"
@@ -258,13 +279,14 @@ export default function ShiftRecordForm({ onClose, onSaved }: { onClose: () => v
                       />
                       Pallet fully used
                     </label>
+                    ) : <span className="hint-text">No QR scanned: the quantity comes off Inventory by SKU; no pallet is marked used.</span>}
                     {lines.length > 1 && <button className="btn-tertiary" onClick={() => setLines((ls) => ls.filter((o) => o.key !== l.key))}>Remove</button>}
                   </div>
-                  <div className="hint-text" style={{ marginTop: 4 }}>
+                  {l.checked && <div className="hint-text" style={{ marginTop: 4 }}>
                     <b>Pallet fully used</b> — tick it when nothing is left on this pallet: it is marked consumed and cannot be used again.
                     Untick it when some is left: the pallet stays in stock (it only leaves its shelf) and only the quantity you enter comes off Inventory.
                     {cap ? ` A full pallet holds ${cap.toLocaleString()} ${l.unit.toLowerCase()}; entering that much ticks it for you.` : ""}
-                  </div>
+                  </div>}
                   {l.checking && <div className="hint-text">Checking…</div>}
                   {l.checked && <div className="hint-text">{l.checked.display_id} · {l.checked.sku_code || "—"}{l.checked.shipment_number ? ` · ${l.checked.shipment_number}` : ""}</div>}
                   {l.lineError && <div className="error-banner" style={{ marginTop: 6 }}>{l.lineError}</div>}
