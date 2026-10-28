@@ -21,6 +21,7 @@ import type {
   AppUser, UserCreateInput, UserUpdateInput,
   PortfolioAccessMe, PortfolioAccess, PortfolioAccessInput, PortfolioAccessUpdateInput,
   GoodsReceiptDetail, GoodsReceiptListItem, GoodsReceiptSavePayload, GoodsReceiptInwardPayload, GoodsReceiptEntry,
+  ShiftRecordListItem, ShiftRecordDetail, ShiftRecordScanPreview, ShiftRecordSavePayload,
   InventoryListResponse, InventoryDetail, InspectionStatus, QcStatus,
 } from "./types";
 
@@ -753,6 +754,84 @@ async function getMaterialConsumptionSb(id: string): Promise<MaterialConsumption
   const { data, error } = await supabase.from("material_consumptions").select(MC_DETAIL_SELECT).eq("id", id).single();
   if (error || !data) throw new ApiError(404, "RM Requisition record not found");
   return flattenMcDetail(data as unknown as RawMc);
+}
+
+// -- Shift Record (migration 0103) -----------------------------------------
+type RawShiftRecord = {
+  id: string; display_id: string; record_date: string; shift: string; shipment_number: string | null;
+  fg_sku_code_snapshot: string | null; trays_produced: number; total_pcs_per_pallet: number | null; fg_pallets: number;
+  scrap_trays: number; notes: string | null; client_time: string | null; recorded_at: string; qr_generation_id: string | null;
+  machine: { code: string } | null;
+  recorded_by_user: { full_name: string } | null;
+  materials: {
+    id: string; sort_order: number; sku_code_snapshot: string | null; category: string | null; pallet_display_id: string | null;
+    quantity: number; unit: string; fully_consumed: boolean; inventory_quantity: number | null;
+  }[];
+};
+const SR_SELECT =
+  "id, display_id, record_date, shift, shipment_number, fg_sku_code_snapshot, trays_produced, total_pcs_per_pallet, fg_pallets, scrap_trays, notes, client_time, recorded_at, qr_generation_id, " +
+  "machine:machines(code), recorded_by_user:app_users!recorded_by(full_name), " +
+  "materials:shift_record_materials(id, sort_order, sku_code_snapshot, category, pallet_display_id, quantity, unit, fully_consumed, inventory_quantity)";
+
+function flattenShiftRecord(r: RawShiftRecord): ShiftRecordListItem {
+  const mats = [...(r.materials || [])].sort((a, b) => a.sort_order - b.sort_order);
+  return {
+    id: r.id, display_id: r.display_id, record_date: r.record_date, shift: r.shift, machine: r.machine?.code ?? null,
+    fg_sku_code: r.fg_sku_code_snapshot, trays_produced: r.trays_produced, fg_pallets: r.fg_pallets, scrap_trays: r.scrap_trays,
+    materials: mats.map((m) => `${m.sku_code_snapshot ?? "—"} ${m.quantity} ${m.unit}`).join(", "),
+    recorded_by: r.recorded_by_user?.full_name ?? null, recorded_at: r.recorded_at,
+  };
+}
+
+async function listShiftRecordsSb(
+  params: { search?: string; date?: string; page?: number }
+): Promise<{ items: ShiftRecordListItem[]; matched_count: number }> {
+  const page = params.page && params.page > 0 ? params.page : 1;
+  let q = supabase.from("shift_records").select(SR_SELECT, { count: "exact" });
+  if (params.date) q = q.eq("record_date", params.date);
+  if (params.search) {
+    const like = ilikeTerm(params.search);
+    q = q.or(`display_id.ilike.${like},shift.ilike.${like},fg_sku_code_snapshot.ilike.${like}`);
+  }
+  const { data, error, count } = await q
+    .order("record_date", { ascending: false }).order("recorded_at", { ascending: false })
+    .range((page - 1) * LIST_PAGE_SIZE, page * LIST_PAGE_SIZE - 1);
+  if (error) throw new ApiError(500, error.message);
+  const items = ((data || []) as unknown as RawShiftRecord[]).map(flattenShiftRecord);
+  return { items, matched_count: count ?? items.length };
+}
+
+async function getShiftRecordSb(id: string): Promise<ShiftRecordDetail> {
+  const { data, error } = await supabase.from("shift_records").select(SR_SELECT).eq("id", id).single();
+  if (error || !data) throw new ApiError(404, "Shift Record not found");
+  const r = data as unknown as RawShiftRecord;
+  let pallets: ShiftRecordDetail["pallets"] = [];
+  let qrBatch: string | null = null;
+  if (r.qr_generation_id) {
+    const [pal, batch] = await Promise.all([
+      supabase.from("pallets").select("id, display_id, qr_payload, lifecycle_status, events:pallet_lifecycle_events(stage, metadata)")
+        .eq("source_qr_generation_id", r.qr_generation_id).order("display_id") as unknown as Promise<{
+          data: { id: string; display_id: string; qr_payload: string | null; lifecycle_status: string; events: { stage: string; metadata: { trays?: number } | null }[] }[] | null;
+          error: { message: string } | null }>,
+      supabase.from("qr_generation_records").select("batch_display_id").eq("id", r.qr_generation_id).maybeSingle() as unknown as Promise<{ data: { batch_display_id: string } | null }>,
+    ]);
+    if (pal.error) throw new ApiError(500, pal.error.message);
+    pallets = (pal.data || []).map((p) => ({
+      id: p.id, display_id: p.display_id, qr_payload: p.qr_payload, lifecycle_status: p.lifecycle_status,
+      trays: p.events?.find((e) => e.stage === "generated")?.metadata?.trays ?? null,
+    }));
+    qrBatch = batch.data?.batch_display_id ?? null;
+  }
+  const mats = [...(r.materials || [])].sort((a, b) => a.sort_order - b.sort_order);
+  return {
+    ...flattenShiftRecord(r),
+    shipment_number: r.shipment_number, total_pcs_per_pallet: r.total_pcs_per_pallet, notes: r.notes, client_time: r.client_time,
+    qr_batch: qrBatch, pallets,
+    material_lines: mats.map((m) => ({
+      id: m.id, sort_order: m.sort_order, sku_code: m.sku_code_snapshot, category: m.category, pallet_display_id: m.pallet_display_id,
+      quantity: m.quantity, unit: m.unit, fully_consumed: m.fully_consumed, inventory_quantity: m.inventory_quantity,
+    })),
+  };
 }
 
 // -- Production: read-only, direct Supabase -------------------------------
@@ -3475,6 +3554,45 @@ export const api = {
       supabase.rpc("goods_receipt_delete", { _id: id }) as unknown as Promise<{ data: null; error: { message: string; code?: string } | null }>
     );
     invalidateListCache("goods-receipt");
+  },
+
+  // -- Shift Record (migration 0103), Factory only. Reads are Supabase-direct
+  // (RLS); every write is one Postgres function (scan check / save / delete).
+  listShiftRecords: (params: { search?: string; date?: string; page?: number } = {}) =>
+    cachedList(listCacheKey("shift-record", { search: params.search, date: params.date, page: params.page }), () => listShiftRecordsSb(params)),
+  getShiftRecord: (id: string) => getShiftRecordSb(id),
+  previewShiftRecordScan: (scan: string, skuCodeId: string | null) =>
+    sbRequest<ShiftRecordScanPreview>(() =>
+      supabase.rpc("shift_record_scan_preview", { _scan: scan, _sku_code_id: skuCodeId }) as unknown as Promise<{ data: ShiftRecordScanPreview | null; error: { message: string; code?: string } | null }>,
+      { denied: "You do not have permission to use Shift Record." }
+    ),
+  // Total Pcs per Pallet of an FG tray SKU version (Production's own value) -- drives the live pallet calculation.
+  getShiftRecordPcsPerPallet: async (skuVersionId: string): Promise<number | null> => {
+    const row = await sbRequest<{ prod_total_pcs_per_pallet: number | null }>(() =>
+      supabase.from("sku_versions").select("prod_total_pcs_per_pallet").eq("id", skuVersionId).maybeSingle() as unknown as Promise<{ data: { prod_total_pcs_per_pallet: number | null } | null; error: { message: string; code?: string } | null }>
+    );
+    return row?.prod_total_pcs_per_pallet ?? null;
+  },
+  saveShiftRecord: async (payload: ShiftRecordSavePayload) => {
+    const res = await sbRequest<{ id: string; display_id: string; fg_pallets: { id: string; display_id: string; trays: number }[]; qr_generation_id: string | null }>(() =>
+      supabase.rpc("shift_record_save", { _payload: payload }) as unknown as Promise<{ data: { id: string; display_id: string; fg_pallets: { id: string; display_id: string; trays: number }[]; qr_generation_id: string | null } | null; error: { message: string; code?: string } | null }>,
+      { denied: "You do not have permission to create Shift Records." }
+    );
+    invalidateListCache("shift-record");
+    invalidateListCache("inventory");
+    invalidateListCache("rm-storage");
+    invalidateListCache("fg-storage");
+    return res;
+  },
+  deleteShiftRecord: async (id: string) => {
+    await sbRequest<null>(() =>
+      supabase.rpc("shift_record_delete", { _id: id }) as unknown as Promise<{ data: null; error: { message: string; code?: string } | null }>,
+      { denied: "You do not have permission to delete Shift Records." }
+    );
+    invalidateListCache("shift-record");
+    invalidateListCache("inventory");
+    invalidateListCache("rm-storage");
+    invalidateListCache("fg-storage");
   },
 
   // -- Inventory (2026-09-28) -- SKU-centric raw-material stock, backed by

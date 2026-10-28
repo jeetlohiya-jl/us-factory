@@ -1138,6 +1138,8 @@ USER_MODULES = [
     # Inventory (migration 0059) -- missing here, so saving a permission set
     # that included it failed with "Unknown module: inventory".
     "inventory",
+    # Shift Record (migration 0103).
+    "shift_record",
 ]
 
 

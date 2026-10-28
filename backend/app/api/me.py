@@ -19,6 +19,8 @@ MODULES = [
     # Inventory (migration 0059) -- was missing here and in app_bootstrap's
     # list (fixed in 0082), so the screen never saw the permission.
     "inventory",
+    # Shift Record (migration 0103).
+    "shift_record",
 ]
 
 
