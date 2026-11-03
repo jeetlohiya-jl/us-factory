@@ -2190,6 +2190,7 @@ export type ShiftRecordUnit = "Pallets" | "Trays" | "Boxes" | "Pcs" | "Kgs" | "U
 export interface ShiftRecordMaterial {
   id: string;
   sort_order: number;
+  sku_code_id: string | null;
   sku_code: string | null;
   category: string | null;
   pallet_display_id: string | null;
@@ -2234,6 +2235,8 @@ export interface ShiftRecordDetail extends ShiftRecordListItem {
   client_time: string | null;
   qr_batch: string | null;
   fg_sku_code_id: string | null;
+  machine_id: string | null;
+  edited_at: string | null;
   material_lines: ShiftRecordMaterial[];
   pallets: ShiftRecordFgPallet[];
 }

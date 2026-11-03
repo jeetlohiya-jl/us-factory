@@ -6,8 +6,8 @@ import LabelImageButtons from "@/components/LabelImageButtons";
 
 const fmt = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 3 });
 
-export default function ShiftRecordDetailPanel({ record, canDelete, canGenerate, onClose, onDelete, onGenerate, generating, generateError }: {
-  record: ShiftRecordDetail; canDelete: boolean; canGenerate: boolean; onClose: () => void; onDelete: () => void;
+export default function ShiftRecordDetailPanel({ record, canDelete, canEdit, canGenerate, onClose, onDelete, onEdit, onGenerate, generating, generateError }: {
+  record: ShiftRecordDetail; canDelete: boolean; canEdit: boolean; canGenerate: boolean; onClose: () => void; onDelete: () => void; onEdit: () => void;
   onGenerate: () => void; generating: boolean; generateError: string | null;
 }) {
   const generated = !!record.fg_generated_at;
@@ -25,7 +25,7 @@ export default function ShiftRecordDetailPanel({ record, canDelete, canGenerate,
       <div className="panel-overlay open" onClick={onClose} />
       <div className="side-panel open" style={{ width: "min(720px, 100vw)" }}>
         <div className="sp-head">
-          <div><h2>{record.display_id}</h2><div className="hint-text">{record.shift} · {record.machine || "—"} · {record.record_date}</div></div>
+          <div><h2>{record.display_id}</h2><div className="hint-text">{record.shift} · {record.machine || "—"} · {record.record_date}{record.edited_at ? ` · edited ${new Date(record.edited_at).toLocaleString()}` : ""}</div></div>
           <button className="sp-close" onClick={onClose}>×</button>
         </div>
         <div className="sp-body">
@@ -84,7 +84,7 @@ export default function ShiftRecordDetailPanel({ record, canDelete, canGenerate,
               </div>
             )}
             {generateError && <div className="error-banner" style={{ marginTop: 8 }}>{generateError}</div>}
-            {record.qr_batch && <div className="hint-text" style={{ marginTop: 6 }}>QR batch {record.qr_batch} — print the labels, then put the pallets away in FG Storage.</div>}
+            {record.qr_batch && <div className="hint-text" style={{ marginTop: 6 }}>QR batch {record.qr_batch} — print the labels. The pallets are stored automatically on the floor.</div>}
           </div>
         </div>
         <div className="sp-foot">
@@ -93,6 +93,7 @@ export default function ShiftRecordDetailPanel({ record, canDelete, canGenerate,
             {!generated && record.fg_sku_code_id && canGenerate && (
               <button className="btn btn-primary" disabled={generating} onClick={onGenerate}>{generating ? "Generating…" : "Generate FG QRs"}</button>
             )}
+            {canEdit && <button className="btn btn-ghost" onClick={onEdit}>Edit</button>}
             {canDelete && <button className="btn btn-ghost" style={{ color: "var(--red)" }} onClick={onDelete}>Delete</button>}
             {record.pallets.length > 0 && <LabelImageButtons labels={labels} source={record.qr_batch || record.display_id} />}
           </div>

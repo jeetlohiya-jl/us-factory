@@ -761,17 +761,18 @@ type RawShiftRecord = {
   id: string; display_id: string; record_date: string; shift: string; shipment_number: string | null;
   fg_sku_code_snapshot: string | null; trays_produced: number; total_pcs_per_pallet: number | null; fg_pallets: number; loose_trays: number; loose_carried_in: number; fg_generated_at: string | null; fg_sku_code_id: string | null;
   scrap_trays: number; hold_trays: number | null; scrap_reason: string | null; notes: string | null; client_time: string | null; recorded_at: string; qr_generation_id: string | null;
+  machine_id: string | null; edited_at: string | null;
   machine: { code: string } | null;
   recorded_by_user: { full_name: string } | null;
   materials: {
-    id: string; sort_order: number; sku_code_snapshot: string | null; category: string | null; pallet_display_id: string | null;
+    id: string; sort_order: number; sku_code_id: string | null; sku_code_snapshot: string | null; category: string | null; pallet_display_id: string | null;
     quantity: number; unit: string; fully_consumed: boolean; inventory_quantity: number | null;
   }[];
 };
 const SR_SELECT =
-  "id, display_id, record_date, shift, shipment_number, fg_sku_code_snapshot, trays_produced, total_pcs_per_pallet, fg_pallets, loose_trays, loose_carried_in, fg_generated_at, fg_sku_code_id, scrap_trays, hold_trays, scrap_reason, notes, client_time, recorded_at, qr_generation_id, " +
+  "id, display_id, record_date, shift, shipment_number, fg_sku_code_snapshot, trays_produced, total_pcs_per_pallet, fg_pallets, loose_trays, loose_carried_in, fg_generated_at, fg_sku_code_id, scrap_trays, hold_trays, scrap_reason, notes, client_time, recorded_at, qr_generation_id, machine_id, edited_at, " +
   "machine:machines(code), recorded_by_user:app_users!recorded_by(full_name), " +
-  "materials:shift_record_materials(id, sort_order, sku_code_snapshot, category, pallet_display_id, quantity, unit, fully_consumed, inventory_quantity)";
+  "materials:shift_record_materials(id, sort_order, sku_code_id, sku_code_snapshot, category, pallet_display_id, quantity, unit, fully_consumed, inventory_quantity)";
 
 function flattenShiftRecord(r: RawShiftRecord): ShiftRecordListItem {
   const mats = [...(r.materials || [])].sort((a, b) => a.sort_order - b.sort_order);
@@ -826,9 +827,9 @@ async function getShiftRecordSb(id: string): Promise<ShiftRecordDetail> {
   return {
     ...flattenShiftRecord(r),
     shipment_number: r.shipment_number, total_pcs_per_pallet: r.total_pcs_per_pallet, notes: r.notes, scrap_reason: r.scrap_reason, client_time: r.client_time,
-    qr_batch: qrBatch, fg_sku_code_id: r.fg_sku_code_id, pallets,
+    qr_batch: qrBatch, fg_sku_code_id: r.fg_sku_code_id, machine_id: r.machine_id, edited_at: r.edited_at, pallets,
     material_lines: mats.map((m) => ({
-      id: m.id, sort_order: m.sort_order, sku_code: m.sku_code_snapshot, category: m.category, pallet_display_id: m.pallet_display_id,
+      id: m.id, sort_order: m.sort_order, sku_code_id: m.sku_code_id, sku_code: m.sku_code_snapshot, category: m.category, pallet_display_id: m.pallet_display_id,
       quantity: m.quantity, unit: m.unit, fully_consumed: m.fully_consumed, inventory_quantity: m.inventory_quantity,
     })),
   };
@@ -3561,9 +3562,9 @@ export const api = {
   listShiftRecords: (params: { search?: string; date?: string; page?: number } = {}) =>
     cachedList(listCacheKey("shift-record", { search: params.search, date: params.date, page: params.page }), () => listShiftRecordsSb(params)),
   getShiftRecord: (id: string) => getShiftRecordSb(id),
-  previewShiftRecordScan: (scan: string, skuCodeId: string | null) =>
+  previewShiftRecordScan: (scan: string, skuCodeId: string | null, recordId?: string | null) =>
     sbRequest<ShiftRecordScanPreview>(() =>
-      supabase.rpc("shift_record_scan_preview", { _scan: scan, _sku_code_id: skuCodeId }) as unknown as Promise<{ data: ShiftRecordScanPreview | null; error: { message: string; code?: string } | null }>,
+      supabase.rpc("shift_record_scan_preview", recordId ? { _scan: scan, _sku_code_id: skuCodeId, _record_id: recordId } : { _scan: scan, _sku_code_id: skuCodeId }) as unknown as Promise<{ data: ShiftRecordScanPreview | null; error: { message: string; code?: string } | null }>,
       { denied: "You do not have permission to use Shift Record." }
     ),
   // Total Pcs per Pallet of an FG tray SKU version (Production's own value) -- drives the live pallet calculation.
@@ -3584,6 +3585,18 @@ export const api = {
     const res = await sbRequest<{ id: string; display_id: string; fg_pallets: { id: string; display_id: string; trays: number }[]; qr_generation_id: string | null }>(() =>
       supabase.rpc("shift_record_save", { _payload: payload }) as unknown as Promise<{ data: { id: string; display_id: string; fg_pallets: { id: string; display_id: string; trays: number }[]; qr_generation_id: string | null } | null; error: { message: string; code?: string } | null }>,
       { denied: "You do not have permission to create Shift Records." }
+    );
+    invalidateListCache("shift-record");
+    invalidateListCache("inventory");
+    invalidateListCache("rm-storage");
+    invalidateListCache("fg-storage");
+    return res;
+  },
+  // Edit: reverses the old record and saves the new one under the same SR number (migration 0111).
+  updateShiftRecord: async (id: string, payload: ShiftRecordSavePayload) => {
+    const res = await sbRequest<{ id: string; display_id: string }>(() =>
+      supabase.rpc("shift_record_update", { _id: id, _payload: payload }) as unknown as Promise<{ data: { id: string; display_id: string } | null; error: { message: string; code?: string } | null }>,
+      { denied: "You do not have permission to edit Shift Records." }
     );
     invalidateListCache("shift-record");
     invalidateListCache("inventory");
