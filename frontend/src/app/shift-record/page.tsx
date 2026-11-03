@@ -26,7 +26,8 @@ export default function ShiftRecordPage() {
   const [page, setPage] = useState(1);
   const [showNew, setShowNew] = useState(false);
   const [open, setOpen] = useState<ShiftRecordDetail | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; display_id: string } | null>(null);
+  const [editing, setEditing] = useState<ShiftRecordDetail | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
@@ -67,14 +68,20 @@ export default function ShiftRecordPage() {
     } finally { setGenerating(false); }
   }
 
+  async function startEdit(id: string) {
+    setError(null);
+    try { setOpen(null); setEditing(await api.getShiftRecord(id)); }
+    catch (e) { setError(e instanceof Error ? e.message : "Failed to load the Shift Record"); }
+  }
+
   async function doDelete() {
-    if (!open) return;
+    if (!deleteTarget) return;
     try {
-      await api.deleteShiftRecord(open.id);
-      setConfirmDelete(false); setOpen(null);
+      await api.deleteShiftRecord(deleteTarget.id);
+      setDeleteTarget(null); setOpen((o) => (o && o.id === deleteTarget.id ? null : o));
       invalidateListCache(MODULE); refresh();
     } catch (e) {
-      setConfirmDelete(false);
+      setDeleteTarget(null);
       setDeleteError(e instanceof Error ? e.message : "Failed to delete the Shift Record");
     }
   }
@@ -105,11 +112,11 @@ export default function ShiftRecordPage() {
       <div className="card card-flush">
         <table className="data compact">
           <thead>
-            <tr><th>Record</th><th>Date</th><th>Shift</th><th>Machine</th><th>Materials Used</th><th>FG SKU</th><th>Trays Produced (Finished)</th><th>FG Pallets</th><th>Loose</th><th>FG QRs</th><th>Scrap</th><th>Hold</th><th>By</th></tr>
+            <tr><th>Record</th><th>Date</th><th>Shift</th><th>Machine</th><th>Materials Used</th><th>FG SKU</th><th>Trays Produced (Finished)</th><th>FG Pallets</th><th>Loose</th><th>FG QRs</th><th>Scrap</th><th>Hold</th><th>By</th><th></th></tr>
           </thead>
           <tbody>
             {items.length === 0 ? (
-              <tr className="empty-row"><td colSpan={13}>{loading ? "Loading…" : "No Shift Records yet."}</td></tr>
+              <tr className="empty-row"><td colSpan={14}>{loading ? "Loading…" : "No Shift Records yet."}</td></tr>
             ) : items.map((r) => (
               <tr key={r.id} style={{ cursor: "pointer" }} onClick={() => openRecord(r.id)}>
                 <td className="mono">{r.display_id}</td>
@@ -125,6 +132,10 @@ export default function ShiftRecordPage() {
                 <td>{r.scrap_trays}</td>
                 <td>{r.hold_trays}</td>
                 <td>{r.recorded_by || "—"}<div className="hint-text">{new Date(r.recorded_at).toLocaleString()}</div></td>
+                <td style={{ whiteSpace: "nowrap" }} onClick={(e) => e.stopPropagation()}>
+                  {perms?.can_edit && <button className="btn-tertiary" onClick={() => startEdit(r.id)}>Edit</button>}
+                  {perms?.can_delete && <button className="btn-tertiary" style={{ color: "var(--red)", marginLeft: 8 }} onClick={() => setDeleteTarget({ id: r.id, display_id: r.display_id })}>Delete</button>}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -138,14 +149,21 @@ export default function ShiftRecordPage() {
           onSaved={(id) => { setShowNew(false); invalidateListCache(MODULE); refresh(); openRecord(id); }}
         />
       )}
-      {open && (
-        <ShiftRecordDetailPanel record={open} canDelete={!!perms?.can_delete} canGenerate={!!perms?.can_create} generating={generating} generateError={generateError} onGenerate={doGenerate} onClose={() => setOpen(null)} onDelete={() => setConfirmDelete(true)} />
+      {editing && (
+        <ShiftRecordForm
+          editing={editing}
+          onClose={() => setEditing(null)}
+          onSaved={(id) => { setEditing(null); invalidateListCache(MODULE); refresh(); openRecord(id); }}
+        />
       )}
-      {confirmDelete && (
+      {open && (
+        <ShiftRecordDetailPanel record={open} canDelete={!!perms?.can_delete} canEdit={!!perms?.can_edit} onEdit={() => startEdit(open.id)} canGenerate={!!perms?.can_create} generating={generating} generateError={generateError} onGenerate={doGenerate} onClose={() => setOpen(null)} onDelete={() => setDeleteTarget({ id: open.id, display_id: open.display_id })} />
+      )}
+      {deleteTarget && (
         <ConfirmDialog
-          title="Delete this Shift Record?"
-          message="This puts the materials back on Inventory and in RM Storage, and removes the FG pallets it created (only possible while they are still unstored). This cannot be undone."
-          confirmLabel="Delete" danger onConfirm={doDelete} onCancel={() => setConfirmDelete(false)}
+          title={`Delete ${deleteTarget.display_id}?`}
+          message="This puts the materials back on Inventory and the pallets back in stock, and removes the FG pallets it created (refused if any was already picked or shipped). This cannot be undone."
+          confirmLabel="Delete" danger onConfirm={doDelete} onCancel={() => setDeleteTarget(null)}
         />
       )}
       {deleteError && <ConfirmDialog title="Can't delete this record" message="" blockedNote={deleteError} onCancel={() => setDeleteError(null)} />}

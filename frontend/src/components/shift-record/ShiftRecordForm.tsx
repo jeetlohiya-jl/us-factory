@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import CameraQrScanner from "@/components/storage/CameraQrScanner";
-import type { Machine, ShiftRecordScanPreview, ShiftRecordUnit, SkuCode } from "@/lib/types";
+import type { Machine, ShiftRecordDetail, ShiftRecordScanPreview, ShiftRecordUnit, SkuCode } from "@/lib/types";
 
 const SHIFTS = ["Shift A", "Shift B", "Shift C"];
 const TRAY_CATEGORIES = ["tray", "lnp_tray", "fgtray"];
@@ -53,21 +53,26 @@ const today = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000
  * worked out as Production does) and the scrap. Saving takes the materials off
  * Inventory, marks the pallets used and creates the FG pallets (migration 0103).
  */
-export default function ShiftRecordForm({ onClose, onSaved }: { onClose: () => void; onSaved: (id: string) => void }) {
+export default function ShiftRecordForm({ onClose, onSaved, editing }: { onClose: () => void; onSaved: (id: string) => void; editing?: ShiftRecordDetail | null }) {
   const [machines, setMachines] = useState<Machine[]>([]);
-  const [date, setDate] = useState(today());
-  const [shift, setShift] = useState("");
-  const [machineId, setMachineId] = useState("");
+  const [date, setDate] = useState(editing?.record_date || today());
+  const [shift, setShift] = useState(editing?.shift || "");
+  const [machineId, setMachineId] = useState(editing?.machine_id || "");
   const [skus, setSkus] = useState<SkuCode[]>([]);
-  const [lines, setLines] = useState<Line[]>([newLine()]);
-  const [trays, setTrays] = useState("");
-  const [perOverride, setPerOverride] = useState("");
+  const [lines, setLines] = useState<Line[]>(() => editing && editing.material_lines.length > 0
+    ? editing.material_lines.map((m) => ({
+        key: lineKey++, skuId: m.sku_code_id || "", scan: m.pallet_display_id || "", checked: null, checking: false, lineError: null,
+        quantity: String(m.quantity), unit: (m.unit as ShiftRecordUnit), fully: m.fully_consumed,
+      }))
+    : [newLine()]);
+  const [trays, setTrays] = useState(editing && editing.trays_produced > 0 ? String(editing.trays_produced) : "");
+  const [perOverride, setPerOverride] = useState(editing?.total_pcs_per_pallet ? String(editing.total_pcs_per_pallet) : "");
   const [defaultPer, setDefaultPer] = useState<number | null>(null);
-  const [scrapReason, setScrapReason] = useState("");
+  const [scrapReason, setScrapReason] = useState(editing?.scrap_reason || "");
   const [carryIn, setCarryIn] = useState(0);
-  const [scrap, setScrap] = useState("");
-  const [hold, setHold] = useState("");
-  const [notes, setNotes] = useState("");
+  const [scrap, setScrap] = useState(editing && editing.scrap_trays > 0 ? String(editing.scrap_trays) : "");
+  const [hold, setHold] = useState(editing && editing.hold_trays > 0 ? String(editing.hold_trays) : "");
+  const [notes, setNotes] = useState(editing?.notes || "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const scanRefs = useRef<Record<number, HTMLInputElement | null>>({});
@@ -78,6 +83,18 @@ export default function ShiftRecordForm({ onClose, onSaved }: { onClose: () => v
     api.skus().then((all) => setSkus(all.filter((s) => s.category !== ("fgtray" as string)))).catch(() => {});
   }, []);
 
+
+  // Editing: re-read each pallet this record used, so its capacity and category are known. Quantities stay as saved.
+  useEffect(() => {
+    if (!editing) return;
+    lines.forEach((l) => {
+      if (!l.scan.trim()) return;
+      api.previewShiftRecordScan(l.scan, l.skuId || null, editing.id)
+        .then((pv) => setLines((ls) => ls.map((o) => (o.key === l.key ? { ...o, checked: pv, skuId: o.skuId || pv.sku_code_id || "" } : o))))
+        .catch((e) => setLines((ls) => ls.map((o) => (o.key === l.key ? { ...o, lineError: e instanceof Error ? e.message : "Could not check this pallet." } : o))));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const skuById = useMemo(() => new Map(skus.map((s) => [s.id, s])), [skus]);
   const isTraySku = (id: string) => TRAY_CATEGORIES.includes(skuById.get(id)?.category || "");
@@ -93,7 +110,7 @@ export default function ShiftRecordForm({ onClose, onSaved }: { onClose: () => v
   }, [fgVersionId, traySkuId]);
   useEffect(() => {
     setCarryIn(0);
-    if (traySkuId) api.getShiftRecordCarryIn(traySkuId).then(setCarryIn).catch(() => {});
+    if (traySkuId) api.getShiftRecordCarryIn(traySkuId, editing?.id).then(setCarryIn).catch(() => {});
   }, [traySkuId]);
 
   const traysN = Number(trays) || 0;
@@ -130,7 +147,7 @@ export default function ShiftRecordForm({ onClose, onSaved }: { onClose: () => v
     if (!scan) return;
     patch(l.key, { checking: true, lineError: null });
     try {
-      const pv = await api.previewShiftRecordScan(scan, l.skuId || null);
+      const pv = await api.previewShiftRecordScan(scan, l.skuId || null, editing?.id);
       setCameraFor(null);
       const dup = lines.find((o) => o.key !== l.key && o.checked?.pallet_id === pv.pallet_id);
       if (dup) throw new Error(`Pallet ${pv.display_id} is already on this record.`);
@@ -159,13 +176,14 @@ export default function ShiftRecordForm({ onClose, onSaved }: { onClose: () => v
     if (traysN > 0 && !(per && per > 0)) return setError("Trays per Pallet is not set for this tray SKU — enter it so the pallets can be worked out.");
     setSaving(true);
     try {
-      const res = await api.saveShiftRecord({
+      const payload = {
         record_date: date, shift, machine_id: machineId, client_time: new Date().toLocaleString(), notes: notes.trim() || undefined,
         trays_produced: traysN, scrap_trays: Number(scrap) || 0, hold_trays: holdN, scrap_reason: scrapReason.trim() || undefined, total_pcs_per_pallet: Number(perOverride) > 0 ? Math.trunc(Number(perOverride)) : null,
         materials: used.map((l) => ({
           sku_code_id: l.skuId || l.checked?.sku_code_id || null, scan: l.scan.trim(), quantity: Number(l.quantity), unit: l.unit, fully_consumed: l.fully,
         })),
-      });
+      };
+      const res = editing ? await api.updateShiftRecord(editing.id, payload) : await api.saveShiftRecord(payload);
       onSaved(res.id);
     } catch (e) {
       setError(e instanceof ApiError || e instanceof Error ? e.message : "Failed to save the Shift Record");
@@ -181,7 +199,7 @@ export default function ShiftRecordForm({ onClose, onSaved }: { onClose: () => v
       <div className="panel-overlay open" onClick={onClose} />
       <div className="side-panel open" style={{ width: "min(760px, 100vw)" }}>
         <div className="sp-head">
-          <div><h2>New Shift Record</h2></div>
+          <div><h2>{editing ? `Edit ${editing.display_id}` : "New Shift Record"}</h2></div>
           <button className="sp-close" onClick={onClose}>×</button>
         </div>
         <div className="sp-body">
@@ -364,11 +382,17 @@ export default function ShiftRecordForm({ onClose, onSaved }: { onClose: () => v
               </div>
             </div>
           </div>
+          {editing && (
+            <div className="hint-text">
+              Saving replaces this record: the old material use is reversed and the new one applied, keeping {editing.display_id}.
+              {editing.fg_generated_at ? " Its FG QRs are removed and must be generated again (refused if any FG pallet was already picked or shipped)." : ""}
+            </div>
+          )}
           {error && <div className="error-banner">{error}</div>}
         </div>
         <div className="sp-foot">
           <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" disabled={saving} onClick={handleSave}>{saving ? "Saving…" : "Save Shift Record"}</button>
+          <button className="btn btn-primary" disabled={saving} onClick={handleSave}>{saving ? "Saving…" : editing ? "Save Changes" : "Save Shift Record"}</button>
         </div>
       </div>
     </>
