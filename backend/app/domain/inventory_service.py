@@ -305,33 +305,8 @@ def add_manual_source(db: Session, item_id: uuid.UUID, payload) -> models.Invent
         raise InventoryValidationError("Inventory item not found.")
     if payload.quantity is None or payload.quantity <= 0:
         raise InventoryValidationError("Quantity must be greater than 0.")
-    direction = (getattr(payload, "direction", None) or "add").strip().lower()
-    if direction not in ("add", "deduct"):
-        raise InventoryValidationError("Choose Add or Deduct.")
-
     category = db.query(models.SkuCode.category).filter(models.SkuCode.id == item.sku_code_id).scalar()
     is_tray = category in ("tray", "fnp_tray", "lnp_tray", "fgtray")
-
-    if direction == "deduct":
-        # Adjust Inventory -- take stock out (breakage, a count correction ...). Never below zero.
-        on_hand = float(db.query(func.coalesce(func.sum(models.InventorySource.quantity), 0))
-                        .filter(models.InventorySource.inventory_item_id == item.id).scalar() or 0)
-        if payload.quantity > on_hand + 1e-9:
-            raise InventoryValidationError(
-                f"Cannot deduct {payload.quantity:g} {item.uom}: only {on_hand:g} {item.uom} in stock."
-            )
-        source = models.InventorySource(
-            inventory_item_id=item.id,
-            quantity=-payload.quantity,
-            unit=item.uom,
-            trays=(-payload.quantity if is_tray and item.uom == "Pcs" else None),
-            is_manual=True,
-            note=(payload.note or "").strip() or "Inventory adjustment (deduct)",
-        )
-        db.add(source)
-        db.commit()
-        db.refresh(source)
-        return source
 
     vendor_id, vendor_name, country = _supplier(db, payload)
 
@@ -350,3 +325,44 @@ def add_manual_source(db: Session, item_id: uuid.UUID, payload) -> models.Invent
     db.commit()
     db.refresh(source)
     return source
+
+
+def update_stock(db: Session, entries: list) -> int:
+    """Update Stock -- set each listed item's stock to the count the user entered (several SKUs at once).
+
+    Recorded as one manual entry per item for the difference (counted - on hand), with a note, so the item's total
+    becomes exactly the entered count and the history keeps what changed. Items already at the entered count are
+    left alone. All or nothing. Returns how many items changed.
+    """
+    unit = current_unit()
+    if not entries:
+        raise InventoryValidationError("Select at least one SKU and enter its current stock.")
+    changed = 0
+    for e in entries:
+        item = (
+            db.query(models.InventoryItem)
+            .filter(models.InventoryItem.id == e.item_id, models.InventoryItem.product == unit)
+            .first()
+        )
+        if not item:
+            raise InventoryValidationError("Inventory item not found.")
+        if e.quantity is None or e.quantity < 0:
+            raise InventoryValidationError("Current stock cannot be negative.")
+        on_hand = float(db.query(func.coalesce(func.sum(models.InventorySource.quantity), 0))
+                        .filter(models.InventorySource.inventory_item_id == item.id).scalar() or 0)
+        diff = float(e.quantity) - on_hand
+        if abs(diff) < 1e-9:
+            continue
+        category = db.query(models.SkuCode.category).filter(models.SkuCode.id == item.sku_code_id).scalar()
+        is_tray = category in ("tray", "fnp_tray", "lnp_tray", "fgtray")
+        db.add(models.InventorySource(
+            inventory_item_id=item.id,
+            quantity=diff,
+            unit=item.uom,
+            trays=(diff if is_tray and item.uom == "Pcs" else None),
+            is_manual=True,
+            note=f"Stock update: counted {float(e.quantity):g} {item.uom} (was {on_hand:g})",
+        ))
+        changed += 1
+    db.commit()
+    return changed

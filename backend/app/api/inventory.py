@@ -82,6 +82,19 @@ def update_inventory(
     return inventory_service.get_inventory_detail(db, item.id)
 
 
+@router.post("/update-stock")
+def update_stock(
+    payload: schemas.InventoryStockUpdateIn, db: Session = Depends(get_db), _perm=Depends(require_any("create", "edit")),
+):
+    """Update Stock: set several SKUs' stock to the counts entered (a stock count). Adds or lowers to match."""
+    try:
+        changed = inventory_service.update_stock(db, payload.entries)
+    except inventory_service.InventoryValidationError as e:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=e.message)
+    return {"changed": changed}
+
+
 @router.post("/{item_id}/sources", response_model=schemas.InventoryDetailOut, status_code=status.HTTP_201_CREATED)
 def add_source(
     # Stock arriving for an existing item: "+ Add" (Create) or the item's own

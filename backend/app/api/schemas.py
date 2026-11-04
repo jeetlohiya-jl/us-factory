@@ -1338,14 +1338,22 @@ class InventoryUpdateIn(BaseModel):
     compatible_tray_sku_code_ids: Optional[list[uuid.UUID]] = None
 
 
+class InventoryStockEntryIn(BaseModel):
+    item_id: uuid.UUID
+    quantity: float
+
+
+class InventoryStockUpdateIn(BaseModel):
+    """Update Stock: the current stock counted for each listed Inventory item."""
+    entries: list[InventoryStockEntryIn]
+
+
 class InventorySourceIn(BaseModel):
     """Adds a manual source line onto an existing Inventory item -- e.g. a
     supplier delivery with no PO behind it yet, or a correction. PO-backed
     quantity only ever arrives via Goods Receipt inward (see migration
     0059's inventory_apply_receipt), never entered here."""
     quantity: float
-    # 'add' (default) puts stock in; 'deduct' takes stock out (Adjust Inventory).
-    direction: str = "add"
     vendor_id: Optional[uuid.UUID] = None
     vendor_name: Optional[str] = None
     supplier_country: Optional[str] = None

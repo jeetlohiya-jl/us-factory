@@ -7,6 +7,7 @@ import { useImmediateThenDebounced } from "@/lib/useImmediateThenDebounced";
 import type { InventoryListItem, InventoryDetail } from "@/lib/types";
 import InventoryDetailPanel from "@/components/inventory/InventoryDetailPanel";
 import InventoryFormPanel from "@/components/inventory/InventoryFormPanel";
+import InventoryUpdateStockPanel from "@/components/inventory/InventoryUpdateStockPanel";
 import Pagination from "@/components/Pagination";
 import { MODULE_NAMES } from "@/lib/terms";
 
@@ -34,6 +35,7 @@ export default function InventoryPage() {
   const [page, setPage] = useState(1);
 
   const [showAdd, setShowAdd] = useState(false);
+  const [showUpdate, setShowUpdate] = useState(false);
   const [openItem, setOpenItem] = useState<InventoryDetail | null>(null);
 
   const refresh = useCallback(async () => {
@@ -73,9 +75,12 @@ export default function InventoryPage() {
       <div className="page-head2">
         <div>
           <h1>{MODULE_NAMES.inventory}</h1>
-          <div className="desc">Raw-material stock on hand, clubbed by SKU across every supplier. Trays are counted in Pcs (number of trays). Grows automatically as Goods Receipt containers are inwarded; use Adjust Inventory to add or deduct stock.</div>
+          <div className="desc">Raw-material stock on hand, clubbed by SKU across every supplier. Trays are counted in Pcs (number of trays). Grows automatically as Goods Receipt containers are inwarded; use Update Stock to enter the current count, or Add Non-PO Items for stock with no PO.</div>
         </div>
-        <button className="btn btn-primary" disabled={!perms?.can_create} onClick={() => setShowAdd(true)}>Adjust Inventory</button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="btn btn-secondary" disabled={!perms?.can_create && !perms?.can_edit} onClick={() => setShowUpdate(true)}>Update Stock</button>
+          <button className="btn btn-primary" disabled={!perms?.can_create} onClick={() => setShowAdd(true)}>Add Non-PO Items</button>
+        </div>
       </div>
 
       <div className="toolbar">
@@ -116,6 +121,13 @@ export default function InventoryPage() {
         <InventoryFormPanel
           onClose={() => setShowAdd(false)}
           onSaved={() => { setShowAdd(false); refreshAfterMutation(); }}
+        />
+      )}
+
+      {showUpdate && (
+        <InventoryUpdateStockPanel
+          onClose={() => setShowUpdate(false)}
+          onSaved={() => { setShowUpdate(false); refreshAfterMutation(); }}
         />
       )}
 

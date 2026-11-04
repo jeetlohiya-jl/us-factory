@@ -72,7 +72,7 @@ export default function ShiftRecordDetailPanel({ record, canDelete, canEdit, can
               )}
               <div className="field"><label>Scrap Trays</label><div className="readonly-val">{fmt(record.scrap_trays)}{record.scrap_reason ? ` — ${record.scrap_reason}` : ""}</div></div>
               <div className="field"><label>Hold Trays</label><div className="readonly-val">{fmt(record.hold_trays)}</div></div>
-              <div className="field"><label>Cumulative Hold record</label><div className="readonly-val">{record.cum_hold_yes == null ? "—" : record.cum_hold_yes ? `Yes — FG ${fmt(record.cum_hold_fg_trays)}, Scrap ${fmt(record.cum_hold_scrap_trays)}` : "No"}</div></div>
+              <div className="field"><label>Quality Check Passed (Cumulative Hold)</label><div className="readonly-val">{record.cum_hold_yes == null ? "—" : record.cum_hold_yes ? `Yes — FG trays ${fmt(record.cum_hold_fg_trays)}, Scrap ${fmt(record.cum_hold_scrap_trays)}` : "No"}</div></div>
             </div>
             {record.pallets.length > 0 && (
               <table className="data compact" style={{ marginTop: 10 }}>

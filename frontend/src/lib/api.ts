@@ -3677,8 +3677,14 @@ export const api = {
     invalidateListCache("inventory");
     return res;
   },
+  // Update Stock: set several SKUs' stock to the counts entered (adds or lowers to match).
+  updateInventoryStock: async (entries: { item_id: string; quantity: number }[]) => {
+    const res = await request<{ changed: number }>("/api/v1/inventory/update-stock", { method: "POST", body: JSON.stringify({ entries }) });
+    invalidateListCache("inventory");
+    return res;
+  },
   addInventorySource: async (id: string, payload: {
-    quantity: number; direction?: "add" | "deduct"; vendor_id?: string | null; vendor_name?: string | null; supplier_country?: string | null; unit?: string | null; note?: string | null;
+    quantity: number; vendor_id?: string | null; vendor_name?: string | null; supplier_country?: string | null; unit?: string | null; note?: string | null;
   }) => {
     const res = await request<InventoryDetail>(`/api/v1/inventory/${id}/sources`, { method: "POST", body: JSON.stringify(payload) });
     invalidateListCache("inventory");
