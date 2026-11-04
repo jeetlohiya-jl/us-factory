@@ -112,17 +112,18 @@ export default function ShiftRecordPage() {
       <div className="card card-flush">
         <table className="data compact">
           <thead>
-            <tr><th>Record</th><th>Date</th><th>Shift</th><th>Machine</th><th>Materials Used</th><th>FG SKU</th><th>Trays Produced (Finished)</th><th>FG Pallets</th><th>Loose</th><th>FG QRs</th><th>Scrap</th><th>Hold</th><th>By</th><th></th></tr>
+            <tr><th>Record</th><th>Date</th><th>Shift</th><th>Machine</th><th>Supervisor</th><th>Materials Used</th><th>FG SKU</th><th>Trays Produced (Finished)</th><th>FG Pallets</th><th>Loose</th><th>FG QRs</th><th>Scrap</th><th>Hold</th><th>By</th><th></th></tr>
           </thead>
           <tbody>
             {items.length === 0 ? (
-              <tr className="empty-row"><td colSpan={14}>{loading ? "Loading…" : "No Shift Records yet."}</td></tr>
+              <tr className="empty-row"><td colSpan={15}>{loading ? "Loading…" : "No Shift Records yet."}</td></tr>
             ) : items.map((r) => (
               <tr key={r.id} style={{ cursor: "pointer" }} onClick={() => openRecord(r.id)}>
                 <td className="mono">{r.display_id}</td>
                 <td>{r.record_date}</td>
                 <td>{r.shift}</td>
                 <td className="mono">{r.machine || "—"}</td>
+                <td>{r.shift_supervisor || "—"}</td>
                 <td>{r.materials || "—"}</td>
                 <td className="mono">{r.fg_sku_code || "—"}</td>
                 <td>{r.trays_produced}</td>

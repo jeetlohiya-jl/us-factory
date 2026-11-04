@@ -5,6 +5,7 @@ import CameraQrScanner from "@/components/storage/CameraQrScanner";
 import type { Machine, ShiftRecordDetail, ShiftRecordScanPreview, ShiftRecordUnit, SkuCode } from "@/lib/types";
 
 const SHIFTS = ["Shift A", "Shift B", "Shift C"];
+const SUPERVISORS = ["Joe Castano", "Kevis Garcia"];
 const TRAY_CATEGORIES = ["tray", "lnp_tray", "fgtray"];
 // What to ask per material: the units that make sense for the SKU's category (first = default).
 const UNITS_BY_CATEGORY: Record<string, ShiftRecordUnit[]> = {
@@ -60,6 +61,7 @@ export default function ShiftRecordForm({ onClose, onSaved, editing }: { onClose
   const [date, setDate] = useState(editing?.record_date || today());
   const [shift, setShift] = useState(editing?.shift || "");
   const [machineId, setMachineId] = useState(editing?.machine_id || "");
+  const [supervisor, setSupervisor] = useState(editing?.shift_supervisor || "");
   const [skus, setSkus] = useState<SkuCode[]>([]);
   const [lines, setLines] = useState<Line[]>(() => editing && editing.material_lines.length > 0
     ? editing.material_lines.map((m) => ({
@@ -182,7 +184,6 @@ export default function ShiftRecordForm({ onClose, onSaved, editing }: { onClose
     setError(null);
     if (!date) return setError("Select the Date.");
     if (!shift) return setError("Select a Shift.");
-    if (!machineId) return setError("Select a Machine.");
     const used = lines.filter((l) => l.scan.trim() || l.skuId || l.checked);
     if (used.length === 0) return setError("Add at least one material used.");
     for (const [i, l] of used.entries()) {
@@ -200,7 +201,7 @@ export default function ShiftRecordForm({ onClose, onSaved, editing }: { onClose
     setSaving(true);
     try {
       const payload = {
-        record_date: date, shift, machine_id: machineId, client_time: new Date().toLocaleString(), notes: notes.trim() || undefined,
+        record_date: date, shift, machine_id: machineId || null, shift_supervisor: supervisor || null, client_time: new Date().toLocaleString(), notes: notes.trim() || undefined,
         trays_produced: traysN, scrap_trays: Number(scrap) || 0, hold_trays: holdN, cum_hold_yes: cumYes === "" ? null : cumYes === "yes", cum_hold_fg_trays: cumFgN, cum_hold_scrap_trays: cumScrapN, scrap_reason: scrapReason.trim() || undefined, total_pcs_per_pallet: Number(perOverride) > 0 ? Math.trunc(Number(perOverride)) : null,
         materials: used.map((l) => ({
           sku_code_id: l.skuId || l.checked?.sku_code_id || null, scan: l.scan.trim(), quantity: Number(l.quantity), unit: l.unit, fully_consumed: l.fully,
@@ -338,10 +339,17 @@ export default function ShiftRecordForm({ onClose, onSaved, editing }: { onClose
                 </select>
               </div>
               <div className="field">
-                <label>Machine <span style={{ color: "var(--red)" }}>*</span></label>
+                <label>Machine</label>
                 <select value={machineId} onChange={(e) => setMachineId(e.target.value)}>
                   <option value="">Select</option>
                   {machines.map((m) => <option key={m.id} value={m.id}>{m.code}</option>)}
+                </select>
+              </div>
+              <div className="field">
+                <label>Shift Supervisor</label>
+                <select value={supervisor} onChange={(e) => setSupervisor(e.target.value)}>
+                  <option value="">Select</option>
+                  {(supervisor && !SUPERVISORS.includes(supervisor) ? [...SUPERVISORS, supervisor] : SUPERVISORS).map((s) => <option key={s} value={s}>{s}</option>)}
                 </select>
               </div>
             </div>

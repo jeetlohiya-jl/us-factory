@@ -2216,6 +2216,7 @@ export interface ShiftRecordListItem {
   record_date: string;
   shift: string;
   machine: string | null;
+  shift_supervisor: string | null;
   fg_sku_code: string | null;
   trays_produced: number;
   fg_pallets: number;
@@ -2265,7 +2266,8 @@ export interface ShiftRecordScanPreview {
 export interface ShiftRecordSavePayload {
   record_date: string;
   shift: string;
-  machine_id: string;
+  machine_id?: string | null;
+  shift_supervisor?: string | null;
   client_time?: string;
   notes?: string;
   trays_produced: number;

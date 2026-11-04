@@ -31,7 +31,7 @@ export default function ShiftRecordDetailPanel({ record, canDelete, canEdit, can
       <div className="panel-overlay open" onClick={onClose} />
       <div className="side-panel open" style={{ width: "min(720px, 100vw)" }}>
         <div className="sp-head">
-          <div><h2>{record.display_id}</h2><div className="hint-text">{record.shift} · {record.machine || "—"} · {record.record_date}{record.edited_at ? ` · edited ${new Date(record.edited_at).toLocaleString()}` : ""}</div></div>
+          <div><h2>{record.display_id}</h2><div className="hint-text">{record.shift} · {record.machine || "No machine"}{record.shift_supervisor ? ` · Supervisor: ${record.shift_supervisor}` : ""} · {record.record_date}{record.edited_at ? ` · edited ${new Date(record.edited_at).toLocaleString()}` : ""}</div></div>
           <button className="sp-close" onClick={onClose}>×</button>
         </div>
         <div className="sp-body">
