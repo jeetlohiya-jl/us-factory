@@ -79,6 +79,8 @@ export default function NewCustomerShipmentPanel({
         }))
       : [{ key: "li-0", sku_code_id: null, sku_version_id: null, pallets_required: "", pcs: "", pcs_per_sleeve: "", production_run_ids: [] }]
   );
+  // Factory: FG pallets available per SKU (stored, less what other open records still need).
+  const [available, setAvailable] = useState<Record<string, number> | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -88,6 +90,7 @@ export default function NewCustomerShipmentPanel({
       // is no longer needed since it's not shown anywhere in this panel.
     }
     api.customers().then(setCustomers).catch(() => setCustomers([]));
+    if (isFactory) api.fgAvailability(editTarget?.id).then(setAvailable).catch(() => setAvailable(null));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -122,6 +125,19 @@ export default function NewCustomerShipmentPanel({
     if (validItems.length === 0) {
       setError("At least one line item with a SKU, Version and Quantity is required.");
       return;
+    }
+    if (isFactory && available && !isEdit) {
+      // Never request more FG pallets of a SKU than are available (checked again on the server).
+      const asked: Record<string, number> = {};
+      validItems.forEach((li) => { asked[li.sku_code_id as string] = (asked[li.sku_code_id as string] || 0) + Number(li.pallets_required); });
+      for (const [skuId, n] of Object.entries(asked)) {
+        const have = available[skuId] ?? 0;
+        if (n > have) {
+          const code = skuCodes.find((s) => s.id === skuId)?.code || "This SKU";
+          setError(`${code}: ${n} pallet${n === 1 ? "" : "s"} requested, but only ${have} FG pallet${have === 1 ? "" : "s"} available.`);
+          return;
+        }
+      }
     }
     setSaving(true);
     setError(null);
@@ -211,7 +227,7 @@ export default function NewCustomerShipmentPanel({
           </div>
         </div>
         <div className="section-label" style={{ marginTop: 0 }}>Line Items</div>
-        <CsLineItemsEditor items={lineItems} skuCodes={skuCodes} onChange={setLineItems} />
+        <CsLineItemsEditor items={lineItems} skuCodes={skuCodes} onChange={setLineItems} available={isFactory ? available : null} />
       </div>
       <div className="sp-foot">
         <button className="btn btn-ghost" onClick={onClose}>Cancel</button>

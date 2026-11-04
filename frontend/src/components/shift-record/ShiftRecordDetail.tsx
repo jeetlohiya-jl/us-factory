@@ -17,9 +17,15 @@ export default function ShiftRecordDetailPanel({ record, canDelete, canEdit, can
     if (!generated && record.fg_sku_code_id) api.getShiftRecordCarryIn(record.fg_sku_code_id, record.id).then(setCarry).catch(() => {});
   }, [generated, record.fg_sku_code_id, record.id]);
   const per = record.total_pcs_per_pallet || 0;
-  const pool = record.trays_produced + carry;
+  const pool = record.trays_produced + record.cum_hold_fg_trays + carry;
   const willMake = per > 0 ? Math.floor(pool / per) : 0;
-  const labels = () => record.pallets.map((p) => ({ payload: p.qr_payload || JSON.stringify({ t: "fg_pallet", id: p.display_id }), text: p.display_id }));
+  // Under each QR: the pallet number, then SKU - date (MMDDYYYY) - shift - machine, e.g. 3P-10202026-A-P1.
+  const sub = (() => {
+    const [y, m, d] = record.record_date.split("-");
+    const shift = record.shift.replace(/^shift\s*/i, "").trim();
+    return [record.fg_sku_code, `${m}${d}${y}`, shift, record.machine].filter(Boolean).join("-");
+  })();
+  const labels = () => record.pallets.map((p) => ({ payload: p.qr_payload || JSON.stringify({ t: "fg_pallet", id: p.display_id }), text: p.display_id, sub }));
   return (
     <>
       <div className="panel-overlay open" onClick={onClose} />
@@ -66,6 +72,7 @@ export default function ShiftRecordDetailPanel({ record, canDelete, canEdit, can
               )}
               <div className="field"><label>Scrap Trays</label><div className="readonly-val">{fmt(record.scrap_trays)}{record.scrap_reason ? ` — ${record.scrap_reason}` : ""}</div></div>
               <div className="field"><label>Hold Trays</label><div className="readonly-val">{fmt(record.hold_trays)}</div></div>
+              <div className="field"><label>Cumulative Hold record</label><div className="readonly-val">{record.cum_hold_yes == null ? "—" : record.cum_hold_yes ? `Yes — FG ${fmt(record.cum_hold_fg_trays)}, Scrap ${fmt(record.cum_hold_scrap_trays)}` : "No"}</div></div>
             </div>
             {record.pallets.length > 0 && (
               <table className="data compact" style={{ marginTop: 10 }}>
@@ -79,7 +86,7 @@ export default function ShiftRecordDetailPanel({ record, canDelete, canEdit, can
             )}
             {!generated && record.fg_sku_code_id && (
               <div className="hint-text" style={{ marginTop: 10 }}>
-                FG QRs are made at the end of the record. {carry > 0 ? `${fmt(carry)} loose trays from earlier shifts will be added: ${fmt(record.trays_produced)} + ${fmt(carry)} = ${fmt(pool)} trays → ` : ""}
+                FG QRs are made at the end of the record. {carry > 0 ? `${fmt(carry)} loose trays from earlier shifts will be added: ${fmt(record.trays_produced + record.cum_hold_fg_trays)} + ${fmt(carry)} = ${fmt(pool)} trays → ` : ""}
                 {per > 0 ? `${willMake} full pallet${willMake === 1 ? "" : "s"} of ${per} trays, ${fmt(pool - willMake * per)} loose trays left over for the next shift.` : "Trays per Pallet is not set."}
               </div>
             )}

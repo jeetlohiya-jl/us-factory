@@ -52,6 +52,50 @@ BLOCKED_DELETE_MESSAGE = (
 )
 
 
+class FgAvailabilityError(ValueError):
+    """Goods Outward asked for more FG pallets of a SKU than are available."""
+
+
+def check_fg_availability(db: Session, line_items: list[dict], exclude_shipment_id=None) -> None:
+    """Factory only: refuse a Goods Outward record that asks for more FG pallets of a SKU than are in stock.
+
+    Available = FG pallets in storage minus the pallets other open Goods Outward records still need
+    (factory_fg_available(), migration 0113). When editing, this record's own earlier request is left out
+    of "other", and its pallets already picked are no longer in storage, so they are not counted again.
+    """
+    from sqlalchemy import text
+    from app.core.product import current_unit
+    if current_unit() != "factory":
+        return
+    wanted: dict[str, int] = {}
+    for li in line_items:
+        if li.get("sku_code_id"):
+            wanted[str(li["sku_code_id"])] = wanted.get(str(li["sku_code_id"]), 0) + int(li.get("pallets_required") or 0)
+    if not wanted:
+        return
+    rows = db.execute(
+        text("select sku_code_id, available from factory_fg_available(cast(:ex as uuid))"),
+        {"ex": str(exclude_shipment_id) if exclude_shipment_id else None},
+    ).all()
+    available = {str(r[0]): int(r[1]) for r in rows}
+    picked_by_sku: dict[str, int] = {}
+    if exclude_shipment_id:
+        for sku_id, n in db.execute(
+            text("select r.sku_code_id, count(*) from shipment_picking_picks k join shipment_picking_requests r on r.id = k.shipment_picking_request_id "
+                 "where r.customer_shipment_id = :ex group by r.sku_code_id"), {"ex": str(exclude_shipment_id)}
+        ).all():
+            picked_by_sku[str(sku_id)] = int(n)
+    names = {str(s.id): s.code for s in db.query(models.SkuCode).filter(models.SkuCode.id.in_(list(wanted)))}
+    for sku_id, qty in wanted.items():
+        still_needed = qty - picked_by_sku.get(sku_id, 0)
+        have = available.get(sku_id, 0)
+        if still_needed > have:
+            raise FgAvailabilityError(
+                f"{names.get(sku_id, 'This SKU')}: {still_needed} pallet{'s' if still_needed != 1 else ''} requested, "
+                f"but only {have} FG pallet{'s' if have != 1 else ''} available."
+            )
+
+
 def next_container_number(db: Session) -> str:
     yymm = datetime.now(timezone.utc).strftime("%y%m")
     seq = next_seq(db, "cs_container")

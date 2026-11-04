@@ -64,9 +64,14 @@ function SkuVersionDetailsModal({
   onSave: (patch: Record<string, string | number | null>) => Promise<void>;
 }) {
   const isIndia = useProduct() === "falcon";
+  // Factory: no Trays/Sleeve or Sleeve/Combo -- Trays per Pallet is entered directly (it is what Shift Record and Goods Outward use).
+  const FACTORY_FIELDS = [
+    ...PROD_DETAIL_FIELDS.filter((f) => f.key !== "prod_pcs_per_sleeve" && f.key !== "prod_sleeve_per_case"),
+  ];
+  FACTORY_FIELDS.splice(1, 0, { key: "prod_total_pcs_per_pallet", label: "Trays per Pallet", numeric: true });
   const fields: { key: keyof SkuVersion; label: string; numeric?: boolean; options?: string[] }[] = isIndia
     ? [PROD_DETAIL_FIELDS[0], ...INDIA_PROD_DETAIL_FIELDS, ...PROD_DETAIL_FIELDS.slice(1)]
-    : PROD_DETAIL_FIELDS;
+    : FACTORY_FIELDS;
   const [form, setForm] = useState<ProdDetailsForm>(() => {
     const init: ProdDetailsForm = {};
     for (const f of fields) init[f.key] = version[f.key] != null ? String(version[f.key]) : "";
@@ -86,7 +91,7 @@ function SkuVersionDetailsModal({
       }
       // 2026-09-25 -- no longer a PROD_DETAIL_FIELDS-driven input; always
       // derived from Trays/Sleeve x Sleeve/Combo, see computeTotalPcsPerPallet.
-      patch.prod_total_pcs_per_pallet = computeTotalPcsPerPallet(form);
+      if (isIndia) patch.prod_total_pcs_per_pallet = computeTotalPcsPerPallet(form);
       await onSave(patch);
       onClose();
     } catch (e) {
@@ -125,7 +130,7 @@ function SkuVersionDetailsModal({
                   />
                 )}
               </div>
-              {f.key === "prod_sleeve_per_case" && (
+              {isIndia && f.key === "prod_sleeve_per_case" && (
                 <div className="field">
                   <label>Total No. of Pcs/Pallet</label>
                   <div className="readonly-val">

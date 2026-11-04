@@ -6,6 +6,7 @@ import CameraQrScanner from "@/components/storage/CameraQrScanner";
 import PackingListPanel from "@/components/goods-outward/PackingListPanel";
 import OviPanel from "@/components/outward-vehicle-inspection/OviPanel";
 import { T } from "@/lib/terms";
+import { useProduct } from "@/lib/productContext";
 
 // Exactly the OVI list page's own canView(): Pending/Draft opens editable
 // (there's nothing finished yet to just review), Hold/Approved opens
@@ -78,6 +79,7 @@ export default function GoodsOutwardDetailPanel({
   onChanged: () => void;
   onEdit?: () => void;
 }) {
+  const isFactory = useProduct() === "factory";
   const [record, setRecord] = useState(detail);
   const [scanInput, setScanInput] = useState("");
   const [cameraOpen, setCameraOpen] = useState(false);
@@ -257,7 +259,7 @@ export default function GoodsOutwardDetailPanel({
                 <tr>
                   <th>{T.sku}</th><th style={{ width: 90 }}>Required</th>
                   <th style={{ width: 80 }}>Picked</th><th style={{ width: 90 }}>Remaining</th>
-                  <th>Trays</th><th>Trays per Sleeve</th><th style={{ width: 100 }}>Status</th>
+                  <th>Trays</th>{!isFactory && <th>Trays per Sleeve</th>}<th style={{ width: 100 }}>Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -268,7 +270,7 @@ export default function GoodsOutwardDetailPanel({
                     <td>{li.picks.length}</td>
                     <td>{Math.max(li.pallets_required - li.picks.length, 0)}</td>
                     <td>{li.pcs ?? "—"}</td>
-                    <td>{li.pcs_per_sleeve || "—"}</td>
+                    {!isFactory && <td>{li.pcs_per_sleeve || "—"}</td>}
                     <td><StatusBadge status={li.status} /></td>
                   </tr>
                 ))}

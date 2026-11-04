@@ -4,19 +4,21 @@ import { api, ApiError } from "@/lib/api";
 import type { InventoryListItem, Vendor } from "@/lib/types";
 
 /**
- * "+ Add" -- stock arriving for a SKU that's already in Inventory.
+ * "Adjust Inventory" -- add stock to, or deduct stock from, a SKU already in Inventory.
  *
- * Pick the item, enter the quantity received and who sent it (a vendor from
+ * Add: pick the item, enter the quantity received and who sent it (a vendor from
  * Setup -> Vendors, or a new supplier typed in). It's recorded as its own
  * stock entry on that item, and the item's total -- the sum of its entries
- * -- goes up by it: same SKU, another supplier or the same one, more stock.
- * (Face Mask 200 + 500 received = 700.)
+ * -- goes up by it (Face Mask 200 + 500 received = 700).
+ * Deduct: the quantity comes off the item's total (breakage, a count correction ...),
+ * recorded as its own entry with the reason; it can never take the item below zero.
  *
  * New Inventory items / SKUs are not created here -- admins set those up.
  */
 export default function InventoryFormPanel({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   const [items, setItems] = useState<InventoryListItem[] | null>(null);
   const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [direction, setDirection] = useState<"add" | "deduct">("add");
   const [itemId, setItemId] = useState("");
   const [qty, setQty] = useState("");
   const [vendorId, setVendorId] = useState("");          // "" none, "__new" typed-in supplier
@@ -53,11 +55,15 @@ export default function InventoryFormPanel({ onClose, onSaved }: { onClose: () =
   async function handleSave() {
     setError(null);
     if (!item) { setError("Choose the SKU the stock is for."); return; }
-    if (!(qtyNum > 0)) { setError("Enter the quantity received."); return; }
-    if (vendorId === "__new" && !newSupplier.trim()) { setError("Enter the new supplier's name."); return; }
+    const deduct = direction === "deduct";
+    if (!(qtyNum > 0)) { setError(deduct ? "Enter the quantity to deduct." : "Enter the quantity received."); return; }
+    if (deduct && qtyNum > item.quantity) { setError(`Cannot deduct ${fmt(qtyNum)}: only ${fmt(item.quantity)} ${item.uom} in stock.`); return; }
+    if (!deduct && vendorId === "__new" && !newSupplier.trim()) { setError("Enter the new supplier's name."); return; }
     setSaving(true);
     try {
-      await api.addInventorySource(item.id, {
+      await api.addInventorySource(item.id, deduct ? {
+        quantity: qtyNum, direction: "deduct", note: note.trim() || null,
+      } : {
         quantity: qtyNum,
         vendor_id: vendorId && vendorId !== "__new" ? vendorId : null,
         vendor_name: vendorId === "__new" ? newSupplier.trim() : null,
@@ -66,7 +72,7 @@ export default function InventoryFormPanel({ onClose, onSaved }: { onClose: () =
       });
       onSaved();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : e instanceof Error ? e.message : "Failed to add stock");
+      setError(e instanceof ApiError ? e.message : e instanceof Error ? e.message : "Failed to adjust Inventory");
     } finally {
       setSaving(false);
     }
@@ -77,10 +83,27 @@ export default function InventoryFormPanel({ onClose, onSaved }: { onClose: () =
       <div className="panel-overlay open" onClick={onClose} />
       <div className="side-panel open">
         <div className="sp-head">
-          <div><h2>Add Stock</h2></div>
+          <div><h2>Adjust Inventory</h2></div>
           <button className="sp-close" onClick={onClose}>×</button>
         </div>
         <div className="sp-body">
+          <div className="detail-card">
+            <h3>Adjustment</h3>
+            <div className="form-grid">
+              <div className="field" style={{ gridColumn: "1 / -1" }}>
+                <label>Action <span style={{ color: "var(--red)" }}>*</span></label>
+                <div style={{ display: "flex", gap: 16 }}>
+                  <label style={{ display: "flex", gap: 6, alignItems: "center", fontWeight: 400 }}>
+                    <input type="radio" name="inv-dir" checked={direction === "add"} onChange={() => setDirection("add")} /> Add stock
+                  </label>
+                  <label style={{ display: "flex", gap: 6, alignItems: "center", fontWeight: 400 }}>
+                    <input type="radio" name="inv-dir" checked={direction === "deduct"} onChange={() => setDirection("deduct")} /> Deduct stock
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div className="detail-card">
             <h3>SKU</h3>
             <div className="form-grid">
@@ -105,18 +128,19 @@ export default function InventoryFormPanel({ onClose, onSaved }: { onClose: () =
           </div>
 
           <div className="detail-card">
-            <h3>Stock Received</h3>
+            <h3>{direction === "deduct" ? "Stock Deducted" : "Stock Received"}</h3>
             {item && (
               <div className="hint-text" style={{ marginBottom: 10 }}>
                 In stock: <b>{fmt(item.quantity)} {item.uom}</b>
-                {qtyNum > 0 && <> → New total: <b>{fmt(item.quantity + qtyNum)} {item.uom}</b></>}
+                {qtyNum > 0 && <> → New total: <b>{fmt(direction === "deduct" ? item.quantity - qtyNum : item.quantity + qtyNum)} {item.uom}</b></>}
               </div>
             )}
             <div className="form-grid">
               <div className="field">
-                <label>Quantity Received{item ? ` (${item.uom})` : ""} <span style={{ color: "var(--red)" }}>*</span></label>
+                <label>{direction === "deduct" ? "Quantity to Deduct" : "Quantity Received"}{item ? ` (${item.uom})` : ""} <span style={{ color: "var(--red)" }}>*</span></label>
                 <input type="number" min="0" step="any" value={qty} onChange={(e) => setQty(e.target.value)} />
               </div>
+              {direction === "add" && (<>
               <div className="field">
                 <label>Supplier</label>
                 <select value={vendorId} onChange={(e) => setVendorId(e.target.value)}>
@@ -135,9 +159,10 @@ export default function InventoryFormPanel({ onClose, onSaved }: { onClose: () =
                 <label>Supplier Country</label>
                 <input placeholder="e.g. CN, US" value={country} onChange={(e) => setCountry(e.target.value.toUpperCase())} maxLength={2} />
               </div>
+              </>)}
               <div className="field" style={{ gridColumn: "1 / -1" }}>
-                <label>Note</label>
-                <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional" />
+                <label>{direction === "deduct" ? "Reason" : "Note"}</label>
+                <input value={note} onChange={(e) => setNote(e.target.value)} placeholder={direction === "deduct" ? "e.g. damaged, count correction" : "Optional"} />
               </div>
             </div>
           </div>
@@ -145,7 +170,7 @@ export default function InventoryFormPanel({ onClose, onSaved }: { onClose: () =
         </div>
         <div className="sp-foot">
           <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" disabled={saving || !items} onClick={handleSave}>{saving ? "Adding…" : "Add Stock"}</button>
+          <button className="btn btn-primary" disabled={saving || !items} onClick={handleSave}>{saving ? "Saving…" : direction === "deduct" ? "Deduct Stock" : "Add Stock"}</button>
         </div>
       </div>
     </>

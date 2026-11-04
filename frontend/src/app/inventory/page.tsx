@@ -73,9 +73,9 @@ export default function InventoryPage() {
       <div className="page-head2">
         <div>
           <h1>{MODULE_NAMES.inventory}</h1>
-          <div className="desc">Raw-material stock on hand, clubbed by SKU across every supplier. Grows automatically as Goods Receipt containers are inwarded.</div>
+          <div className="desc">Raw-material stock on hand, clubbed by SKU across every supplier. Trays are counted in Pcs (number of trays). Grows automatically as Goods Receipt containers are inwarded; use Adjust Inventory to add or deduct stock.</div>
         </div>
-        <button className="btn btn-primary" disabled={!perms?.can_create} onClick={() => setShowAdd(true)}>+ Add</button>
+        <button className="btn btn-primary" disabled={!perms?.can_create} onClick={() => setShowAdd(true)}>Adjust Inventory</button>
       </div>
 
       <div className="toolbar">
@@ -92,10 +92,10 @@ export default function InventoryPage() {
 
       <div className="card card-flush">
         <table className="data">
-          <thead><tr><th>SKU</th><th>SKU Code</th><th>UOM</th><th>Quantity</th><th>Trays</th><th>Boxes on floor</th></tr></thead>
+          <thead><tr><th>SKU</th><th>SKU Code</th><th>UOM</th><th>Quantity</th><th>Date Updated</th></tr></thead>
           <tbody>
             {items.length === 0 ? (
-              <tr className="empty-row"><td colSpan={6}>{loading ? "Loading…" : "No inventory items yet."}</td></tr>
+              <tr className="empty-row"><td colSpan={5}>{loading ? "Loading…" : "No inventory items yet."}</td></tr>
             ) : (
               items.map((it) => (
                 <tr key={it.id} style={{ cursor: "pointer" }} onClick={() => openInventoryItem(it.id)}>
@@ -103,8 +103,7 @@ export default function InventoryPage() {
                   <td className="mono">{it.sku_code || "—"}</td>
                   <td>{it.uom}</td>
                   <td>{it.quantity.toLocaleString()}</td>
-                  <td>{it.trays != null ? it.trays.toLocaleString() : "—"}</td>
-                  <td>{it.boxes_on_floor != null ? it.boxes_on_floor.toLocaleString() : "—"}</td>
+                  <td>{it.updated_at ? new Date(it.updated_at).toLocaleDateString() : "—"}</td>
                 </tr>
               ))
             )}

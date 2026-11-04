@@ -761,7 +761,7 @@ type RawShiftRecord = {
   id: string; display_id: string; record_date: string; shift: string; shipment_number: string | null;
   fg_sku_code_snapshot: string | null; trays_produced: number; total_pcs_per_pallet: number | null; fg_pallets: number; loose_trays: number; loose_carried_in: number; fg_generated_at: string | null; fg_sku_code_id: string | null;
   scrap_trays: number; hold_trays: number | null; scrap_reason: string | null; notes: string | null; client_time: string | null; recorded_at: string; qr_generation_id: string | null;
-  machine_id: string | null; edited_at: string | null;
+  machine_id: string | null; edited_at: string | null; cum_hold_yes: boolean | null; cum_hold_fg_trays: number | null; cum_hold_scrap_trays: number | null;
   machine: { code: string } | null;
   recorded_by_user: { full_name: string } | null;
   materials: {
@@ -770,7 +770,7 @@ type RawShiftRecord = {
   }[];
 };
 const SR_SELECT =
-  "id, display_id, record_date, shift, shipment_number, fg_sku_code_snapshot, trays_produced, total_pcs_per_pallet, fg_pallets, loose_trays, loose_carried_in, fg_generated_at, fg_sku_code_id, scrap_trays, hold_trays, scrap_reason, notes, client_time, recorded_at, qr_generation_id, machine_id, edited_at, " +
+  "id, display_id, record_date, shift, shipment_number, fg_sku_code_snapshot, trays_produced, total_pcs_per_pallet, fg_pallets, loose_trays, loose_carried_in, fg_generated_at, fg_sku_code_id, scrap_trays, hold_trays, scrap_reason, notes, client_time, recorded_at, qr_generation_id, machine_id, edited_at, cum_hold_yes, cum_hold_fg_trays, cum_hold_scrap_trays, " +
   "machine:machines(code), recorded_by_user:app_users!recorded_by(full_name), " +
   "materials:shift_record_materials(id, sort_order, sku_code_id, sku_code_snapshot, category, pallet_display_id, quantity, unit, fully_consumed, inventory_quantity)";
 
@@ -779,6 +779,7 @@ function flattenShiftRecord(r: RawShiftRecord): ShiftRecordListItem {
   return {
     id: r.id, display_id: r.display_id, record_date: r.record_date, shift: r.shift, machine: r.machine?.code ?? null,
     fg_sku_code: r.fg_sku_code_snapshot, trays_produced: r.trays_produced, fg_pallets: r.fg_pallets, loose_trays: r.loose_trays ?? 0, loose_carried_in: r.loose_carried_in ?? 0, fg_generated_at: r.fg_generated_at, scrap_trays: r.scrap_trays, hold_trays: r.hold_trays ?? 0,
+    cum_hold_yes: r.cum_hold_yes, cum_hold_fg_trays: r.cum_hold_fg_trays ?? 0, cum_hold_scrap_trays: r.cum_hold_scrap_trays ?? 0,
     materials: mats.map((m) => `${m.sku_code_snapshot ?? "—"} ${m.quantity} ${m.unit}`).join(", "),
     recorded_by: r.recorded_by_user?.full_name ?? null, recorded_at: r.recorded_at,
   };
@@ -3613,6 +3614,14 @@ export const api = {
     );
     return (rows || []).reduce((n, r) => n + r.loose_trays, 0);
   },
+  // Cumulative Hold for an FG tray SKU: the sum of Hold Trays over its Shift Records, less what Cumulative Hold records already released.
+  getShiftRecordCumHold: async (fgSkuCodeId: string, excludeId?: string): Promise<number> => {
+    let q = supabase.from("shift_records").select("id, hold_trays, cum_hold_fg_trays, cum_hold_scrap_trays").eq("fg_sku_code_id", fgSkuCodeId);
+    if (excludeId) q = q.neq("id", excludeId);
+    type Row = { id: string; hold_trays: number | null; cum_hold_fg_trays: number | null; cum_hold_scrap_trays: number | null };
+    const rows = await sbRequest<Row[]>(() => q as unknown as Promise<{ data: Row[] | null; error: { message: string; code?: string } | null }>);
+    return (rows || []).reduce((n, r) => n + (r.hold_trays ?? 0) - (r.cum_hold_fg_trays ?? 0) - (r.cum_hold_scrap_trays ?? 0), 0);
+  },
   // The end of a record: makes the FG pallets / QRs (loose trays from earlier shifts are added in).
   generateShiftRecordFg: async (id: string) => {
     const res = await sbRequest<{ id: string; fg_pallets: { id: string; display_id: string; trays: number }[]; carried_in: number; loose_trays: number }>(() =>
@@ -3622,6 +3631,15 @@ export const api = {
     invalidateListCache("shift-record");
     invalidateListCache("fg-storage");
     return res;
+  },
+  // Goods Outward (Factory): FG pallets still available to promise, per SKU (migration 0113's factory_fg_available).
+  // excludeShipmentId = the record being edited, so its own earlier request is not counted against itself.
+  fgAvailability: async (excludeShipmentId?: string): Promise<Record<string, number>> => {
+    type Row = { sku_code_id: string; available: number };
+    const rows = await sbRequest<Row[]>(() =>
+      supabase.rpc("factory_fg_available", excludeShipmentId ? { _exclude_shipment: excludeShipmentId } : {}) as unknown as Promise<{ data: Row[] | null; error: { message: string; code?: string } | null }>
+    );
+    return Object.fromEntries((rows || []).map((r) => [r.sku_code_id, r.available]));
   },
   deleteShiftRecord: async (id: string) => {
     await sbRequest<null>(() =>
@@ -3660,7 +3678,7 @@ export const api = {
     return res;
   },
   addInventorySource: async (id: string, payload: {
-    quantity: number; vendor_id?: string | null; vendor_name?: string | null; supplier_country?: string | null; unit?: string | null; note?: string | null;
+    quantity: number; direction?: "add" | "deduct"; vendor_id?: string | null; vendor_name?: string | null; supplier_country?: string | null; unit?: string | null; note?: string | null;
   }) => {
     const res = await request<InventoryDetail>(`/api/v1/inventory/${id}/sources`, { method: "POST", body: JSON.stringify(payload) });
     invalidateListCache("inventory");

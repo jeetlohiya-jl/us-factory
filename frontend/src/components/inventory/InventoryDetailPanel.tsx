@@ -120,7 +120,6 @@ export default function InventoryDetailPanel({
             {!editing ? (
               <div className="detail-grid">
                 <Kv label="Quantity" value={item.quantity.toLocaleString()} />
-                {item.trays != null && <Kv label="Trays" value={item.trays.toLocaleString()} />}
                 {item.boxes_in != null && <Kv label="Boxes in" value={item.boxes_in.toLocaleString()} />}
                 {item.boxes_consumed != null && <Kv label="Consumed boxes" value={item.boxes_consumed.toLocaleString()} />}
                 {item.boxes_on_floor != null && <Kv label="Boxes on floor" value={item.boxes_on_floor.toLocaleString()} />}

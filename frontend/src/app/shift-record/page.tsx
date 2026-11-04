@@ -128,7 +128,7 @@ export default function ShiftRecordPage() {
                 <td>{r.trays_produced}</td>
                 <td>{r.fg_generated_at ? r.fg_pallets : "—"}</td>
                 <td>{r.fg_generated_at ? r.loose_trays : "—"}</td>
-                <td>{r.fg_generated_at ? <span className="badge approved">Generated</span> : r.trays_produced > 0 ? <span className="badge draft">Pending</span> : "—"}</td>
+                <td>{r.fg_generated_at ? <span className="badge approved">Generated</span> : r.trays_produced + r.cum_hold_fg_trays > 0 ? <span className="badge draft">Pending</span> : "—"}</td>
                 <td>{r.scrap_trays}</td>
                 <td>{r.hold_trays}</td>
                 <td>{r.recorded_by || "—"}<div className="hint-text">{new Date(r.recorded_at).toLocaleString()}</div></td>

@@ -31,8 +31,10 @@ function wholePallet(pv: ShiftRecordScanPreview, category: string | null): { uni
   return { unit: "Pallets", quantity: "1" };
 }
 
+type Kind = "tray" | "pad" | "other";
 type Line = {
   key: number;
+  kind: Kind;
   skuId: string;
   scan: string;
   checked: ShiftRecordScanPreview | null;   // the scan, once confirmed against the SKU
@@ -44,7 +46,7 @@ type Line = {
 };
 
 let lineKey = 1;
-const newLine = (): Line => ({ key: lineKey++, skuId: "", scan: "", checked: null, checking: false, lineError: null, quantity: "1", unit: "Pallets", fully: true });
+const newLine = (kind: Kind): Line => ({ key: lineKey++, kind, skuId: "", scan: "", checked: null, checking: false, lineError: null, quantity: "1", unit: "Pallets", fully: true });
 const today = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 
 /**
@@ -61,10 +63,10 @@ export default function ShiftRecordForm({ onClose, onSaved, editing }: { onClose
   const [skus, setSkus] = useState<SkuCode[]>([]);
   const [lines, setLines] = useState<Line[]>(() => editing && editing.material_lines.length > 0
     ? editing.material_lines.map((m) => ({
-        key: lineKey++, skuId: m.sku_code_id || "", scan: m.pallet_display_id || "", checked: null, checking: false, lineError: null,
+        key: lineKey++, kind: (TRAY_CATEGORIES.includes(m.category || "") ? "tray" : m.category === "pad" ? "pad" : "other") as Kind, skuId: m.sku_code_id || "", scan: m.pallet_display_id || "", checked: null, checking: false, lineError: null,
         quantity: String(m.quantity), unit: (m.unit as ShiftRecordUnit), fully: m.fully_consumed,
       }))
-    : [newLine()]);
+    : [newLine("tray"), newLine("pad")]);
   const [trays, setTrays] = useState(editing && editing.trays_produced > 0 ? String(editing.trays_produced) : "");
   const [perOverride, setPerOverride] = useState(editing?.total_pcs_per_pallet ? String(editing.total_pcs_per_pallet) : "");
   const [defaultPer, setDefaultPer] = useState<number | null>(null);
@@ -72,6 +74,10 @@ export default function ShiftRecordForm({ onClose, onSaved, editing }: { onClose
   const [carryIn, setCarryIn] = useState(0);
   const [scrap, setScrap] = useState(editing && editing.scrap_trays > 0 ? String(editing.scrap_trays) : "");
   const [hold, setHold] = useState(editing && editing.hold_trays > 0 ? String(editing.hold_trays) : "");
+  const [cumYes, setCumYes] = useState<"" | "yes" | "no">(editing?.cum_hold_yes == null ? "" : editing.cum_hold_yes ? "yes" : "no");
+  const [cumFg, setCumFg] = useState(editing && editing.cum_hold_fg_trays > 0 ? String(editing.cum_hold_fg_trays) : "");
+  const [cumScrap, setCumScrap] = useState(editing && editing.cum_hold_scrap_trays > 0 ? String(editing.cum_hold_scrap_trays) : "");
+  const [cumHeld, setCumHeld] = useState(0);
   const [notes, setNotes] = useState(editing?.notes || "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -97,6 +103,8 @@ export default function ShiftRecordForm({ onClose, onSaved, editing }: { onClose
   }, []);
 
   const skuById = useMemo(() => new Map(skus.map((s) => [s.id, s])), [skus]);
+  const traySkus = useMemo(() => skus.filter((s) => TRAY_CATEGORIES.includes(s.category || "")), [skus]);
+  const padSkus = useMemo(() => skus.filter((s) => s.category === "pad"), [skus]);
   const isTraySku = (id: string) => TRAY_CATEGORIES.includes(skuById.get(id)?.category || "");
 
   // The FG SKU is whichever tray was scanned; its Total Pcs per Pallet is Production's own number.
@@ -112,6 +120,10 @@ export default function ShiftRecordForm({ onClose, onSaved, editing }: { onClose
     setCarryIn(0);
     if (traySkuId) api.getShiftRecordCarryIn(traySkuId, editing?.id).then(setCarryIn).catch(() => {});
   }, [traySkuId]);
+  useEffect(() => {
+    setCumHeld(0);
+    if (traySkuId) api.getShiftRecordCumHold(traySkuId, editing?.id).then(setCumHeld).catch(() => {});
+  }, [traySkuId]);
 
   const traysN = Number(trays) || 0;
   const per = Number(perOverride) > 0 ? Math.trunc(Number(perOverride)) : defaultPer;
@@ -126,13 +138,19 @@ export default function ShiftRecordForm({ onClose, onSaved, editing }: { onClose
   }, 0);
   const scrapN = Number(scrap) || 0;
   const holdN = Number(hold) || 0;
-  const accounted = traysN + scrapN - holdN;
+  // Hold is finished goods with quality in question, so it is also material consumed: used = finished + scrap + hold.
+  const accounted = traysN + scrapN + holdN;
   const balanced = traysUsed > 0 && accounted === traysUsed;
+  // Cumulative Hold record: separate from the formula above. Released FG trays join this shift's pallets.
+  const cumFgN = cumYes === "yes" ? Number(cumFg) || 0 : 0;
+  const cumScrapN = cumYes === "yes" ? Number(cumScrap) || 0 : 0;
+  const cumAvailable = cumHeld + holdN;   // held so far for this SKU, including the hold on this record
 
   // As Production: full pallets only (trays / Total Pcs per Pallet); the rest are loose trays.
-  const pool = traysN + (traysN > 0 ? carryIn : 0);
-  const fgPallets = traysN > 0 && per && per > 0 ? Math.floor(pool / per) : 0;
-  const looseTrays = traysN > 0 && per && per > 0 ? pool - fgPallets * per : 0;
+  const makes = traysN + cumFgN > 0;
+  const pool = traysN + cumFgN + (makes ? carryIn : 0);
+  const fgPallets = makes && per && per > 0 ? Math.floor(pool / per) : 0;
+  const looseTrays = makes && per && per > 0 ? pool - fgPallets * per : 0;
 
   function patch(key: number, p: Partial<Line>) {
     setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...p } : l)));
@@ -172,13 +190,18 @@ export default function ShiftRecordForm({ onClose, onSaved, editing }: { onClose
       if (l.scan.trim() && !l.checked) return setError(`Material ${i + 1}: check the pallet QR (press Enter) or clear it.`);
       if (!(Number(l.quantity) > 0)) return setError(`Material ${i + 1}: enter the quantity used.`);
     }
-    if (traysUsed > 0 && accounted !== traysUsed) return setError(`Trays produced (${traysN}) + scrap (${scrapN}) - hold (${holdN}) = ${accounted}, but ${traysUsed} trays were used. They must be equal.`);
-    if (traysN > 0 && !(per && per > 0)) return setError("Trays per Pallet is not set for this tray SKU — enter it so the pallets can be worked out.");
+    if (traysUsed > 0 && accounted !== traysUsed) return setError(`Trays produced (${traysN}) + scrap (${scrapN}) + hold (${holdN}) = ${accounted}, but ${traysUsed} trays were used. They must be equal.`);
+    if (traySkuId && !cumYes) return setError("Cumulative Hold record: select Yes or No.");
+    if (cumYes === "yes") {
+      if (cumFgN + cumScrapN <= 0) return setError("Cumulative Hold record: enter the FG trays and/or Scrap, or select No.");
+      if (cumFgN + cumScrapN > cumAvailable) return setError(`Cumulative Hold record: FG trays (${cumFgN}) + scrap (${cumScrapN}) is more than the ${cumAvailable} trays held so far for this SKU.`);
+    }
+    if (makes && !(per && per > 0)) return setError("Trays per Pallet is not set for this tray SKU — enter it so the pallets can be worked out.");
     setSaving(true);
     try {
       const payload = {
         record_date: date, shift, machine_id: machineId, client_time: new Date().toLocaleString(), notes: notes.trim() || undefined,
-        trays_produced: traysN, scrap_trays: Number(scrap) || 0, hold_trays: holdN, scrap_reason: scrapReason.trim() || undefined, total_pcs_per_pallet: Number(perOverride) > 0 ? Math.trunc(Number(perOverride)) : null,
+        trays_produced: traysN, scrap_trays: Number(scrap) || 0, hold_trays: holdN, cum_hold_yes: cumYes === "" ? null : cumYes === "yes", cum_hold_fg_trays: cumFgN, cum_hold_scrap_trays: cumScrapN, scrap_reason: scrapReason.trim() || undefined, total_pcs_per_pallet: Number(perOverride) > 0 ? Math.trunc(Number(perOverride)) : null,
         materials: used.map((l) => ({
           sku_code_id: l.skuId || l.checked?.sku_code_id || null, scan: l.scan.trim(), quantity: Number(l.quantity), unit: l.unit, fully_consumed: l.fully,
         })),
@@ -194,45 +217,7 @@ export default function ShiftRecordForm({ onClose, onSaved, editing }: { onClose
 
   const skuLabel = (s: SkuCode) => (s.sku_code && s.sku_code !== s.code ? `${s.code} (${s.sku_code})` : s.code);
 
-  return (
-    <>
-      <div className="panel-overlay open" onClick={onClose} />
-      <div className="side-panel open" style={{ width: "min(760px, 100vw)" }}>
-        <div className="sp-head">
-          <div><h2>{editing ? `Edit ${editing.display_id}` : "New Shift Record"}</h2></div>
-          <button className="sp-close" onClick={onClose}>×</button>
-        </div>
-        <div className="sp-body">
-          <div className="detail-card">
-            <h3>Shift</h3>
-            <div className="form-grid">
-              <div className="field">
-                <label>Date <span style={{ color: "var(--red)" }}>*</span></label>
-                <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-              </div>
-              <div className="field">
-                <label>Shift <span style={{ color: "var(--red)" }}>*</span></label>
-                <select value={shift} onChange={(e) => setShift(e.target.value)}>
-                  <option value="">Select</option>
-                  {SHIFTS.map((s) => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </div>
-              <div className="field">
-                <label>Machine <span style={{ color: "var(--red)" }}>*</span></label>
-                <select value={machineId} onChange={(e) => setMachineId(e.target.value)}>
-                  <option value="">Select</option>
-                  {machines.map((m) => <option key={m.id} value={m.id}>{m.code}</option>)}
-                </select>
-              </div>
-            </div>
-          </div>
-
-          <div className="detail-card">
-            <h3>Materials Used</h3>
-            <div className="hint-text" style={{ marginBottom: 10 }}>
-              Trays, pads, glue, polybags… pick the SKU, optionally scan its RM pallet QR, then enter how much was used. Add a line for each material.
-            </div>
-            {lines.map((l, i) => {
+  const renderLine = (l: Line, i: number, list: SkuCode[], label: string) => {
               const category = l.checked?.category || skuById.get(l.skuId)?.category || null;
               const units = unitsFor(category);
               const cap = capacity(l.checked, l.unit);
@@ -241,10 +226,10 @@ export default function ShiftRecordForm({ onClose, onSaved, editing }: { onClose
                 <div key={l.key} style={{ border: "1px solid var(--border, #e5e7eb)", borderRadius: 8, padding: 10, marginBottom: 10 }}>
                   <div className="form-grid">
                     <div className="field">
-                      <label>SKU {i + 1} <span style={{ color: "var(--red)" }}>*</span></label>
+                      <label>{label} {i + 1} <span style={{ color: "var(--red)" }}>*</span></label>
                       <select value={l.skuId} onChange={(e) => onSkuChange(l, e.target.value)}>
                         <option value="">Select</option>
-                        {skus.map((s) => <option key={s.id} value={s.id}>{skuLabel(s)}</option>)}
+                        {list.map((s) => <option key={s.id} value={s.id}>{skuLabel(s)}</option>)}
                       </select>
                     </div>
                     <div className="field">
@@ -310,16 +295,62 @@ export default function ShiftRecordForm({ onClose, onSaved, editing }: { onClose
                   {l.lineError && <div className="error-banner" style={{ marginTop: 6 }}>{l.lineError}</div>}
                 </div>
               );
-            })}
-            <button className="btn btn-ghost" onClick={() => setLines((ls) => [...ls, newLine()])}>+ Add material</button>
+  };
+  const section = (kind: Kind, title: string, hint: string, list: SkuCode[], label: string, addLabel: string) => {
+    const ls = lines.filter((l) => l.kind === kind);
+    return (
+      <div className="detail-card">
+        <h3>{title}</h3>
+        <div className="hint-text" style={{ marginBottom: 10 }}>{hint}</div>
+        {ls.map((l, i) => renderLine(l, i, list, label))}
+        <button className="btn btn-ghost" onClick={() => setLines((o) => [...o, newLine(kind)])}>{addLabel}</button>
+      </div>
+    );
+  };
+
+  return (
+    <>
+      <div className="panel-overlay open" onClick={onClose} />
+      <div className="side-panel open" style={{ width: "min(760px, 100vw)" }}>
+        <div className="sp-head">
+          <div><h2>{editing ? `Edit ${editing.display_id}` : "New Shift Record"}</h2></div>
+          <button className="sp-close" onClick={onClose}>×</button>
+        </div>
+        <div className="sp-body">
+          <div className="detail-card">
+            <h3>Shift</h3>
+            <div className="form-grid">
+              <div className="field">
+                <label>Date <span style={{ color: "var(--red)" }}>*</span></label>
+                <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+              </div>
+              <div className="field">
+                <label>Shift <span style={{ color: "var(--red)" }}>*</span></label>
+                <select value={shift} onChange={(e) => setShift(e.target.value)}>
+                  <option value="">Select</option>
+                  {SHIFTS.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div className="field">
+                <label>Machine <span style={{ color: "var(--red)" }}>*</span></label>
+                <select value={machineId} onChange={(e) => setMachineId(e.target.value)}>
+                  <option value="">Select</option>
+                  {machines.map((m) => <option key={m.id} value={m.id}>{m.code}</option>)}
+                </select>
+              </div>
+            </div>
           </div>
+
+          {section("tray", "Trays Used", "Pick the tray SKU, optionally scan its RM pallet QR, then enter how many trays were used.", traySkus, "Tray SKU", "+ Add tray")}
+          {section("pad", "Pads Used", "Pick the pad SKU, optionally scan its RM pallet QR, then enter how much was used.", padSkus, "Pad SKU", "+ Add pad")}
+          {lines.some((l) => l.kind === "other") && section("other", "Other Materials (from the original record)", "These were recorded before Materials Used was limited to trays and pads. They stay as recorded.", skus, "SKU", "+ Add other")}
 
           <div className="detail-card">
             <h3>Trays Produced (Finished)</h3>
             <div className="hint-text" style={{ marginBottom: 10 }}>
-              Enter the finished trays produced. FG Pallets is worked out from it (trays / Trays per Pallet, full pallets only); the rest are loose trays.
+              Enter the finished trays produced. FG Pallets is worked out from it (trays / Trays per Pallet, full pallets only); the rest are loose trays, which the next shift of the same SKU picks up.
               {" The FG pallets and QRs are made at the end, from the record, by Generate FG QRs; loose trays left over from earlier shifts of the same SKU are added in then."}
-              {traysN > 0 && !trayLine && " Pick the tray SKU in Materials Used above — the FG tray SKU comes from it."}
+              {traysN > 0 && !trayLine && " Pick the tray SKU in Trays Used above — the FG tray SKU comes from it."}
             </div>
             <div className="form-grid">
               <div className="field">
@@ -332,16 +363,20 @@ export default function ShiftRecordForm({ onClose, onSaved, editing }: { onClose
               </div>
               <div className="field">
                 <label>FG Pallets <span className="hint-text">(auto)</span></label>
-                <div className="readonly-val mono"><b>{traysN > 0 && per ? fgPallets : "—"}</b></div>
+                <div className="readonly-val mono"><b>{makes && per ? fgPallets : "—"}</b></div>
               </div>
               <div className="field">
                 <label>Loose Trays <span className="hint-text">(not a full pallet)</span></label>
-                <div className="readonly-val mono">{traysN > 0 && per ? looseTrays : "—"}</div>
+                <div className="readonly-val mono">{makes && per ? looseTrays : "—"}</div>
+              </div>
+              <div className="field">
+                <label>Loose trays from previous shift {traySkuId && skuById.get(traySkuId) ? <span className="hint-text">({skuById.get(traySkuId)!.code})</span> : null}</label>
+                <div className="readonly-val mono">{traySkuId ? carryIn.toLocaleString() : "—"}</div>
               </div>
             </div>
-            {carryIn > 0 && traysN > 0 && (
+            {makes && (carryIn > 0 || cumFgN > 0) && (
               <div className="hint-text" style={{ marginTop: 8 }}>
-                Includes {carryIn.toLocaleString()} loose trays carried from earlier shifts: {traysN.toLocaleString()} + {carryIn.toLocaleString()} = {pool.toLocaleString()} trays to make pallets from.
+                FG pallet pool: {traysN.toLocaleString()} finished{cumFgN > 0 ? ` + ${cumFgN.toLocaleString()} from Cumulative Hold` : ""}{carryIn > 0 ? ` + ${carryIn.toLocaleString()} loose trays from the previous shift` : ""} = {pool.toLocaleString()} trays to make pallets from.
               </div>
             )}
           </div>
@@ -350,7 +385,7 @@ export default function ShiftRecordForm({ onClose, onSaved, editing }: { onClose
             <h3>Scrap</h3>
             {traysUsed > 0 && (
               <div className="hint-text" style={{ marginBottom: 10, color: balanced ? "var(--green, #15803d)" : "var(--red, #b91c1c)" }}>
-                Trays used {traysUsed.toLocaleString()} = produced {traysN.toLocaleString()} + scrap {scrapN.toLocaleString()} − hold {holdN.toLocaleString()} ({accounted.toLocaleString()})
+                Trays used {traysUsed.toLocaleString()} = finished {traysN.toLocaleString()} + scrap {scrapN.toLocaleString()} + hold {holdN.toLocaleString()} ({accounted.toLocaleString()})
                 {balanced ? " ✓" : ` — ${accounted > traysUsed ? "over" : "short"} by ${Math.abs(traysUsed - accounted).toLocaleString()}`}
               </div>
             )}
@@ -369,7 +404,7 @@ export default function ShiftRecordForm({ onClose, onSaved, editing }: { onClose
           <div className="detail-card">
             <h3>Hold</h3>
             <div className="hint-text" style={{ marginBottom: 10 }}>
-              Trays set aside on hold. Trays used = finished + scrap − hold. Hold trays do not become FG pallets.
+              Finished goods set aside because their quality is in question. Hold is also material consumed: trays used = finished + scrap + hold. Hold trays do not become FG pallets.
             </div>
             <div className="form-grid">
               <div className="field">
@@ -381,6 +416,39 @@ export default function ShiftRecordForm({ onClose, onSaved, editing }: { onClose
                 <input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Optional" />
               </div>
             </div>
+          </div>
+          <div className="detail-card">
+            <h3>Cumulative Hold record <span style={{ color: "var(--red)" }}>*</span></h3>
+            <div className="hint-text" style={{ marginBottom: 10 }}>
+              Compulsory for the tray SKU selected on this record{traySkuId && skuById.get(traySkuId) ? ` (${skuById.get(traySkuId)!.code})` : ""}.
+              Held so far for this SKU: <b>{cumAvailable.toLocaleString()}</b> trays (the hold from every Shift Record of this SKU{holdN > 0 ? `, including ${holdN.toLocaleString()} on this record` : ""}, less what was already released).
+              Choose Yes to release some now as FG trays and/or Scrap. They become part of this shift&apos;s pallets and have nothing to do with the trays-used formula.
+            </div>
+            <div className="form-grid">
+              <div className="field">
+                <label>Cumulative Hold record <span style={{ color: "var(--red)" }}>*</span></label>
+                <select value={cumYes} onChange={(e) => setCumYes(e.target.value as "" | "yes" | "no")} disabled={!traySkuId}>
+                  <option value="">{traySkuId ? "Select" : "Pick the tray SKU first"}</option>
+                  <option value="yes">Yes</option>
+                  <option value="no">No</option>
+                </select>
+              </div>
+              {cumYes === "yes" && (
+                <>
+                  <div className="field">
+                    <label>FG Trays</label>
+                    <input type="number" min="0" step="1" value={cumFg} onChange={(e) => setCumFg(e.target.value)} />
+                  </div>
+                  <div className="field">
+                    <label>Scrap</label>
+                    <input type="number" min="0" step="1" value={cumScrap} onChange={(e) => setCumScrap(e.target.value)} />
+                  </div>
+                </>
+              )}
+            </div>
+            {cumYes === "yes" && cumFgN + cumScrapN > cumAvailable && (
+              <div className="hint-text" style={{ marginTop: 8, color: "var(--red, #b91c1c)" }}>FG trays + scrap is more than the {cumAvailable.toLocaleString()} trays held.</div>
+            )}
           </div>
           {editing && (
             <div className="hint-text">

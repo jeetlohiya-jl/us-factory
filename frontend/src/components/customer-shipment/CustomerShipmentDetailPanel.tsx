@@ -1,6 +1,7 @@
 "use client";
 import type { CustomerShipmentDetail } from "@/lib/types";
 import { T } from "@/lib/terms";
+import { useProduct } from "@/lib/productContext";
 
 function Kv({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -31,6 +32,7 @@ export default function CustomerShipmentDetailPanel({
   detail: CustomerShipmentDetail;
   onClose: () => void;
 }) {
+  const isFactory = useProduct() === "factory";
   return (
     <>
       <div className="panel-overlay open" onClick={onClose} />
@@ -56,14 +58,14 @@ export default function CustomerShipmentDetailPanel({
           <div className="detail-card">
             <h3>Line Items</h3>
             <table className="qc-obs-table">
-              <thead><tr><th>{T.sku}</th><th>Quantity</th><th>Trays</th><th>Trays per Sleeve</th></tr></thead>
+              <thead><tr><th>{T.sku}</th><th>Quantity</th><th>Trays</th>{!isFactory && <th>Trays per Sleeve</th>}</tr></thead>
               <tbody>
                 {detail.line_items.map((li) => (
                   <tr key={li.id}>
                     <td className="mono">{li.sku_code || "—"}</td>
                     <td>{li.pallets_required}</td>
                     <td>{li.pcs ?? "—"}</td>
-                    <td>{li.pcs_per_sleeve || "—"}</td>
+                    {!isFactory && <td>{li.pcs_per_sleeve || "—"}</td>}
                   </tr>
                 ))}
               </tbody>

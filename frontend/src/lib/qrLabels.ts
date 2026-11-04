@@ -4,7 +4,7 @@
  * Label Pro's "Print by Photo" on the MakeID D50 (Android tablet). Made on
  * the device (qrcode, loaded only when used); no server call.
  */
-export type QrLabel = { payload: string; text: string };
+export type QrLabel = { payload: string; text: string; sub?: string };
 
 // ---------------------------------------------------------------------------
 // Label IMAGES, for label-printer apps that print a picture (e.g. MakeID
@@ -27,9 +27,15 @@ async function labelPngFile(label: QrLabel, name: string): Promise<File> {
   ctx.imageSmoothingEnabled = false;          // keep every module sharp-edged
   ctx.drawImage(qr, (IMG - IMG_QR) / 2, IMG_TOP, IMG_QR, IMG_QR);
   ctx.fillStyle = "#000"; ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
-  let size = 46;
+  let size = label.sub ? 40 : 46;
   do { ctx.font = `700 ${size}px Helvetica, Arial, sans-serif`; size -= 2; } while (ctx.measureText(label.text).width > IMG - 40 && size > 20);
-  ctx.fillText(label.text, IMG / 2, IMG_TOP + IMG_QR + 62);
+  ctx.fillText(label.text, IMG / 2, IMG_TOP + IMG_QR + (label.sub ? 46 : 62));
+  if (label.sub) {
+    // second line under the pallet number: SKU - date - shift - machine
+    let s2 = 36;
+    do { ctx.font = `700 ${s2}px Helvetica, Arial, sans-serif`; s2 -= 2; } while (ctx.measureText(label.sub).width > IMG - 30 && s2 > 18);
+    ctx.fillText(label.sub, IMG / 2, IMG_TOP + IMG_QR + 46 + 46);
+  }
   const blob: Blob = await new Promise((res, rej) => canvas.toBlob((b) => (b ? res(b) : rej(new Error("Could not create the label image"))), "image/png"));
   return new File([blob], name, { type: "image/png" });
 }

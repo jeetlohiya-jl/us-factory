@@ -77,6 +77,7 @@ def list_inventory(db: Session, search: str = "", page: int = 1, page_size: int 
             trays_total.label("trays"),
             boxes_in_total.label("boxes_in"),
             boxes_floor_total.label("boxes_on_floor"),
+            func.max(func.greatest(models.InventorySource.created_at, func.coalesce(models.InventorySource.updated_at, models.InventorySource.created_at))).label("updated_at"),
         )
         .join(models.SkuCode, models.SkuCode.id == models.InventoryItem.sku_code_id)
         .outerjoin(models.InventorySource, models.InventorySource.inventory_item_id == models.InventoryItem.id)
@@ -95,7 +96,8 @@ def list_inventory(db: Session, search: str = "", page: int = 1, page_size: int 
         {"id": r.id, "sku_code_id": r.sku_code_id, "sku": r.code, "sku_code": r.sku_code, "uom": r.uom, "quantity": float(r.quantity),
          "trays": float(r.trays) if r.trays is not None else None,
          "boxes_in": float(r.boxes_in) if r.boxes_in is not None else None,
-         "boxes_on_floor": round(float(r.boxes_on_floor), 2) if r.boxes_on_floor is not None else None}
+         "boxes_on_floor": round(float(r.boxes_on_floor), 2) if r.boxes_on_floor is not None else None,
+         "updated_at": r.updated_at.isoformat() if r.updated_at else None}
         for r in rows
     ]
     return items, matched_count
@@ -303,6 +305,33 @@ def add_manual_source(db: Session, item_id: uuid.UUID, payload) -> models.Invent
         raise InventoryValidationError("Inventory item not found.")
     if payload.quantity is None or payload.quantity <= 0:
         raise InventoryValidationError("Quantity must be greater than 0.")
+    direction = (getattr(payload, "direction", None) or "add").strip().lower()
+    if direction not in ("add", "deduct"):
+        raise InventoryValidationError("Choose Add or Deduct.")
+
+    category = db.query(models.SkuCode.category).filter(models.SkuCode.id == item.sku_code_id).scalar()
+    is_tray = category in ("tray", "fnp_tray", "lnp_tray", "fgtray")
+
+    if direction == "deduct":
+        # Adjust Inventory -- take stock out (breakage, a count correction ...). Never below zero.
+        on_hand = float(db.query(func.coalesce(func.sum(models.InventorySource.quantity), 0))
+                        .filter(models.InventorySource.inventory_item_id == item.id).scalar() or 0)
+        if payload.quantity > on_hand + 1e-9:
+            raise InventoryValidationError(
+                f"Cannot deduct {payload.quantity:g} {item.uom}: only {on_hand:g} {item.uom} in stock."
+            )
+        source = models.InventorySource(
+            inventory_item_id=item.id,
+            quantity=-payload.quantity,
+            unit=item.uom,
+            trays=(-payload.quantity if is_tray and item.uom == "Pcs" else None),
+            is_manual=True,
+            note=(payload.note or "").strip() or "Inventory adjustment (deduct)",
+        )
+        db.add(source)
+        db.commit()
+        db.refresh(source)
+        return source
 
     vendor_id, vendor_name, country = _supplier(db, payload)
 
@@ -313,6 +342,7 @@ def add_manual_source(db: Session, item_id: uuid.UUID, payload) -> models.Invent
         country_code=country,
         quantity=payload.quantity,
         unit=(payload.unit or item.uom),
+        trays=(payload.quantity if is_tray and item.uom == "Pcs" else None),
         is_manual=True,
         note=payload.note,
     )

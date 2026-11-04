@@ -1265,6 +1265,8 @@ class InventoryListItemOut(BaseModel):
     # Migration 0102 -- glue: boxes received / still on the floor (null for other materials).
     boxes_in: Optional[float] = None
     boxes_on_floor: Optional[float] = None
+    # Date the stock last changed (latest receipt, adjustment or use).
+    updated_at: Optional[str] = None
 
 
 class InventoryListOut(BaseModel):
@@ -1342,6 +1344,8 @@ class InventorySourceIn(BaseModel):
     quantity only ever arrives via Goods Receipt inward (see migration
     0059's inventory_apply_receipt), never entered here."""
     quantity: float
+    # 'add' (default) puts stock in; 'deduct' takes stock out (Adjust Inventory).
+    direction: str = "add"
     vendor_id: Optional[uuid.UUID] = None
     vendor_name: Optional[str] = None
     supplier_country: Optional[str] = None

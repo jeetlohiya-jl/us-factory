@@ -58,6 +58,7 @@ def create(
         raise HTTPException(status_code=422, detail="At least one line item with a SKU, Version and pallet quantity is required.")
 
     try:
+        customer_shipment_service.check_fg_availability(db, [li.model_dump() for li in valid_items])
         shipment = customer_shipment_service.create_customer_shipment(
             db,
             customer=body.customer.strip(),
@@ -66,6 +67,9 @@ def create(
             actor_user_id=current_user.user_id,
         )
         db.commit()
+    except customer_shipment_service.FgAvailabilityError as e:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(e))
     except IntegrityError as e:
         db.rollback()
         if "customer_shipments_shipment_number_key" in str(e.orig):
@@ -127,6 +131,7 @@ def update(
         raise HTTPException(status_code=422, detail="At least one line item with a SKU, Version and pallet quantity is required.")
 
     try:
+        customer_shipment_service.check_fg_availability(db, [li.model_dump() for li in valid_items], exclude_shipment_id=shipment.id)
         customer_shipment_service.update_customer_shipment(
             db,
             shipment,
@@ -138,6 +143,9 @@ def update(
     except customer_shipment_service.CustomerShipmentEditBlocked as e:
         db.rollback()
         raise HTTPException(status_code=409, detail=str(e))
+    except customer_shipment_service.FgAvailabilityError as e:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(e))
     except IntegrityError as e:
         db.rollback()
         if "customer_shipments_shipment_number_key" in str(e.orig):

@@ -75,11 +75,13 @@ function num(v: string | null | undefined): number | null {
  * still uses the manual picker unchanged.
  */
 export default function CsLineItemsEditor({
-  items, skuCodes, onChange,
+  items, skuCodes, onChange, available,
 }: {
   items: CustomerShipmentLineItemDraft[];
   skuCodes: SkuCode[];
   onChange: (items: CustomerShipmentLineItemDraft[]) => void;
+  // Goods Outward (Factory): FG pallets available per SKU id; null/undefined = not shown.
+  available?: Record<string, number> | null;
 }) {
   const [runs, setRuns] = useState<ProductionRun[]>([]);
   const [othersMode, setOthersMode] = useState<Record<string, boolean>>({});
@@ -141,7 +143,7 @@ export default function CsLineItemsEditor({
       const versionId = next[idx].sku_version_id;
       const versions = versionsFor(next[idx].sku_code_id);
       const version = versions.find((v) => v.id === versionId);
-      if (version?.prod_pcs_per_sleeve && !next[idx].pcs_per_sleeve) {
+      if (!isFactory && version?.prod_pcs_per_sleeve && !next[idx].pcs_per_sleeve) {
         next[idx].pcs_per_sleeve = version.prod_pcs_per_sleeve;
       }
       // Goods Outward: Trays per Pallet pre-fills from the version's Production details too.
@@ -214,7 +216,7 @@ export default function CsLineItemsEditor({
                   }}
                 >
                   <option value="">Select</option>
-                  {trayOptions.map((s) => <option key={s.id} value={s.id}>{s.code}</option>)}
+                  {trayOptions.map((s) => <option key={s.id} value={s.id}>{s.code}{isFactory && available ? ` — ${available[s.id] ?? 0} available` : ""}</option>)}
                   <option value={OTHERS}>Others…</option>
                 </select>
               </div>
@@ -251,16 +253,27 @@ export default function CsLineItemsEditor({
                   />
                   <span className="suffix">Pallets</span>
                 </div>
+                {isFactory && available && item.sku_code_id && (() => {
+                  const have = available[item.sku_code_id] ?? 0;
+                  const asked = items.filter((o) => o.sku_code_id === item.sku_code_id).reduce((n, o) => n + (Number(o.pallets_required) || 0), 0);
+                  return (
+                    <div className="hint-text" style={{ marginTop: 4, color: asked > have ? "var(--red, #b91c1c)" : undefined }}>
+                      Available: <b>{have}</b> FG pallet{have === 1 ? "" : "s"}{asked > have ? ` — ${asked} requested for this SKU, more than are available` : ""}
+                    </div>
+                  );
+                })()}
               </div>
-              <div className="field">
-                <label>Trays per Sleeve</label>
-                <input
-                  type="number"
-                  min={0}
-                  value={item.pcs_per_sleeve}
-                  onChange={(e) => update(i, { pcs_per_sleeve: e.target.value })}
-                />
-              </div>
+              {!isFactory && (
+                <div className="field">
+                  <label>Trays per Sleeve</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={item.pcs_per_sleeve}
+                    onChange={(e) => update(i, { pcs_per_sleeve: e.target.value })}
+                  />
+                </div>
+              )}
               {!isFactory && (
                 <div className="field" style={{ gridColumn: "1 / -1" }}>
                   <label>Linked Production Run(s)</label>

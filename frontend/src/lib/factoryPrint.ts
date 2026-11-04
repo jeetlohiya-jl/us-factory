@@ -25,7 +25,7 @@ function base64Url(text: string): string {
 }
 
 export function factoryPrintUrl(labels: QrLabel[], source: string): string {
-  const job = { v: 1, source, labels: labels.map((l) => ({ q: l.payload, t: l.text })) };
+  const job = { v: 1, source, labels: labels.map((l) => ({ q: l.payload, t: l.text, ...(l.sub ? { s: l.sub } : {}) })) };
   const fallback = `${window.location.origin}/factory-print.html`;
   return `intent://print?d=${base64Url(JSON.stringify(job))}#Intent;scheme=factoryprint;package=${FACTORY_PRINT_PACKAGE};S.browser_fallback_url=${encodeURIComponent(fallback)};end`;
 }

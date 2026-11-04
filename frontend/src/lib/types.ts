@@ -620,6 +620,8 @@ export interface InventoryListItem {
   // Migration 0102 -- glue: boxes received / still on the floor.
   boxes_in?: number | null;
   boxes_on_floor?: number | null;
+  // Latest change to this item's stock (receipt, adjustment or use).
+  updated_at?: string | null;
 }
 
 export interface InventoryListResponse {
@@ -2222,6 +2224,9 @@ export interface ShiftRecordListItem {
   fg_generated_at: string | null;
   scrap_trays: number;
   hold_trays: number;
+  cum_hold_yes: boolean | null;
+  cum_hold_fg_trays: number;
+  cum_hold_scrap_trays: number;
   materials: string;
   recorded_by: string | null;
   recorded_at: string;
@@ -2266,6 +2271,9 @@ export interface ShiftRecordSavePayload {
   trays_produced: number;
   scrap_trays: number;
   hold_trays: number;
+  cum_hold_yes?: boolean | null;
+  cum_hold_fg_trays?: number;
+  cum_hold_scrap_trays?: number;
   scrap_reason?: string;
   total_pcs_per_pallet?: number | null;
   materials: { sku_code_id: string | null; scan: string; quantity: number; unit: ShiftRecordUnit; fully_consumed: boolean }[];

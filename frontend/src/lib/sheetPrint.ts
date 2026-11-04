@@ -63,7 +63,9 @@ export async function printLabelSheet(labels: QrLabel[], s: SheetSettings): Prom
     if (slot >= SHEET_PER_PAGE) { flush(); slot = 0; }
     const t = labels[i].text;
     const fs = Math.max(0.1, Math.min(0.2, 1.85 / Math.max(1, t.length) * 1.6));   // shrink long ids to fit
-    cells.push(cell(slot, `<img src="${images[i]}"><div class="t" style="font-size:${fs.toFixed(3)}in">${esc(t)}</div>`, s));
+    const sub = labels[i].sub;
+    const fs2 = sub ? Math.max(0.09, Math.min(0.15, 1.85 / Math.max(1, sub.length) * 1.6)) : 0;
+    cells.push(cell(slot, `<img src="${images[i]}"><div class="t" style="font-size:${fs.toFixed(3)}in">${esc(t)}</div>${sub ? `<div class="s" style="font-size:${fs2.toFixed(3)}in">${esc(sub)}</div>` : ""}`, s));
     slot++;
   }
   if (cells.length) flush();
@@ -77,6 +79,7 @@ export async function printLabelSheet(labels: QrLabel[], s: SheetSettings): Prom
     .cell.o { border: 0.01in solid #000 }
     .cell img { position: absolute; left: 0.25in; top: 0.12in; width: 1.5in; height: 1.5in; image-rendering: pixelated }
     .cell .t { position: absolute; left: 0.05in; right: 0.05in; top: 1.66in; font-weight: 700; white-space: nowrap }
+    .cell .s { position: absolute; left: 0.05in; right: 0.05in; top: 1.83in; font-weight: 700; white-space: nowrap }
     .cell .n { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 0.3in; color: #888 }
   </style></head><body>${pages.join("")}</body></html>`;
 
