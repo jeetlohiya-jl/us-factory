@@ -4,7 +4,7 @@
  * Label Pro's "Print by Photo" on the MakeID D50 (Android tablet). Made on
  * the device (qrcode, loaded only when used); no server call.
  */
-export type QrLabel = { payload: string; text: string; sub?: string };
+export type QrLabel = { payload: string; text: string; sub?: string; /** file name only (never printed); defaults to text */ name?: string };
 
 // ---------------------------------------------------------------------------
 // Label IMAGES, for label-printer apps that print a picture (e.g. MakeID
@@ -42,7 +42,7 @@ async function labelPngFile(label: QrLabel, name: string): Promise<File> {
 
 export async function qrLabelImages(labels: QrLabel[]): Promise<File[]> {
   const safe = (t: string) => t.replace(/[^A-Za-z0-9._-]+/g, "_");
-  return Promise.all(labels.map((l) => labelPngFile(l, `${safe(l.text)}.png`)));
+  return Promise.all(labels.map((l) => labelPngFile(l, `${safe(l.name || l.text)}.png`)));
 }
 
 /** Save the label images as files (Downloads / Gallery). */
