@@ -19,13 +19,13 @@ export default function ShiftRecordDetailPanel({ record, canDelete, canEdit, can
   const per = record.total_pcs_per_pallet || 0;
   const pool = record.trays_produced + record.cum_hold_fg_trays + carry;
   const willMake = per > 0 ? Math.floor(pool / per) : 0;
-  // Under each QR: the pallet number, then SKU - date (MMDDYYYY) - shift - machine, e.g. 3P-10202026-A-P1.
+  // Under each QR only the batch line: SKU - date (MMDDYYYY) - shift - machine, e.g. 3P-10202026-A-P1. The pallet number (US-PLT-...) is not printed; it stays inside the QR.
   const sub = (() => {
     const [y, m, d] = record.record_date.split("-");
     const shift = record.shift.replace(/^shift\s*/i, "").trim();
     return [record.fg_sku_code, `${m}${d}${y}`, shift, record.machine].filter(Boolean).join("-");
   })();
-  const labels = () => record.pallets.map((p) => ({ payload: p.qr_payload || JSON.stringify({ t: "fg_pallet", id: p.display_id }), text: p.display_id, sub }));
+  const labels = () => record.pallets.map((p) => ({ payload: p.qr_payload || JSON.stringify({ t: "fg_pallet", id: p.display_id }), text: sub || p.display_id, name: p.display_id }));
   return (
     <>
       <div className="panel-overlay open" onClick={onClose} />
