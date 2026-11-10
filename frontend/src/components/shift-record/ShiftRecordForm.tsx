@@ -5,7 +5,7 @@ import CameraQrScanner from "@/components/storage/CameraQrScanner";
 import type { Machine, ShiftRecordDetail, ShiftRecordScanPreview, ShiftRecordUnit, SkuCode } from "@/lib/types";
 
 const SHIFTS = ["Shift A", "Shift B", "Shift C"];
-const SUPERVISORS = ["Joe Castano", "Kevis Garcia"];
+const SUPERVISORS = ["Joe Castano", "Kevis Garcia", "Joel Camargo"];
 const TRAY_CATEGORIES = ["tray", "lnp_tray", "fgtray"];
 // What to ask per material: the units that make sense for the SKU's category (first = default).
 const UNITS_BY_CATEGORY: Record<string, ShiftRecordUnit[]> = {
