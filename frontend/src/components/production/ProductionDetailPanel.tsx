@@ -471,7 +471,7 @@ export default function ProductionDetailPanel({
                 <Kv label="Shift" value={record.shift} />
                 <Kv label="Operator" value={record.operator} />
                 <Kv label="Status" value={<StatusBadge status={record.status} />} />
-                <Kv label="Total PCS/Pallet" value={totalPcsPerPallet ?? "—"} />
+                <Kv label="Total Trays/Pallet" value={totalPcsPerPallet ?? "—"} />
                 <Kv label="Total Pallets Produced" value={totalPalletsProduced} />
                 <Kv label="Total Rejections" value={totalRejections} />
                 <Kv

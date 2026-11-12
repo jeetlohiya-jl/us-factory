@@ -253,6 +253,14 @@ export default function CsLineItemsEditor({
                   />
                   <span className="suffix">Pallets</span>
                 </div>
+                {!isFactory && item.sku_code_id && (() => {
+                  // Falcon: show what the pallets come to in trays, from the SKU version's Trays per Pallet.
+                  const ver = versionsFor(item.sku_code_id).find((v) => v.id === item.sku_version_id) ?? versionsFor(item.sku_code_id).find((v) => v.prod_total_pcs_per_pallet);
+                  const pal = Number(item.pallets_required) || 0;
+                  return ver?.prod_total_pcs_per_pallet && pal > 0
+                    ? <div className="hint-text" style={{ marginTop: 4 }}>= <b>{(pal * ver.prod_total_pcs_per_pallet).toLocaleString()}</b> trays ({ver.prod_total_pcs_per_pallet.toLocaleString()} per pallet)</div>
+                    : null;
+                })()}
                 {isFactory && available && item.sku_code_id && (() => {
                   const have = available[item.sku_code_id] ?? 0;
                   const asked = items.filter((o) => o.sku_code_id === item.sku_code_id).reduce((n, o) => n + (Number(o.pallets_required) || 0), 0);

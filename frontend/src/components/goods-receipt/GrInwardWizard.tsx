@@ -391,6 +391,9 @@ export default function GrInwardWizard({
                   <label>Quantity (Pallets) <span style={{ color: "var(--red)" }}>*</span></label>
                   <input type="number" min={1} step={1} disabled={readOnlyStep1} value={pallets} placeholder="e.g. 20"
                     onChange={(e) => markTouched(setPallets)(e.target.value)} />
+                  {isTray(entry) && Number(pallets) > 0 && Number(traysPerPallet) > 0 && (
+                    <div className="hint-text" style={{ marginTop: 4 }}>= <b>{(Number(pallets) * Number(traysPerPallet)).toLocaleString()}</b> trays</div>
+                  )}
                 </div>
                 {asksPadPacking && (
                   <>

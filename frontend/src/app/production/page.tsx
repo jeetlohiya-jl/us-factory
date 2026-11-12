@@ -156,7 +156,7 @@ function ProductionPageContent() {
           <thead>
             <tr>
               <th>Production Run ID</th><th>{T.shipmentNumber}</th><th>Machines</th><th>Shift</th>
-              <th>SKU</th><th>Total PCS/Pallet</th><th>Rejections</th><th>Operator</th><th>Date</th><th></th>
+              <th>SKU</th><th>Total Trays/Pallet</th><th>Rejections</th><th>Operator</th><th>Date</th><th></th>
             </tr>
           </thead>
           <tbody>

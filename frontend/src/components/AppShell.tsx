@@ -257,7 +257,7 @@ const FACTORY_NAV_ITEMS = [
   },
   // Inventory (2026-09-28) -- SKU-centric raw-material stock, aggregated
   // from every Goods Receipt container inwarded for that SKU (migration
-  // 0059). A genuinely new Factory-only page (app/inventory/page.tsx).
+  // 0059). A new page (app/inventory/page.tsx), now shared with Falcon (migration 0117).
   {
     href: "/inventory",
     label: MODULE_NAMES.inventory,
@@ -287,7 +287,7 @@ const FACTORY_NAV_ITEMS = [
 ];
 
 // Routes that exist only inside the Factory product.
-const FACTORY_ONLY_HREFS = ["/inventory", "/shift-record"];
+const FACTORY_ONLY_HREFS = ["/shift-record"];
 
 // Right now only these Factory screens are shown to everyone except the people listed in
 // FULL_ACCESS_EMAILS, who still see every screen. This only hides the menu entries and sends the
@@ -606,9 +606,18 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   // Gainesville's sidebar is untouched.
   const goodsOutwardNavItem = FACTORY_NAV_ITEMS.find((i) => i.href === "/goods-outward");
   type NavItem = { href: string; label: string; icon: React.ReactNode };
-  const falconNavItems: NavItem[] = NAV_ITEMS.filter((i) => !INDIA_HIDDEN_NAV_HREFS.includes(i.href))
+  const inventoryNavItem = FACTORY_NAV_ITEMS.find((i) => i.href === "/inventory");
+  const falconBaseNavItems: NavItem[] = NAV_ITEMS.filter((i) => !INDIA_HIDDEN_NAV_HREFS.includes(i.href))
     .filter((i) => i.href === "/customer-shipment" || !FALCON_GOODS_OUTWARD_REPLACED_HREFS.includes(i.href))
     .map((i) => (i.href === "/customer-shipment" && goodsOutwardNavItem ? goodsOutwardNavItem : i));
+  // Falcon also has Inventory (tray stock in trays), placed right after Goods Receipt like Factory's sidebar.
+  const falconNavItems: NavItem[] = (() => {
+    if (!inventoryNavItem || falconBaseNavItems.some((i) => i.href === "/inventory")) return falconBaseNavItems;
+    const at = falconBaseNavItems.findIndex((i) => i.href === "/goods-receipt");
+    const next = [...falconBaseNavItems];
+    next.splice(at >= 0 ? at + 1 : 0, 0, inventoryNavItem);
+    return next;
+  })();
   const restrictedUser = isFactory && RESTRICTED_FACTORY_VISIBLE_HREFS.length > 0 && !FULL_ACCESS_EMAILS.includes((session?.user?.email || "").toLowerCase());
   const activeNavItems: NavItem[] = isFactory
     ? (restrictedUser ? FACTORY_NAV_ITEMS.filter((i) => RESTRICTED_FACTORY_VISIBLE_HREFS.includes(i.href)) : FACTORY_NAV_ITEMS)
