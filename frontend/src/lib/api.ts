@@ -2435,6 +2435,18 @@ export const api = {
       () => supabase.from("sku_codes").update(patch).eq("id", id),
       { conflict: `"${patch.code}" already exists.` }
     ).then(() => invalidateSkuCaches()),
+  // Falcon: which film / pad SKUs are compatible with which tray SKU (migration 0116, table sku_compatible_materials).
+  skuCompatibleMaterials: () =>
+    sbRequest<{ tray_sku_code_id: string; material_sku_code_id: string }[]>(() =>
+      supabase.from("sku_compatible_materials").select("tray_sku_code_id, material_sku_code_id") as unknown as Promise<{ data: { tray_sku_code_id: string; material_sku_code_id: string }[] | null; error: { message: string; code?: string } | null }>
+    ).then((rows) => rows ?? []),
+  setSkuCompatibleMaterials: async (traySkuId: string, materialSkuIds: string[]) => {
+    await sbVoid(() => supabase.from("sku_compatible_materials").delete().eq("tray_sku_code_id", traySkuId));
+    if (materialSkuIds.length > 0) {
+      await sbVoid(() => supabase.from("sku_compatible_materials").insert(materialSkuIds.map((m) => ({ tray_sku_code_id: traySkuId, material_sku_code_id: m }))));
+    }
+    invalidateSkuCaches();
+  },
   deleteSku: (id: string) =>
     sbVoid(
       () => supabase.from("sku_codes").delete().eq("id", id),
