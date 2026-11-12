@@ -25,7 +25,7 @@ export default function ShiftRecordDetailPanel({ record, canDelete, canEdit, can
     const shift = record.shift.replace(/^shift\s*/i, "").trim();
     return [record.fg_sku_code, `${m}${d}${y}`, shift, record.machine].filter(Boolean).join("-");
   })();
-  const labels = () => record.pallets.map((p) => ({ payload: p.qr_payload || JSON.stringify({ t: "fg_pallet", id: p.display_id }), text: sub || p.display_id, name: p.display_id }));
+  const labels = () => record.pallets.map((p) => ({ payload: p.qr_payload || p.display_id, text: sub || p.display_id, name: p.display_id }));
   return (
     <>
       <div className="panel-overlay open" onClick={onClose} />

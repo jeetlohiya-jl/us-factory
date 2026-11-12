@@ -22,10 +22,14 @@ async function labelPngFile(label: QrLabel, name: string): Promise<File> {
   canvas.width = IMG; canvas.height = IMG;
   const ctx = canvas.getContext("2d")!;
   ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, IMG, IMG);
+  // Whole pixels per module (no fractional scaling), so every module is crisp when the printer app resizes the image.
+  const modules = QRCode.create(label.payload, { errorCorrectionLevel: "M" }).modules.size;
+  const scale = Math.max(1, Math.floor(IMG_QR / modules));
+  const qrPx = modules * scale;
   const qr = document.createElement("canvas");
-  await QRCode.toCanvas(qr, label.payload, { margin: 0, width: IMG_QR, errorCorrectionLevel: "M", color: { dark: "#000000", light: "#ffffff" } });
+  await QRCode.toCanvas(qr, label.payload, { margin: 0, scale, errorCorrectionLevel: "M", color: { dark: "#000000", light: "#ffffff" } });
   ctx.imageSmoothingEnabled = false;          // keep every module sharp-edged
-  ctx.drawImage(qr, (IMG - IMG_QR) / 2, IMG_TOP, IMG_QR, IMG_QR);
+  ctx.drawImage(qr, Math.round((IMG - qrPx) / 2), IMG_TOP + Math.round((IMG_QR - qrPx) / 2), qrPx, qrPx);
   ctx.fillStyle = "#000"; ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
   let size = label.sub ? 40 : 46;
   do { ctx.font = `700 ${size}px Helvetica, Arial, sans-serif`; size -= 2; } while (ctx.measureText(label.text).width > IMG - 40 && size > 20);
