@@ -55,6 +55,66 @@ function computeTotalPcsPerPallet(form: ProdDetailsForm): number | null {
 
 type ProdDetailsForm = Partial<Record<string, string>>;
 
+/** Falcon: pick the films and pads that go with a tray SKU. */
+function CompatibleMaterialsModal({
+  tray, options, selected, onClose, onSave,
+}: {
+  tray: SkuCode;
+  options: SkuCode[];
+  selected: string[];
+  onClose: () => void;
+  onSave: (ids: string[]) => Promise<void>;
+}) {
+  const [ids, setIds] = useState<string[]>(selected);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const toggle = (id: string) => setIds((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
+  async function handleSave() {
+    setSaving(true); setError(null);
+    try { await onSave(ids); onClose(); }
+    catch (e) { setError(e instanceof Error ? e.message : "Failed to save"); }
+    finally { setSaving(false); }
+  }
+  const group = (cat: string, title: string) => {
+    const list = options.filter((m) => m.category === cat).sort((a, b) => a.code.localeCompare(b.code));
+    return (
+      <div className="field" style={{ marginBottom: 12 }}>
+        <label>{title}</label>
+        {list.length === 0 ? <div className="hint-text">No active {title.toLowerCase()} SKUs yet.</div> : list.map((m) => (
+          <label key={m.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, fontWeight: 400 }}>
+            <input type="checkbox" checked={ids.includes(m.id)} onChange={() => toggle(m.id)} />
+            {m.code}{m.description ? <span className="hint-text"> — {m.description}</span> : null}
+          </label>
+        ))}
+      </div>
+    );
+  };
+  return (
+    <>
+      <div className="panel-overlay open" onClick={onClose} />
+      <div className="side-panel open">
+        <div className="sp-head">
+          <div>
+            <h2>Compatible Film / Pad</h2>
+            <div className="sub mono">{tray.code}</div>
+          </div>
+          <button className="sp-close" onClick={onClose}>×</button>
+        </div>
+        <div className="sp-body">
+          <div className="hint-text" style={{ marginBottom: 12 }}>Tick the films and pads that can be used with this tray.</div>
+          {group("film", "Film")}
+          {group("pad", "Pad")}
+          {error && <div className="error-banner">{error}</div>}
+        </div>
+        <div className="sp-foot">
+          <button className="btn btn-ghost" disabled={saving} onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" disabled={saving} onClick={handleSave}>{saving ? "Saving…" : "Save"}</button>
+        </div>
+      </div>
+    </>
+  );
+}
+
 function SkuVersionDetailsModal({
   skuCode, version, onClose, onSave,
 }: {
@@ -185,18 +245,22 @@ export default function SkusPage() {
   const [showInactive, setShowInactive] = useState(false);
   const [newVersionBySkuId, setNewVersionBySkuId] = useState<Record<string, string>>({});
   const [detailsTarget, setDetailsTarget] = useState<{ skuCode: string; version: SkuVersion } | null>(null);
+  // Falcon: compatible film / pad per tray SKU
+  const [compat, setCompat] = useState<{ tray_sku_code_id: string; material_sku_code_id: string }[]>([]);
+  const [compatTarget, setCompatTarget] = useState<SkuCode | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       setSkus(await api.skus({ includeInactive: true }));
+      if (isUs) setCompat(await api.skuCompatibleMaterials().catch(() => []));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load SKUs");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isUs]);
 
   useEffect(() => { refresh(); }, [refresh]);
 
@@ -397,10 +461,10 @@ export default function SkusPage() {
 
       <div className="card card-flush">
         <table className="data">
-          <thead><tr><th>Material</th><th>{T.sku}</th><th>{T.skuCode}</th><th>Default Unit</th><th>Name</th><th>Batch Number</th><th>Versions</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>Material</th><th>{T.sku}</th><th>{T.skuCode}</th><th>Default Unit</th><th>Name</th><th>Batch Number</th><th>Versions</th>{isUs && <th>Compatible Film / Pad</th>}<th>Status</th><th></th></tr></thead>
           <tbody>
             {visible.length === 0 ? (
-              <tr className="empty-row"><td colSpan={9}>{loading ? "Loading…" : "No SKUs yet — add one above."}</td></tr>
+              <tr className="empty-row"><td colSpan={isUs ? 10 : 9}>{loading ? "Loading…" : "No SKUs yet — add one above."}</td></tr>
             ) : (
               visible.map((s) => (
                 <tr key={s.id}>
@@ -470,6 +534,18 @@ export default function SkusPage() {
                       )}
                     </div>
                   </td>
+                  {isUs && (
+                    <td>
+                      {skuFamily(s.category) === "tray" ? (
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+                          {compat.filter((c) => c.tray_sku_code_id === s.id).map((c) => skus.find((m) => m.id === c.material_sku_code_id)).filter((m): m is SkuCode => !!m)
+                            .sort((a, b) => a.code.localeCompare(b.code)).map((m) => <span key={m.id} className="badge draft">{m.code}</span>)}
+                          {compat.every((c) => c.tray_sku_code_id !== s.id) && <span className="hint-text">none set</span>}
+                          {canEdit && <a className="btn-tertiary" style={{ cursor: "pointer" }} onClick={() => setCompatTarget(s)}>Edit</a>}
+                        </div>
+                      ) : "—"}
+                    </td>
+                  )}
                   <td><span className={`badge ${s.is_active ? "accepted" : "draft"}`}>{s.is_active ? "Active" : "Inactive"}</span></td>
                   <td style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
                     {canEdit && (
@@ -489,6 +565,16 @@ export default function SkusPage() {
           </tbody>
         </table>
       </div>
+
+      {compatTarget && (
+        <CompatibleMaterialsModal
+          tray={compatTarget}
+          options={skus.filter((m) => m.is_active && (m.category === "film" || m.category === "pad"))}
+          selected={compat.filter((c) => c.tray_sku_code_id === compatTarget.id).map((c) => c.material_sku_code_id)}
+          onClose={() => setCompatTarget(null)}
+          onSave={async (ids) => { await api.setSkuCompatibleMaterials(compatTarget.id, ids); await refresh(); }}
+        />
+      )}
 
       {detailsTarget && (
         <SkuVersionDetailsModal
